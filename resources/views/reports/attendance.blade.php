@@ -2,7 +2,7 @@
 @section('title', 'Attendance Report')
 @section('content')
 <x-page-header title="Attendance Report" subtitle="Summary by period">
-    <a href="{{ route('reports.export', ['type'=>'attendance', 'month'=>request('month'), 'year'=>request('year')]) }}" class="btn-secondary"><i class="fas fa-file-excel mr-1 text-green-600"></i> Export</a>
+    <a href="{{ route('export.attendance', ['month'=>request('month', date('n')), 'year'=>request('year', date('Y'))]) }}" class="btn-secondary"><i class="fas fa-file-excel mr-1 text-green-600"></i> Export Excel</a>
 </x-page-header>
 
 <x-filter-bar :action="route('reports.attendance')">

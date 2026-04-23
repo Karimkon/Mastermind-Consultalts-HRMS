@@ -10,8 +10,10 @@ class Employee extends Model
     protected $fillable = [
         'user_id','emp_number','department_id','designation_id','manager_id',
         'first_name','last_name','phone','personal_email','date_of_birth','gender',
-        'national_id','address','city','country','emergency_contact_name',
-        'emergency_contact_phone','hire_date','end_date','employment_type','status',
+        'national_id','passport_number','address','city','country',
+        'emergency_contact_name','emergency_contact_phone',
+        'next_of_kin_name','next_of_kin_relation','next_of_kin_phone','next_of_kin_email',
+        'hire_date','end_date','employment_type','status',
         'salary_grade','bank_name','bank_account','bank_branch',
         'tax_number','bio',
     ];

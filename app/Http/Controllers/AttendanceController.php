@@ -1,12 +1,38 @@
 <?php
 namespace App\Http\Controllers;
 
-use App\Models\{AttendanceLog, Employee, Department, Shift, Holiday};
+use App\Models\{AttendanceLog, Employee, Department, Shift, Holiday, Setting};
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 
 class AttendanceController extends Controller
 {
+    private function distanceMetres(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $R = 6371000;
+        $phi1 = deg2rad($lat1); $phi2 = deg2rad($lat2);
+        $dphi = deg2rad($lat2 - $lat1);
+        $dlam = deg2rad($lng2 - $lng1);
+        $a = sin($dphi / 2) ** 2 + cos($phi1) * cos($phi2) * sin($dlam / 2) ** 2;
+        return 2 * $R * asin(sqrt($a));
+    }
+
+    private function geoFenceCheck($lat, $lng): ?string
+    {
+        $officeLat = Setting::where("key", "office_lat")->value("value");
+        $officeLng = Setting::where("key", "office_lng")->value("value");
+        $radius    = (float)(Setting::where("key", "geo_radius_meters")->value("value") ?? 100);
+        if (!$officeLat || !$officeLng) return null;
+        if ($lat === null || $lng === null) {
+            return "Your location is required to clock in. Please allow location access.";
+        }
+        $distance = $this->distanceMetres((float)$lat, (float)$lng, (float)$officeLat, (float)$officeLng);
+        if ($distance > $radius) {
+            return "You are " . round($distance) . "m from the office. Must be within " . (int)$radius . "m to clock in/out.";
+        }
+        return null;
+    }
+
     public function index(Request $request)
     {
         $user     = auth()->user();
@@ -69,6 +95,10 @@ class AttendanceController extends Controller
                 : back()->with('error', 'You have not clocked in today.');
         }
 
+        $geoError = $this->geoFenceCheck($request->lat !== null ? (float)$request->lat : null, $request->lng !== null ? (float)$request->lng : null);
+        if ($geoError) {
+            return $request->wantsJson() ? response()->json(["error" => $geoError], 422) : back()->with("error", $geoError);
+        }
         $hours    = Carbon::parse($log->clock_in)->diffInMinutes(now()) / 60;
         $overtime = max(0, $hours - 8);
         $log->update(['clock_out' => now(), 'overtime_hours' => round($overtime, 2)]);

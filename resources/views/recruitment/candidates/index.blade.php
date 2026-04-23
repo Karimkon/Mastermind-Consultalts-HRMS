@@ -8,7 +8,7 @@
 <x-filter-bar :action="route('recruitment.candidates.index')">
     <div class="flex-1 min-w-[180px]"><input type="text" name="search" value="{{ request('search') }}" placeholder="Search name/email..." class="form-input w-full"></div>
     <div class="w-52"><select name="job_posting_id" class="form-input w-full select2"><option value="">All Jobs</option>@foreach($jobs as $j)<option value="{{ $j->id }}" @selected(request('job_posting_id')==$j->id)>{{ $j->title }}</option>@endforeach</select></div>
-    <div class="w-40"><select name="status" class="form-input w-full"><option value="">All Status</option>@foreach(['applied','screening','interview','offered','hired','rejected'] as $s)<option value="{{ $s }}" @selected(request('status')===$s)>{{ ucfirst($s) }}</option>@endforeach</select></div>
+    <div class="w-40"><select name="status" class="form-input w-full"><option value="">All Status</option>@foreach(['new'=>'New','screening'=>'Screening','shortlisted'=>'Shortlisted','interview'=>'Interview','offer'=>'Offer','hired'=>'Hired','rejected'=>'Rejected'] as $val=>$label)<option value="{{ $val }}" @selected(request('status')===$val)>{{ $label }}</option>@endforeach</select></div>
 </x-filter-bar>
 
 <x-data-table>
@@ -28,7 +28,7 @@
             </div>
         </td>
         <td class="px-4 py-3">
-            @php $sc2 = ['applied'=>'badge-blue','screening'=>'badge-yellow','interview'=>'badge-purple','offered'=>'badge-indigo','hired'=>'badge-green','rejected'=>'badge-red']; @endphp
+            @php $sc2 = ['new'=>'badge-slate','screening'=>'badge-yellow','shortlisted'=>'badge-blue','interview'=>'badge-purple','offer'=>'badge-indigo','hired'=>'badge-green','rejected'=>'badge-red']; @endphp
             <span class="badge {{ $sc2[$c->status] ?? 'badge-slate' }}">{{ ucfirst($c->status) }}</span>
         </td>
         <td class="px-4 py-3 text-sm text-slate-600">{{ $c->phone ?? '—' }}</td>

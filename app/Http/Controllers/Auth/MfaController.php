@@ -76,6 +76,10 @@ class MfaController extends Controller
         session(['mfa_verified' => true]);
         $request->session()->regenerate();
 
+        if ($user->hasRole('client')) {
+            return redirect()->route('client.dashboard');
+        }
+
         return redirect()->intended(route('dashboard'));
     }
 

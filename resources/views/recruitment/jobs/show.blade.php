@@ -46,10 +46,34 @@
         </div>
     </div>
     <div class="space-y-4">
+        {{-- AI Candidate Ranking --}}
+        <div class="card p-5" x-data="{ loading: false, rankings: null, error: null }">
+            <h3 class="font-semibold text-slate-700 mb-3"><i class="fas fa-robot text-blue-500 mr-2"></i>AI Ranking</h3>
+            <p class="text-xs text-slate-500 mb-3">Let AI rank and recommend all candidates for this position based on their profiles and scores.</p>
+            <button @click="loading=true; error=null; rankings=null; fetch('{{ route('recruitment.ai.shortlist', $job) }}',{method:'POST',headers:{'X-CSRF-TOKEN':document.querySelector('[name=csrf-token]').content,'Accept':'application/json'}}).then(r=>r.json()).then(d=>{loading=false; if(d.error)error=d.error; else rankings=d.rankings;}).catch(()=>{loading=false;error='Request failed';})"
+                :disabled="loading"
+                class="btn-primary w-full justify-center text-sm">
+                <i class="fas fa-sort-amount-down mr-2" :class="loading ? 'fa-spin' : ''"></i>
+                <span x-text="loading ? 'Ranking candidates...' : 'AI Rank All Candidates'"></span>
+            </button>
+            <p x-show="error" x-text="error" class="text-xs text-red-500 mt-2"></p>
+            <div x-show="rankings && rankings.length" class="mt-3 space-y-2">
+                <template x-for="r in (rankings||[])" :key="r.candidate_id">
+                    <div class="p-2 bg-slate-50 rounded-lg text-xs border border-slate-100">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="font-semibold text-slate-700">#<span x-text="r.rank"></span></span>
+                            <span class="badge-xs" :class="{'badge-green': r.recommendation==='Strongly Recommend'||r.recommendation==='Recommend', 'badge-yellow': r.recommendation==='Consider', 'badge-red': r.recommendation==='Do Not Recommend'}" x-text="r.recommendation"></span>
+                        </div>
+                        <p class="text-slate-500" x-text="r.reasoning"></p>
+                    </div>
+                </template>
+            </div>
+        </div>
+
         <div class="card p-5 space-y-3">
             <h3 class="font-semibold text-slate-700">Job Details</h3>
             <div class="text-sm space-y-2">
-                <div class="flex justify-between"><span class="text-slate-500">Type</span><span class="font-medium">{{ ucfirst($job->type) }}</span></div>
+                <div class="flex justify-between"><span class="text-slate-500">Type</span><span class="font-medium">{{ ucwords(str_replace('_', ' ', $job->employment_type)) }}</span></div>
                 <div class="flex justify-between"><span class="text-slate-500">Location</span><span class="font-medium">{{ $job->location ?? 'N/A' }}</span></div>
                 <div class="flex justify-between"><span class="text-slate-500">Vacancies</span><span class="font-medium">{{ $job->vacancies ?? 1 }}</span></div>
                 <div class="flex justify-between"><span class="text-slate-500">Deadline</span><span class="font-medium">{{ $job->deadline ? \Carbon\Carbon::parse($job->deadline)->format('M d, Y') : 'N/A' }}</span></div>

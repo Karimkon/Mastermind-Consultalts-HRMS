@@ -34,6 +34,21 @@
             <p class="text-sm text-red-800">{{ $leave->rejection_reason }}</p>
         </div>
         @endif
+        @if($leave->client_approval_required)
+        <div class="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p class="text-xs font-semibold text-blue-700 uppercase mb-1">Client Approval Status</p>
+            @if($leave->client_approval_status === 'approved')
+                <span class="badge-green"><i class="fas fa-check mr-1"></i>Client Approved</span>
+            @elseif($leave->client_approval_status === 'rejected')
+                <span class="badge-red"><i class="fas fa-times mr-1"></i>Client Rejected</span>
+            @else
+                <span class="badge-yellow">Awaiting client decision</span>
+            @endif
+            @if($leave->clientApprover)
+            <p class="text-xs text-blue-500 mt-1">by {{ $leave->clientApprover->company_name }}</p>
+            @endif
+        </div>
+        @endif
     </div>
     <div class="space-y-4">
         @if($leave->status === 'pending')

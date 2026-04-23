@@ -25,6 +25,7 @@ class RolesPermissionsSeeder extends Seeder
             'meetings.view','meetings.manage',
             'reports.view','reports.export',
             'admin.users','admin.roles','admin.settings','admin.audit',
+            'client-portal','client-leave-approve','client-shortlist',
         ];
 
         foreach ($permissions as $perm) {
@@ -141,6 +142,9 @@ class RolesPermissionsSeeder extends Seeder
             ['name' => 'Sarah Johnson', 'password' => bcrypt('Hr@1234'), 'status' => 'active']
         );
         $hr->syncRoles('hr-admin');
+
+        $client = Role::firstOrCreate(['name' => 'client']);
+        $client->syncPermissions(['client-portal', 'client-leave-approve', 'client-shortlist']);
 
         $this->command->info('Roles, permissions, and seed data created!');
     }

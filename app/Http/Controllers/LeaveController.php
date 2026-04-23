@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Mail\LeaveSubmittedMail;
+use App\Services\NotificationService;
 use App\Models\{LeaveRequest, LeaveType, LeaveBalance, Employee, Department, User};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -44,12 +45,7 @@ class LeaveController extends Controller
         $days = Carbon::parse($request->from_date)->diffInWeekdays(Carbon::parse($request->to_date)) + 1;
         $leave = LeaveRequest::create(['employee_id' => auth()->user()->employee->id, 'leave_type_id' => $request->leave_type_id, 'from_date' => $request->from_date, 'to_date' => $request->to_date, 'days_count' => $days, 'reason' => $request->reason, 'status' => 'pending']);
 
-        // Notify HR admins and managers
-        User::role(['hr-admin','super-admin','manager'])->each(function (User $u) use ($leave) {
-            if ($u->email) {
-                Mail::to($u->email)->queue(new LeaveSubmittedMail($leave->load(['employee.department','leaveType'])));
-            }
-        });
+        app(NotificationService::class)->leaveSubmitted($leave);
 
         return redirect()->route('leaves.index')->with('success', 'Leave request submitted.');
     }
@@ -78,6 +74,7 @@ class LeaveController extends Controller
         $leave->update(['status' => 'approved', 'approved_by' => auth()->user()->employee?->id]);
         LeaveBalance::where('employee_id', $leave->employee_id)->where('leave_type_id', $leave->leave_type_id)->where('year', now()->year)->increment('used_days', $leave->days_count);
         $leave->employee->update(['status' => 'on_leave']);
+        app(NotificationService::class)->leaveStatusChanged($leave->fresh());
         return back()->with('success', 'Leave approved.');
     }
 
@@ -88,6 +85,7 @@ class LeaveController extends Controller
             'approved_by'      => auth()->user()->employee?->id,
             'rejection_reason' => $request->rejection_reason,
         ]);
+        app(NotificationService::class)->leaveStatusChanged($leave->fresh());
         return back()->with('success', 'Leave rejected.');
     }
 

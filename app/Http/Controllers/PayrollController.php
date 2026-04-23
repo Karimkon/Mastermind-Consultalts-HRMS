@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 use App\Exports\BankPaymentExport;
 use App\Models\{PayrollRun, Payslip, Employee, SalaryGrade, SalaryComponent, EmployeeSalary};
 use App\Services\Payroll\PayrollService;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Maatwebsite\Excel\Facades\Excel;
@@ -69,6 +70,11 @@ class PayrollController extends Controller
     public function markPaid(PayrollRun $payroll)
     {
         $payroll->update(['status' => 'paid', 'payment_date' => now()->toDateString()]);
+
+        // Notify each employee with a payslip
+        $ns = app(NotificationService::class);
+        $payroll->payslips()->with(['employee.user', 'payrollRun'])->each(fn($slip) => $ns->payrollProcessed($slip));
+
         return back()->with('success', 'Payroll marked as paid.');
     }
 

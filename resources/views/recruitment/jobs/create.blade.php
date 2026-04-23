@@ -18,8 +18,11 @@
                     </select>
                 </div>
                 <div><label class="form-label">Employment Type</label>
-                    <select name="type" class="form-input">
-                        @foreach(['full-time','part-time','contract','internship'] as $t)<option value="{{ $t }}" @selected(old('type')===$t)>{{ ucfirst($t) }}</option>@endforeach
+                    <select name="employment_type" class="form-input">
+                        <option value="full_time" @selected(old('employment_type')==='full_time')>Full Time</option>
+                        <option value="part_time" @selected(old('employment_type')==='part_time')>Part Time</option>
+                        <option value="contract" @selected(old('employment_type')==='contract')>Contract</option>
+                        <option value="intern" @selected(old('employment_type')==='intern')>Internship</option>
                     </select>
                 </div>
                 <div><label class="form-label">Location</label><input type="text" name="location" class="form-input" value="{{ old('location') }}"></div>
@@ -27,8 +30,18 @@
                 <div><label class="form-label">Vacancies</label><input type="number" name="vacancies" class="form-input" value="{{ old('vacancies', 1) }}" min="1"></div>
                 <div><label class="form-label">Status</label>
                     <select name="status" class="form-input">
-                        @foreach(['draft','open','on-hold','closed'] as $s)<option value="{{ $s }}" @selected(old('status')===$s)>{{ ucfirst($s) }}</option>@endforeach
+                        <option value="draft" @selected(old('status')==='draft')>Draft</option>
+                        <option value="open" @selected(old('status')==='open')>Open</option>
+                        <option value="closed" @selected(old('status')==='closed')>Closed</option>
+                        <option value="filled" @selected(old('status')==='filled')>Filled</option>
                     </select>
+                </div>
+                <div class="col-span-2 flex items-center gap-3 pt-2">
+                    <input type="checkbox" name="is_public" id="is_public" value="1" {{ old('is_public') ? 'checked' : '' }} class="w-4 h-4 text-blue-600">
+                    <label for="is_public" class="text-sm font-medium text-slate-700">
+                        <i class="fas fa-globe-africa text-blue-500 mr-1"></i>
+                        Post on Public Job Board (visible on /careers page to anyone)
+                    </label>
                 </div>
                 <div><label class="form-label">Salary Min</label><input type="number" name="salary_min" class="form-input" value="{{ old('salary_min') }}" placeholder="0.00"></div>
                 <div><label class="form-label">Salary Max</label><input type="number" name="salary_max" class="form-input" value="{{ old('salary_max') }}" placeholder="0.00"></div>

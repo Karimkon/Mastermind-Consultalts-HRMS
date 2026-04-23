@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{TrainingCourse, TrainingEnrollment, Certification, Employee};
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -54,7 +55,13 @@ class TrainingController extends Controller
     {
         $employee = auth()->user()->employee;
         if (!$employee) return back()->with('error', 'No employee profile.');
-        TrainingEnrollment::firstOrCreate(['employee_id'=>$employee->id,'course_id'=>$training->id],['status'=>'enrolled','progress_pct'=>0]);
+        $enrollment = TrainingEnrollment::firstOrCreate(
+            ['employee_id' => $employee->id, 'course_id' => $training->id],
+            ['status' => 'enrolled', 'progress_pct' => 0]
+        );
+        if ($enrollment->wasRecentlyCreated) {
+            app(NotificationService::class)->trainingEnrolled($enrollment);
+        }
         return back()->with('success', 'Enrolled in course.');
     }
 

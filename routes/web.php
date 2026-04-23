@@ -1,12 +1,22 @@
 <?php
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Auth\{LoginController, MfaController};
+use App\Http\Controllers\Auth\{LoginController, MfaController, PasswordResetController};
 use App\Http\Controllers\{DashboardController, ProfileController, AjaxController, EmployeeController, AttendanceController, LeaveController, PayrollController, RecruitmentController, PerformanceController, TrainingController, MeetingController, ReportController};
-use App\Http\Controllers\Admin\{UserController, DepartmentController, SettingController, RoleController, AuditLogController, DocumentationController};
-use App\Http\Controllers\Employee\{OnboardingController, ExitController};
+use App\Http\Controllers\Admin\{UserController, DepartmentController, SettingController, RoleController, AuditLogController, DocumentationController, AdminClientController};
+use App\Http\Controllers\{ClientController, ClientLeaveController, ClientRecruitmentController, AiRecruitmentController};
+use App\Http\Controllers\Employee\{OnboardingController, ExitController, SelfServiceController};
+use App\Http\Controllers\AccountManagerController;
+use App\Http\Controllers\CareersController;
 use App\Http\Controllers\Performance\{GoalController, PipController};
 use App\Http\Controllers\Training\AssessmentController;
 use App\Http\Controllers\Recruitment\OfferController;
+
+// =========================================================
+// PUBLIC JOB BOARD (no auth)
+// =========================================================
+Route::get("/careers", [CareersController::class, "index"])->name("careers.index");
+Route::get("/careers/{job}", [CareersController::class, "show"])->name("careers.show");
+Route::post("/careers/{job}/apply", [CareersController::class, "apply"])->name("careers.apply");
 
 // Landing page (public)
 Route::get('/', function () {
@@ -18,6 +28,12 @@ Route::get('/', function () {
 Route::get('/login', [LoginController::class, 'showLoginForm'])->name('login');
 Route::post('/login', [LoginController::class, 'login'])->name('login.post');
 Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
+
+// Password Reset
+Route::get('/forgot-password', [PasswordResetController::class, 'showForgotForm'])->name('password.request');
+Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLink'])->name('password.email');
+Route::get('/reset-password/{token}', [PasswordResetController::class, 'showResetForm'])->name('password.reset');
+Route::post('/reset-password', [PasswordResetController::class, 'resetPassword'])->name('password.update');
 
 // MFA challenge (no auth required — user is in mfa_pending state)
 Route::get('/mfa/challenge', [MfaController::class, 'challenge'])->name('mfa.challenge');
@@ -120,6 +136,7 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::get('jobs/{job}/edit', [RecruitmentController::class, 'jobsEdit'])->name('jobs.edit');
         Route::put('jobs/{job}', [RecruitmentController::class, 'jobsUpdate'])->name('jobs.update');
         Route::delete('jobs/{job}', [RecruitmentController::class, 'jobsDestroy'])->name('jobs.destroy');
+        Route::post('jobs/{job}/toggle-public', [RecruitmentController::class, 'jobsTogglePublic'])->name('jobs.toggle-public');
 
         Route::get('candidates', [RecruitmentController::class, 'candidatesIndex'])->name('candidates.index');
         Route::get('candidates/create', [RecruitmentController::class, 'candidatesCreate'])->name('candidates.create');
@@ -199,6 +216,57 @@ Route::middleware(['auth','mfa'])->group(function () {
     Route::get('import', [ReportController::class, 'importForm'])->name('import.form');
     Route::post('import/employees', [ReportController::class, 'importEmployees'])->name('import.employees');
 
+    // =========================================================
+    // CLIENT PORTAL (role: client only)
+    // =========================================================
+    Route::prefix('client')->name('client.')->middleware('role:client')->group(function () {
+        Route::get('/dashboard', [ClientController::class, 'dashboard'])->name('dashboard');
+
+        // Leave Approvals
+        Route::get('/leaves', [ClientLeaveController::class, 'index'])->name('leaves.index');
+        Route::get('/leaves/{leave}', [ClientLeaveController::class, 'show'])->name('leaves.show');
+        Route::post('/leaves/{leave}/approve', [ClientLeaveController::class, 'approve'])->name('leaves.approve');
+        Route::post('/leaves/{leave}/reject', [ClientLeaveController::class, 'reject'])->name('leaves.reject');
+
+        // Recruitment Shortlisting
+        Route::get('/recruitment', [ClientRecruitmentController::class, 'index'])->name('recruitment.index');
+        Route::get('/recruitment/{candidate}', [ClientRecruitmentController::class, 'show'])->name('recruitment.show');
+        Route::post('/recruitment/{candidate}/approve', [ClientRecruitmentController::class, 'approve'])->name('recruitment.approve');
+        Route::post('/recruitment/{candidate}/reject', [ClientRecruitmentController::class, 'reject'])->name('recruitment.reject');
+    });
+
+    // =========================================================
+    // EMPLOYEE SELF-SERVICE
+    // =========================================================
+    Route::prefix("employee")->name("employee.")->group(function () {
+        Route::get("my-documents", [SelfServiceController::class, "documents"])->name("documents");
+        Route::post("my-documents", [SelfServiceController::class, "storeDocument"])->name("documents.store");
+        Route::get("my-documents/{document}/download", [SelfServiceController::class, "downloadDocument"])->name("documents.download");
+        Route::delete("my-documents/{document}", [SelfServiceController::class, "destroyDocument"])->name("documents.destroy");
+        Route::put("next-of-kin", [SelfServiceController::class, "updateNextOfKin"])->name("next-of-kin.update");
+    });
+
+    // =========================================================
+    // ACCOUNT MANAGER PORTAL
+    // =========================================================
+    Route::prefix("account-manager")->name("account-manager.")->middleware("role:account-manager|super-admin|hr-admin")->group(function () {
+        Route::get("/", [AccountManagerController::class, "dashboard"])->name("dashboard");
+        Route::get("/employees", [AccountManagerController::class, "employees"])->name("employees");
+        Route::get("/employees/{employee}", [AccountManagerController::class, "showEmployee"])->name("employees.show");
+        Route::put("/employees/{employee}", [AccountManagerController::class, "updateEmployee"])->name("employees.update");
+        Route::get("/leaves", [AccountManagerController::class, "leaves"])->name("leaves");
+        Route::post("/leaves/{leave}/approve", [AccountManagerController::class, "approveLeave"])->name("leaves.approve");
+        Route::post("/leaves/{leave}/reject", [AccountManagerController::class, "rejectLeave"])->name("leaves.reject");
+        Route::get("/documents/{document}/download", [SelfServiceController::class, "downloadDocument"])->name("documents.download");
+    });
+
+    // AI Recruitment features (recruiter, hr-admin, super-admin, manager)
+    Route::prefix('recruitment/ai')->name('recruitment.ai.')->middleware('role:super-admin|hr-admin|manager|recruiter')->group(function () {
+        Route::post('/score/{candidate}', [AiRecruitmentController::class, 'score'])->name('score');
+        Route::post('/shortlist/{job}', [AiRecruitmentController::class, 'shortlist'])->name('shortlist');
+        Route::post('/questions/{candidate}', [AiRecruitmentController::class, 'questions'])->name('questions');
+    });
+
     // Admin
     Route::prefix('admin')->name('admin.')->middleware('role:super-admin|hr-admin')->group(function () {
         Route::resource('users', UserController::class);
@@ -218,5 +286,19 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::get('audit', [AuditLogController::class, 'index'])->name('audit.index');
         // System documentation PDF
         Route::get('documentation/pdf', [DocumentationController::class, 'pdf'])->name('documentation.pdf');
+
+        // Client Management
+        Route::prefix('clients')->name('clients.')->group(function () {
+            Route::get('/', [AdminClientController::class, 'index'])->name('index');
+            Route::get('/create', [AdminClientController::class, 'create'])->name('create');
+            Route::post('/', [AdminClientController::class, 'store'])->name('store');
+            Route::get('/{client}', [AdminClientController::class, 'show'])->name('show');
+            Route::get('/{client}/edit', [AdminClientController::class, 'edit'])->name('edit');
+            Route::put('/{client}', [AdminClientController::class, 'update'])->name('update');
+            Route::post('/{client}/assign-employee', [AdminClientController::class, 'assignEmployee'])->name('assign-employee');
+            Route::delete('/{client}/unassign-employee/{employee}', [AdminClientController::class, 'unassignEmployee'])->name('unassign-employee');
+            Route::post('/{client}/assign-job', [AdminClientController::class, 'assignJob'])->name('assign-job');
+            Route::delete('/{client}/unassign-job/{job}', [AdminClientController::class, 'unassignJob'])->name('unassign-job');
+        });
     });
 });

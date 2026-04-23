@@ -2,7 +2,7 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use App\Models\{User, Employee, Department, Designation};
+use App\Models\{User, Employee, Department, Designation, Client};
 use Illuminate\Support\Facades\Hash;
 
 class DemoUsersSeeder extends Seeder
@@ -93,6 +93,24 @@ class DemoUsersSeeder extends Seeder
             $user->syncRoles('employee');
             $this->createEmployee($user, $data['first'], $data['last'], $data['num'], $data['dept'], $data['gender'] ?? null);
         }
+
+        // Demo client user (Acme Corp)
+        $clientUser = User::firstOrCreate(
+            ['email' => 'client@acme.co.za'],
+            ['name' => 'John Acme', 'password' => Hash::make('Client@1234'), 'status' => 'active']
+        );
+        $clientUser->syncRoles('client');
+        Client::firstOrCreate(
+            ['user_id' => $clientUser->id],
+            [
+                'company_name'   => 'Acme Corporation',
+                'contact_person' => 'John Acme',
+                'industry'       => 'Technology',
+                'address'        => '123 Business Park, Sandton, Johannesburg',
+                'status'         => 'active',
+                'notes'          => 'Demo client account for testing',
+            ]
+        );
 
         $this->command->info('Demo users and employees created successfully!');
     }

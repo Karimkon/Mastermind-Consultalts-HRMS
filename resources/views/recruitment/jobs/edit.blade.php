@@ -18,8 +18,11 @@
                     </select>
                 </div>
                 <div><label class="form-label">Type</label>
-                    <select name="type" class="form-input">
-                        @foreach(['full-time','part-time','contract','internship'] as $t)<option value="{{ $t }}" @selected(old('type',$job->type)===$t)>{{ ucfirst($t) }}</option>@endforeach
+                    <select name="employment_type" class="form-input">
+                        <option value="full_time" @selected(old('employment_type',$job->employment_type)==='full_time')>Full Time</option>
+                        <option value="part_time" @selected(old('employment_type',$job->employment_type)==='part_time')>Part Time</option>
+                        <option value="contract" @selected(old('employment_type',$job->employment_type)==='contract')>Contract</option>
+                        <option value="intern" @selected(old('employment_type',$job->employment_type)==='intern')>Internship</option>
                     </select>
                 </div>
                 <div><label class="form-label">Location</label><input type="text" name="location" class="form-input" value="{{ old('location', $job->location) }}"></div>
@@ -27,8 +30,23 @@
                 <div><label class="form-label">Vacancies</label><input type="number" name="vacancies" class="form-input" value="{{ old('vacancies', $job->vacancies ?? 1) }}" min="1"></div>
                 <div><label class="form-label">Status</label>
                     <select name="status" class="form-input">
-                        @foreach(['draft','open','on-hold','closed'] as $s)<option value="{{ $s }}" @selected(old('status',$job->status)===$s)>{{ ucfirst($s) }}</option>@endforeach
+                        <option value="draft" @selected(old('status',$job->status)==='draft')>Draft</option>
+                        <option value="open" @selected(old('status',$job->status)==='open')>Open</option>
+                        <option value="closed" @selected(old('status',$job->status)==='closed')>Closed</option>
+                        <option value="filled" @selected(old('status',$job->status)==='filled')>Filled</option>
                     </select>
+                </div>
+                <div class="col-span-2">
+                    <label class="flex items-center gap-3 cursor-pointer p-3 rounded-xl border-2 {{ $job->is_public ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-slate-50' }}">
+                        <input type="checkbox" name="is_public" value="1" {{ old('is_public', $job->is_public) ? 'checked' : '' }} class="w-4 h-4 text-emerald-600">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-800"><i class="fas fa-globe-africa text-emerald-500 mr-1"></i> Post on Public Job Board</p>
+                            <p class="text-xs text-slate-500">Visible at /careers to anyone — no login required</p>
+                        </div>
+                        @if($job->is_public && $job->status === 'open')
+                        <span class="ml-auto badge-green text-xs">Live</span>
+                        @endif
+                    </label>
                 </div>
             </div>
         </div>

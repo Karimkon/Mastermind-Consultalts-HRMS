@@ -3,6 +3,7 @@ namespace App\Http\Controllers;
 
 use App\Models\{Meeting, MeetingParticipant, Employee};
 use App\Mail\MeetingInviteMail;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Carbon\Carbon;
@@ -52,10 +53,12 @@ class MeetingController extends Controller
             }
             // Queue invite emails to all participants
             $employees = Employee::with('user')->whereIn('id', $request->participants)->get();
+            $ns = app(NotificationService::class);
             foreach ($employees as $employee) {
                 if ($employee->user?->email) {
                     Mail::to($employee->user->email)->queue(new MeetingInviteMail($meeting, $employee));
                 }
+                $ns->meetingInvite($meeting, $employee);
             }
         }
 

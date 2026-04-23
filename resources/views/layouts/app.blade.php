@@ -110,6 +110,35 @@
             <i class="fas fa-home w-4 text-center"></i><span x-show="sidebarOpen">Dashboard</span>
         </a>
 
+        {{-- ===== CLIENT PORTAL ===== --}}
+        @role('client')
+        <p class="sidebar-group" x-show="sidebarOpen">Client Portal</p>
+        <a href="{{ route('client.dashboard') }}" class="sidebar-link {{ request()->routeIs('client.dashboard') ? 'active' : '' }}">
+            <i class="fas fa-home w-4 text-center"></i><span x-show="sidebarOpen">Dashboard</span>
+        </a>
+        <p class="sidebar-group" x-show="sidebarOpen">Approvals</p>
+        <a href="{{ route('client.leaves.index') }}" class="sidebar-link {{ request()->routeIs('client.leaves.*') ? 'active' : '' }}">
+            <i class="fas fa-calendar-minus w-4 text-center"></i><span x-show="sidebarOpen">Leave Approvals</span>
+        </a>
+        <a href="{{ route('client.recruitment.index') }}" class="sidebar-link {{ request()->routeIs('client.recruitment.*') ? 'active' : '' }}">
+            <i class="fas fa-user-check w-4 text-center"></i><span x-show="sidebarOpen">Shortlisting</span>
+        </a>
+        @endrole
+
+        {{-- ===== ACCOUNT MANAGER ===== --}}
+        @role("account-manager")
+        <p class="sidebar-group" x-show="sidebarOpen">Account Manager</p>
+        <a href="{{ route("account-manager.dashboard") }}" class="sidebar-link {{ request()->routeIs("account-manager.dashboard") ? "active" : "" }}">
+            <i class="fas fa-home w-4 text-center"></i><span x-show="sidebarOpen">Dashboard</span>
+        </a>
+        <a href="{{ route("account-manager.employees") }}" class="sidebar-link {{ request()->routeIs("account-manager.employees*") ? "active" : "" }}">
+            <i class="fas fa-users w-4 text-center"></i><span x-show="sidebarOpen">Employees</span>
+        </a>
+        <a href="{{ route("account-manager.leaves") }}" class="sidebar-link {{ request()->routeIs("account-manager.leaves*") ? "active" : "" }}">
+            <i class="fas fa-calendar-minus w-4 text-center"></i><span x-show="sidebarOpen">Leave Management</span>
+        </a>
+        @endrole
+
         {{-- ===== EMPLOYEE ROLE: personal menu only ===== --}}
         @role('employee')
         <p class="sidebar-group" x-show="sidebarOpen">My Work</p>
@@ -184,6 +213,9 @@
         <a href="{{ route('recruitment.jobs.index') }}" class="sidebar-link {{ request()->routeIs('recruitment.*') ? 'active' : '' }}">
             <i class="fas fa-briefcase w-4 text-center"></i><span x-show="sidebarOpen">Recruitment</span>
         </a>
+        <a href="{{ route('careers.index') }}" target="_blank" class="sidebar-link">
+            <i class="fas fa-globe w-4 text-center text-emerald-400"></i><span x-show="sidebarOpen" class="text-emerald-400">Public Job Board ↗</span>
+        </a>
         @endrole
         <a href="{{ route('performance.index') }}" class="sidebar-link {{ request()->routeIs('performance.index') ? 'active' : '' }}">
             <i class="fas fa-chart-line w-4 text-center"></i><span x-show="sidebarOpen">Performance</span>
@@ -222,6 +254,9 @@
         <a href="{{ route('admin.roles.index') }}" class="sidebar-link {{ request()->routeIs('admin.roles.*') ? 'active' : '' }}">
             <i class="fas fa-shield-alt w-4 text-center"></i><span x-show="sidebarOpen">Roles & Permissions</span>
         </a>
+        <a href="{{ route('admin.clients.index') }}" class="sidebar-link {{ request()->routeIs('admin.clients.*') ? 'active' : '' }}">
+            <i class="fas fa-building w-4 text-center"></i><span x-show="sidebarOpen">Clients</span>
+        </a>
         <a href="{{ route('admin.audit.index') }}" class="sidebar-link {{ request()->routeIs('admin.audit.*') ? 'active' : '' }}">
             <i class="fas fa-history w-4 text-center"></i><span x-show="sidebarOpen">Audit Logs</span>
         </a>
@@ -253,7 +288,7 @@
             </button>
             {{-- Breadcrumb --}}
             <nav class="hidden sm:flex items-center gap-2 text-sm">
-                <a href="{{ route('dashboard') }}" class="text-slate-400 hover:text-slate-600">Home</a>
+                <a href="{{ auth()->user()->hasRole('client') ? route('client.dashboard') : route('dashboard') }}" class="text-slate-400 hover:text-slate-600">Home</a>
                 @hasSection("breadcrumb")
                     <i class="fas fa-chevron-right text-slate-300 text-xs"></i>
                     @yield("breadcrumb")

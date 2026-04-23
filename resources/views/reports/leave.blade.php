@@ -2,7 +2,7 @@
 @section('title', 'Leave Report')
 @section('content')
 <x-page-header title="Leave Report" subtitle="Leave summary and balances">
-    <a href="{{ route('reports.export', ['type'=>'leave', 'year'=>request('year')]) }}" class="btn-secondary"><i class="fas fa-file-excel mr-1 text-green-600"></i> Export</a>
+    <a href="{{ route('export.leave') }}" class="btn-secondary"><i class="fas fa-file-excel mr-1 text-green-600"></i> Export Excel</a>
 </x-page-header>
 
 <x-filter-bar :action="route('reports.leave')">

@@ -2,14 +2,16 @@
 
 namespace App\Models;
 
+use App\Notifications\ResetPasswordNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
-    use HasFactory, Notifiable, HasRoles;
+    use HasFactory, Notifiable, HasApiTokens, HasRoles;
 
     protected $fillable = ['name', 'email', 'password', 'avatar', 'status', 'mfa_secret', 'mfa_enabled', 'mfa_confirmed_at'];
     protected $hidden   = ['password', 'remember_token', 'mfa_secret'];
@@ -25,7 +27,8 @@ class User extends Authenticatable
         ];
     }
 
-    public function employee()      { return $this->hasOne(Employee::class); }
+    public function employee()        { return $this->hasOne(Employee::class); }
+    public function client()          { return $this->hasOne(Client::class); }
     public function hrNotifications() { return $this->hasMany(Notification::class)->latest(); }
 
     public function getAvatarUrlAttribute(): string
@@ -35,4 +38,9 @@ class User extends Authenticatable
     }
 
     public function isActive(): bool { return $this->status === 'active'; }
+
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ResetPasswordNotification($token));
+    }
 }

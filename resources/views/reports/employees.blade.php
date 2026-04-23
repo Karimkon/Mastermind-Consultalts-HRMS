@@ -2,7 +2,7 @@
 @section('title', 'Employee Report')
 @section('content')
 <x-page-header title="Employee Report" subtitle="Workforce summary">
-    <a href="{{ route('reports.export', ['type'=>'employees']) }}" class="btn-secondary"><i class="fas fa-file-excel mr-1 text-green-600"></i> Export Excel</a>
+    <a href="{{ route('export.employees') }}" class="btn-secondary"><i class="fas fa-file-excel mr-1 text-green-600"></i> Export Excel</a>
 </x-page-header>
 
 <x-filter-bar :action="route('reports.employees')">

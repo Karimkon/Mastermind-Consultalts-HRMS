@@ -79,14 +79,42 @@
 function clockSystem() { return {
     time: new Date().toLocaleTimeString(),
     message: "",
+    success: true,
+    loading: false,
+    geoEnabled: {{ $geoEnabled ? "true" : "false" }},
     init() { setInterval(() => this.time = new Date().toLocaleTimeString(), 1000); },
-    clockIn() {
-        $.post("{{ route('attendance.clock-in') }}", {}, d => this.message = d.message)
-         .fail(e => this.message = e.responseJSON?.message ?? "Error");
+    getLocation() {
+        return new Promise((resolve, reject) => {
+            if (!this.geoEnabled) return resolve({lat: null, lng: null});
+            if (!navigator.geolocation) return reject("Geolocation not supported by this browser.");
+            navigator.geolocation.getCurrentPosition(
+                pos => resolve({lat: pos.coords.latitude, lng: pos.coords.longitude}),
+                () => reject("Location access denied. Please allow location to clock in/out."),
+                {timeout: 10000}
+            );
+        });
     },
-    clockOut() {
-        $.post("{{ route('attendance.clock-out') }}", {}, d => this.message = d.message)
-         .fail(e => this.message = e.responseJSON?.message ?? "Error");
+    async clockIn() {
+        this.loading = true; this.message = "";
+        try {
+            const loc = await this.getLocation();
+            const data = await new Promise((ok, fail) => {
+                $.post("{{ route('attendance.clock-in') }}", loc, ok).fail(e => fail(e.responseJSON?.error ?? "Error"));
+            });
+            this.message = data.message; this.success = true;
+        } catch(e) { this.message = e; this.success = false; }
+        this.loading = false;
+    },
+    async clockOut() {
+        this.loading = true; this.message = "";
+        try {
+            const loc = await this.getLocation();
+            const data = await new Promise((ok, fail) => {
+                $.post("{{ route('attendance.clock-out') }}", loc, ok).fail(e => fail(e.responseJSON?.error ?? "Error"));
+            });
+            this.message = "Clocked out at " + data.time + " (" + data.hours + "h)"; this.success = true;
+        } catch(e) { this.message = e; this.success = false; }
+        this.loading = false;
     }
 }; }
 </script>

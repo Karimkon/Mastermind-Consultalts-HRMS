@@ -53,6 +53,35 @@
                 </div>
                 <div><label class="form-label">Max Carry Forward Days</label><input type="number" name="max_carry_forward" class="form-input w-24" value="{{ $settings['max_carry_forward'] ?? '10' }}"></div>
             </div>
+            <!-- Attendance / Geo-Fence -->
+            <div x-show="activeTab === 'attendance'" x-cloak class="card p-6 space-y-4">
+                <h3 class="font-semibold text-slate-700 mb-2">Attendance & Geo-Fence Settings</h3>
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                    <i class="fas fa-map-marker-alt mr-1"></i>
+                    Set the office GPS coordinates below to enable geo-fenced clock-in/out. Leave blank to allow clocking from anywhere.
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Office Latitude</label>
+                        <input type="text" name="office_lat" class="form-input" placeholder="e.g. -26.2041" value="{{ $settings['office_lat'] ?? '' }}">
+                        <p class="text-xs text-slate-400 mt-1">Decimal degrees (negative = South)</p>
+                    </div>
+                    <div>
+                        <label class="form-label">Office Longitude</label>
+                        <input type="text" name="office_lng" class="form-input" placeholder="e.g. 28.0473" value="{{ $settings['office_lng'] ?? '' }}">
+                        <p class="text-xs text-slate-400 mt-1">Decimal degrees (positive = East)</p>
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">Geo-Fence Radius (metres)</label>
+                    <input type="number" name="geo_radius_meters" class="form-input w-36" min="50" max="5000" value="{{ $settings['geo_radius_meters'] ?? 100 }}">
+                    <p class="text-xs text-slate-400 mt-1">Employees must be within this radius to clock in/out. Minimum 50m.</p>
+                </div>
+                <div class="text-xs text-slate-500 flex items-center gap-2">
+                    <i class="fas fa-info-circle text-blue-400"></i>
+                    To find your office coordinates: open Google Maps, right-click on your office location, and copy the coordinates shown.
+                </div>
+            </div>
             <!-- Notifications -->
             <div x-show="activeTab === 'notifications'" x-cloak class="card p-6 space-y-4">
                 <h3 class="font-semibold text-slate-700 mb-2">Notification Settings</h3>

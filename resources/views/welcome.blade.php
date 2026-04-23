@@ -327,6 +327,7 @@
                 <a href="#features" class="px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/5 rounded-lg transition-all font-medium">Features</a>
                 <a href="#modules" class="px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/5 rounded-lg transition-all font-medium">Modules</a>
                 <a href="#roles" class="px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/5 rounded-lg transition-all font-medium">Roles</a>
+                <a href="{{ route('careers.index') }}" class="px-4 py-2 text-sm text-emerald-400 hover:text-white hover:bg-emerald-500/10 rounded-lg transition-all font-medium flex items-center gap-1.5"><i class="fas fa-briefcase text-xs"></i> Careers</a>
                 <a href="#how-it-works" class="px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/5 rounded-lg transition-all font-medium">How It Works</a>
                 <a href="#tech" class="px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/5 rounded-lg transition-all font-medium">Technology</a>
             </div>
@@ -358,6 +359,7 @@
             <a href="#features" @click="mobileOpen=false" class="block px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all font-medium"><i class="fas fa-star mr-2 text-blue-400"></i> Features</a>
             <a href="#modules" @click="mobileOpen=false" class="block px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all font-medium"><i class="fas fa-th-large mr-2 text-blue-400"></i> Modules</a>
             <a href="#roles" @click="mobileOpen=false" class="block px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all font-medium"><i class="fas fa-users mr-2 text-blue-400"></i> Roles</a>
+            <a href="{{ route('careers.index') }}" @click="mobileOpen=false" class="block px-4 py-3 text-sm text-emerald-400 hover:text-white hover:bg-emerald-500/10 rounded-xl transition-all font-medium"><i class="fas fa-briefcase mr-2"></i> Careers</a>
             <a href="#how-it-works" @click="mobileOpen=false" class="block px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-all font-medium"><i class="fas fa-map mr-2 text-blue-400"></i> How It Works</a>
             <div class="pt-3 border-t border-white/10 flex gap-2">
                 <a href="{{ route('login') }}" class="flex-1 text-center py-3 text-sm text-slate-300 hover:text-white font-medium rounded-xl hover:bg-white/5 transition-colors">Sign In</a>

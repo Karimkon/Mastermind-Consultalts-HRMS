@@ -37,6 +37,11 @@ class LoginController extends Controller
 
             $request->session()->regenerate();
             session(['mfa_verified' => true]);
+
+            if ($user->hasRole('client')) {
+                return redirect()->route('client.dashboard');
+            }
+
             return redirect()->intended(route('dashboard'));
         }
 
