@@ -1,6 +1,7 @@
 <?php
 namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\ShortlistingResponse;
 
 class Candidate extends Model
 {
@@ -19,7 +20,8 @@ class Candidate extends Model
         return trim($this->first_name . ' ' . $this->last_name);
     }
 
-    public function jobPosting()        { return $this->belongsTo(JobPosting::class); }
-    public function interviews()        { return $this->hasMany(Interview::class); }
-    public function clientShortlister() { return $this->belongsTo(Client::class, 'client_shortlisted_by'); }
+    public function jobPosting()           { return $this->belongsTo(JobPosting::class); }
+    public function interviews()           { return $this->hasMany(Interview::class); }
+    public function clientShortlister()    { return $this->belongsTo(Client::class, 'client_shortlisted_by'); }
+    public function shortlistingResponse() { return $this->hasOne(ShortlistingResponse::class); }
 }

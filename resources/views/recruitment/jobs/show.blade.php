@@ -2,6 +2,7 @@
 @section('title', $job->title)
 @section('content')
 <x-page-header :title="$job->title" :subtitle="$job->department->name ?? 'No Department'">
+    <a href="{{ route('recruitment.shortlisting.manage', $job) }}" class="btn-secondary"><i class="fas fa-filter mr-1"></i> Shortlisting</a>
     <a href="{{ route('recruitment.candidates.create', ['job_posting_id' => $job->id]) }}" class="btn-primary"><i class="fas fa-user-plus mr-1"></i> Add Candidate</a>
     <a href="{{ route('recruitment.jobs.edit', $job) }}" class="btn-secondary"><i class="fas fa-edit mr-1"></i> Edit</a>
 </x-page-header>

@@ -2,6 +2,7 @@
 namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use App\Models\ShortlistingCriteria;
 
 class JobPosting extends Model
 {
@@ -28,6 +29,8 @@ class JobPosting extends Model
         });
     }
 
-    public function department() { return $this->belongsTo(Department::class); }
-    public function candidates() { return $this->hasMany(Candidate::class); }
+    public function department()           { return $this->belongsTo(Department::class); }
+    public function candidates()           { return $this->hasMany(Candidate::class); }
+    public function shortlistingCriteria() { return $this->hasMany(ShortlistingCriteria::class); }
+    public function activeCriteria()       { return $this->hasOne(ShortlistingCriteria::class)->where('is_active', true)->latest(); }
 }

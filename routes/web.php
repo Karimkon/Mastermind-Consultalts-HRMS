@@ -10,6 +10,7 @@ use App\Http\Controllers\CareersController;
 use App\Http\Controllers\Performance\{GoalController, PipController};
 use App\Http\Controllers\Training\AssessmentController;
 use App\Http\Controllers\Recruitment\OfferController;
+use App\Http\Controllers\Recruitment\ShortlistingController;
 
 // =========================================================
 // PUBLIC JOB BOARD (no auth)
@@ -152,6 +153,14 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::post('interviews', [RecruitmentController::class, 'interviewsStore'])->name('interviews.store');
         Route::get('interviews/{interview}', [RecruitmentController::class, 'interviewsShow'])->name('interviews.show');
         Route::put('interviews/{interview}', [RecruitmentController::class, 'interviewsUpdate'])->name('interviews.update');
+
+        // Shortlisting Criteria
+        Route::get('jobs/{job}/shortlisting', [ShortlistingController::class, 'manage'])->name('shortlisting.manage');
+        Route::post('jobs/{job}/shortlisting', [ShortlistingController::class, 'store'])->name('shortlisting.store');
+        Route::get('jobs/{job}/shortlisting/results', [ShortlistingController::class, 'results'])->name('shortlisting.results');
+        Route::post('jobs/{job}/shortlisting/auto-shortlist', [ShortlistingController::class, 'autoShortlist'])->name('shortlisting.auto-shortlist');
+        Route::put('jobs/{job}/shortlisting/{criteria}', [ShortlistingController::class, 'update'])->name('shortlisting.update');
+        Route::delete('jobs/{job}/shortlisting/{criteria}', [ShortlistingController::class, 'destroy'])->name('shortlisting.destroy');
     });
 
     // Performance

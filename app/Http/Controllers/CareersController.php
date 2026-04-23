@@ -1,7 +1,8 @@
 <?php
 namespace App\Http\Controllers;
 
-use App\Models\{JobPosting, Candidate, Department};
+use App\Models\{JobPosting, Candidate, Department, ShortlistingCriteria};
+use App\Http\Controllers\Recruitment\ShortlistingController;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -34,7 +35,14 @@ class CareersController extends Controller
             ->where("id","!=",$job->id)
             ->where("department_id", $job->department_id)
             ->limit(3)->get();
-        return view("careers.show", compact("job", "relatedJobs"));
+
+        $screeningCriteria = ShortlistingCriteria::with('questions')
+            ->where('job_posting_id', $job->id)
+            ->where('is_active', true)
+            ->latest()
+            ->first();
+
+        return view("careers.show", compact("job", "relatedJobs", "screeningCriteria"));
     }
 
     public function apply(Request $request, JobPosting $job)
@@ -64,6 +72,21 @@ class CareersController extends Controller
             "status"         => "new",
             "source"         => "careers_page",
         ]);
+
+        // Save screening questionnaire responses if criteria exists
+        $criteria = ShortlistingCriteria::with('questions')
+            ->where('job_posting_id', $job->id)
+            ->where('is_active', true)
+            ->latest()
+            ->first();
+
+        if ($criteria && $criteria->questions->isNotEmpty()) {
+            $answers = [];
+            foreach ($criteria->questions as $question) {
+                $answers[$question->id] = $request->input("screening.{$question->id}");
+            }
+            ShortlistingController::saveResponses($candidate, $criteria, $answers);
+        }
 
         app(NotificationService::class)->newApplication($candidate);
 

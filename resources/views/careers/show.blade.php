@@ -132,6 +132,79 @@
                             class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-600 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700">
                         <p class="text-xs text-slate-400 mt-1">PDF, DOC or DOCX — max 5MB</p>
                     </div>
+                    {{-- Screening Questions (if criteria active) --}}
+                    @if(!empty($screeningCriteria) && $screeningCriteria->questions->isNotEmpty())
+                    <div class="border-t border-slate-200 pt-4">
+                        <h3 class="font-semibold text-slate-800 text-sm mb-1">Screening Questions</h3>
+                        <p class="text-xs text-slate-400 mb-4">Please answer all questions below. Your responses help us identify the best fit.</p>
+                        <div class="space-y-5">
+                            @foreach($screeningCriteria->questions as $q)
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-2">
+                                    {{ $loop->iteration }}. {{ $q->question }}
+                                    <span class="text-xs text-slate-400 font-normal ml-1">(weight: {{ $q->weight }})</span>
+                                </label>
+
+                                @if($q->question_type === 'multiple_choice' && !empty($q->options))
+                                <div class="space-y-1.5">
+                                    @foreach($q->options as $oi => $opt)
+                                    <label class="flex items-center gap-2 p-2.5 rounded-lg border border-slate-200 cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition text-sm">
+                                        <input type="radio" name="screening[{{ $q->id }}]" value="{{ $oi }}"
+                                            class="accent-blue-600" required>
+                                        {{ $opt['text'] }}
+                                    </label>
+                                    @endforeach
+                                </div>
+
+                                @elseif($q->question_type === 'yes_no')
+                                <div class="flex gap-3">
+                                    <label class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 cursor-pointer hover:bg-green-50 hover:border-green-300 transition text-sm flex-1 justify-center">
+                                        <input type="radio" name="screening[{{ $q->id }}]" value="yes"
+                                            class="accent-green-600" required>
+                                        Yes
+                                    </label>
+                                    <label class="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 cursor-pointer hover:bg-red-50 hover:border-red-300 transition text-sm flex-1 justify-center">
+                                        <input type="radio" name="screening[{{ $q->id }}]" value="no"
+                                            class="accent-red-500" required>
+                                        No
+                                    </label>
+                                </div>
+
+                                @elseif($q->question_type === 'scale')
+                                <div class="flex gap-2">
+                                    @foreach([1,2,3,4,5] as $val)
+                                    <label class="flex-1 text-center p-2 rounded-lg border border-slate-200 cursor-pointer hover:bg-amber-50 hover:border-amber-300 transition text-sm font-medium">
+                                        <input type="radio" name="screening[{{ $q->id }}]" value="{{ $val }}"
+                                            class="sr-only" required>
+                                        <span class="block">{{ $val }}</span>
+                                        <span class="text-xs text-slate-400">{{ $val === 1 ? 'Low' : ($val === 5 ? 'High' : '') }}</span>
+                                    </label>
+                                    @endforeach
+                                </div>
+                                <script>
+                                document.querySelectorAll('input[name="screening[{{ $q->id }}]"]').forEach(function(radio) {
+                                    radio.addEventListener('change', function() {
+                                        document.querySelectorAll('input[name="screening[{{ $q->id }}]"]').forEach(function(r) {
+                                            r.closest('label').classList.remove('bg-amber-100','border-amber-400');
+                                        });
+                                        if (this.checked) {
+                                            this.closest('label').classList.add('bg-amber-100','border-amber-400');
+                                        }
+                                    });
+                                });
+                                </script>
+
+                                @elseif($q->question_type === 'text')
+                                <textarea name="screening[{{ $q->id }}]" rows="3"
+                                    class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none"
+                                    placeholder="Your answer..."></textarea>
+                                @endif
+                            </div>
+                            @endforeach
+                        </div>
+                    </div>
+                    @endif
+
                     <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl text-sm transition">
                         <i class="fas fa-paper-plane mr-2"></i>Submit Application
                     </button>
