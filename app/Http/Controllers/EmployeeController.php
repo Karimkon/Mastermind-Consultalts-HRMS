@@ -82,7 +82,7 @@ class EmployeeController extends Controller
 
     public function show(Employee $employee)
     {
-        $employee->load(['department', 'designation', 'manager', 'user', 'documents', 'employmentHistory', 'leaveBalances.leaveType']);
+        $employee->load(['department', 'designation', 'manager', 'user', 'documents', 'history', 'leaveBalances.leaveType', 'clients']);
         return view('employees.show', compact('employee'));
     }
 
@@ -145,7 +145,15 @@ class EmployeeController extends Controller
     public function storeHistory(Request $request, Employee $employee)
     {
         $request->validate(['position' => 'required|string']);
-        $employee->employmentHistory()->create($request->only('position','department','start_date','end_date','reason'));
+        $employee->history()->create([
+            'position'          => $request->position,
+            'company_name'      => $request->company_name,
+            'start_date'        => $request->start_date,
+            'end_date'          => $request->end_date,
+            'reason_for_change' => $request->reason_for_change,
+            'type'              => $request->type ?? 'internal',
+            'recorded_by'       => auth()->id(),
+        ]);
         return back()->with('success', 'History entry added.');
     }
 }

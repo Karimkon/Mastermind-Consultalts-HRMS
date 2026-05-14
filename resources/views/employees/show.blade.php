@@ -15,6 +15,21 @@
         <p class="text-sm text-slate-500">{{ $employee->designation?->title }}</p>
         <p class="text-xs text-slate-400 mt-1">{{ $employee->department?->name }}</p>
         <div class="mt-3">{!! $employee->status_badge !!}</div>
+
+        {{-- Assigned Client / Company --}}
+        @php $assignedClient = $employee->clients->first(); @endphp
+        @if($assignedClient)
+        <div class="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 text-left">
+            <p class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-1 flex items-center gap-1">
+                <i class="fas fa-building"></i> Assigned Company
+            </p>
+            <p class="text-sm font-bold text-blue-900">{{ $assignedClient->company_name }}</p>
+            @if($assignedClient->contact_person)
+            <p class="text-xs text-blue-500 mt-0.5">{{ $assignedClient->contact_person }}</p>
+            @endif
+        </div>
+        @endif
+
         <div class="mt-4 pt-4 border-t border-slate-100 space-y-2 text-left">
             <div class="flex items-center gap-2 text-sm text-slate-600">
                 <i class="fas fa-id-badge w-4 text-slate-400"></i>
@@ -54,7 +69,7 @@
             <div class="p-6">
                 {{-- Personal --}}
                 <div x-show="tab === 'info'" class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    @foreach(["Date of Birth" => $employee->date_of_birth?->format('M d, Y'), "Gender" => ucfirst($employee->gender ?? '—'), "National ID" => $employee->national_id ?? '—', "Personal Email" => $employee->personal_email ?? '—', "City" => $employee->city ?? '—', "Country" => $employee->country ?? '—', "Emergency Contact" => $employee->emergency_contact_name ?? '—', "Emergency Phone" => $employee->emergency_contact_phone ?? '—'] as $label => $val)
+                    @foreach(["Date of Birth" => $employee->date_of_birth?->format('M d, Y') ?? '—', "Gender" => ucfirst($employee->gender ?? '—'), "National ID" => $employee->national_id ?? '—', "Personal Email" => $employee->personal_email ?? '—', "City" => $employee->city ?? '—', "Country" => $employee->country ?? '—', "Emergency Contact" => $employee->emergency_contact_name ?? '—', "Emergency Phone" => $employee->emergency_contact_phone ?? '—'] as $label => $val)
                     <div>
                         <p class="text-xs text-slate-400 uppercase tracking-wider">{{ $label }}</p>
                         <p class="text-sm font-medium text-slate-700 mt-0.5">{{ $val }}</p>
@@ -70,7 +85,7 @@
 
                 {{-- Job --}}
                 <div x-show="tab === 'job'" class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    @foreach(["Employee Number" => $employee->emp_number, "Department" => $employee->department?->name ?? '—', "Designation" => $employee->designation?->title ?? '—', "Manager" => $employee->manager?->full_name ?? '—', "Employment Type" => ucfirst(str_replace('_',' ',$employee->employment_type)), "Hire Date" => $employee->hire_date?->format('M d, Y'), "Salary Grade" => $employee->salary_grade ?? '—', "Tax Number" => $employee->tax_number ?? '—'] as $label => $val)
+                    @foreach(["Employee Number" => $employee->emp_number, "Department" => $employee->department?->name ?? '—', "Designation" => $employee->designation?->title ?? '—', "Manager" => $employee->manager?->full_name ?? '—', "Employment Type" => ucfirst(str_replace('_',' ',$employee->employment_type ?? '')), "Hire Date" => $employee->hire_date?->format('M d, Y') ?? '—', "Salary Grade" => $employee->salary_grade ?? '—', "Tax Number" => $employee->tax_number ?? '—'] as $label => $val)
                     <div>
                         <p class="text-xs text-slate-400 uppercase tracking-wider">{{ $label }}</p>
                         <p class="text-sm font-medium text-slate-700 mt-0.5">{{ $val }}</p>
@@ -90,11 +105,12 @@
 
                 {{-- Leave Balances --}}
                 <div x-show="tab === 'leave'">
-                    @if($employee->leaveBalances->count())
+                    @php $balances = $employee->leaveBalances->where('year', now()->year); @endphp
+                    @if($balances->count())
                     <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        @foreach($employee->leaveBalances as $bal)
+                        @foreach($balances as $bal)
                         <div class="rounded-xl p-4 border border-slate-200 bg-slate-50">
-                            <p class="text-xs font-semibold text-slate-500 uppercase">{{ $bal->leaveType->name }}</p>
+                            <p class="text-xs font-semibold text-slate-500 uppercase">{{ $bal->leaveType?->name ?? 'Unknown' }}</p>
                             <div class="flex items-end gap-2 mt-2">
                                 <span class="text-2xl font-bold text-slate-900">{{ $bal->remaining }}</span>
                                 <span class="text-xs text-slate-400 mb-1">/ {{ $bal->total_days }} days</span>
@@ -107,7 +123,7 @@
                         @endforeach
                     </div>
                     @else
-                    <p class="text-sm text-slate-400 text-center py-8">No leave balances for current year.</p>
+                    <p class="text-sm text-slate-400 text-center py-8">No leave balances for {{ now()->year }}.</p>
                     @endif
                 </div>
             </div>
@@ -117,6 +133,7 @@
         <div class="card p-6">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="font-semibold text-slate-800 flex items-center gap-2"><i class="fas fa-history text-blue-500"></i> Employment History</h3>
+                <a href="{{ route('employees.history', $employee) }}" class="text-xs text-blue-600 hover:underline">View all / Add</a>
             </div>
             @if($employee->history->count())
             <div class="relative pl-6 border-l-2 border-slate-200 space-y-4">
@@ -124,7 +141,10 @@
                 <div class="relative">
                     <div class="absolute -left-[1.375rem] w-3 h-3 bg-blue-500 rounded-full border-2 border-white top-1.5"></div>
                     <p class="text-sm font-semibold text-slate-800">{{ $hist->position }}</p>
-                    <p class="text-xs text-slate-500">{{ $hist->start_date?->format('M Y') }} {{ $hist->end_date ? '— ' . $hist->end_date?->format('M Y') : '— Present' }}</p>
+                    <p class="text-xs text-slate-500">
+                        {{ $hist->start_date?->format('M Y') }} {{ $hist->end_date ? '— ' . $hist->end_date->format('M Y') : '— Present' }}
+                        @if($hist->company_name) · {{ $hist->company_name }} @endif
+                    </p>
                     @if($hist->reason_for_change)<p class="text-xs text-slate-400 mt-0.5">{{ $hist->reason_for_change }}</p>@endif
                 </div>
                 @endforeach

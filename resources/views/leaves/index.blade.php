@@ -42,7 +42,7 @@
         @forelse($requests as $leave)
         <tr class="table-row">
             <td class="px-6 py-3"><div class="flex items-center gap-3"><img src="{{ $leave->employee->avatar_url }}" class="w-8 h-8 rounded-full"><p class="text-sm font-medium text-slate-800">{{ $leave->employee->full_name }}</p></div></td>
-            <td class="px-4 py-3"><span class="badge-blue">{{ $leave->leaveType->name }}</span></td>
+            <td class="px-4 py-3"><span class="badge-blue">{{ $leave->leaveType?->name ?? '—' }}</span></td>
             <td class="px-4 py-3 text-sm text-slate-600">{{ $leave->from_date->format('M d, Y') }}</td>
             <td class="px-4 py-3 text-sm text-slate-600">{{ $leave->to_date->format('M d, Y') }}</td>
             <td class="px-4 py-3 text-center text-sm font-semibold text-slate-800">{{ $leave->days_count }}</td>

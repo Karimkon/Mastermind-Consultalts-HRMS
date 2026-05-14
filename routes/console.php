@@ -17,5 +17,8 @@ Schedule::command('hrms:auto-resume-leave-status')->dailyAt('00:05');
 // Certification expiry alerts — daily at 08:00
 Schedule::command('hrms:cert-expiry-alert')->dailyAt('08:00');
 
+// Document & certification expiry alerts (Phase 4) — daily at 08:15
+Schedule::command('hrms:document-expiry-alerts')->dailyAt('08:15');
+
 // Recurring meeting instances — generate daily at 01:00
 Schedule::command('hrms:generate-recurring-meetings')->dailyAt('01:00');

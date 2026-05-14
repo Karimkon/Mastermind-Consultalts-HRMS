@@ -28,11 +28,11 @@
                 <div><p class="text-sm font-medium text-slate-800">{{ $slip->employee->full_name }}</p><p class="text-xs text-slate-500">{{ $slip->employee->emp_number }}</p></div>
             </div>
         </td>
-        <td class="px-4 py-3 text-sm">{{ number_format($slip->basic) }}</td>
-        <td class="px-4 py-3 text-sm font-medium text-blue-600">{{ number_format($slip->gross) }}</td>
-        <td class="px-4 py-3 text-sm text-red-500">{{ number_format($slip->deductions) }}</td>
-        <td class="px-4 py-3 text-sm text-orange-500">{{ number_format($slip->tax) }}</td>
-        <td class="px-4 py-3 text-sm font-bold text-green-600">{{ number_format($slip->net) }}</td>
+        <td class="px-4 py-3 text-sm">{{ number_format($slip->basic_salary) }}</td>
+        <td class="px-4 py-3 text-sm font-medium text-blue-600">{{ number_format($slip->gross_salary) }}</td>
+        <td class="px-4 py-3 text-sm text-red-500">{{ number_format($slip->total_deductions) }}</td>
+        <td class="px-4 py-3 text-sm text-orange-500">{{ number_format($slip->tax_amount) }}</td>
+        <td class="px-4 py-3 text-sm font-bold text-green-600">{{ number_format($slip->net_salary) }}</td>
     </tr>
     @empty
     <tr><td colspan="6" class="text-center py-8 text-slate-400">No payroll data found.</td></tr>

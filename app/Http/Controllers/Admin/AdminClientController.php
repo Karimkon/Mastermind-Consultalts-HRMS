@@ -81,15 +81,23 @@ class AdminClientController extends Controller
     public function update(Request $request, Client $client)
     {
         $request->validate([
-            'company_name'   => 'required|string|max:255',
-            'contact_person' => 'required|string|max:255',
-            'industry'       => 'nullable|string|max:255',
-            'address'        => 'nullable|string',
-            'status'         => 'required|in:active,inactive',
-            'notes'          => 'nullable|string',
+            'company_name'      => 'required|string|max:255',
+            'contact_person'    => 'required|string|max:255',
+            'industry'          => 'nullable|string|max:255',
+            'address'           => 'nullable|string',
+            'status'            => 'required|in:active,inactive',
+            'notes'             => 'nullable|string',
+            'payment_day'       => 'nullable|integer|min:1|max:31',
+            'work_site_address' => 'nullable|string|max:255',
+            'work_site_lat'     => 'nullable|numeric|between:-90,90',
+            'work_site_lng'     => 'nullable|numeric|between:-180,180',
+            'geo_fence_radius'  => 'nullable|integer|min:10|max:5000',
         ]);
 
-        $client->update($request->only('company_name', 'contact_person', 'industry', 'address', 'status', 'notes'));
+        $client->update($request->only(
+            'company_name', 'contact_person', 'industry', 'address', 'status', 'notes',
+            'payment_day', 'work_site_address', 'work_site_lat', 'work_site_lng', 'geo_fence_radius'
+        ));
 
         return redirect()->route('admin.clients.show', $client)
             ->with('success', 'Client updated successfully.');
@@ -132,5 +140,37 @@ class AdminClientController extends Controller
     {
         $client->jobPostings()->detach($jobPosting->id);
         return back()->with('success', 'Job posting removed from client.');
+    }
+
+    public function accountManagers()
+    {
+        // All users with account-manager role
+        $managers = User::role('account-manager')
+            ->with(['managedClients' => function ($q) {
+                $q->withCount('employees');
+            }])
+            ->orderBy('name')
+            ->get();
+
+        // All clients for the assignment dropdown
+        $allClients  = Client::orderBy('company_name')->get();
+        $allManagers = $managers;
+
+        // Unassigned clients (no AM yet)
+        $unassigned = Client::whereNull('account_manager_id')->orderBy('company_name')->get();
+
+        return view('admin.account-managers.index', compact('managers', 'allClients', 'unassigned'));
+    }
+
+    public function assignAccountManager(Request $request)
+    {
+        $request->validate([
+            'client_id'          => 'required|exists:clients,id',
+            'account_manager_id' => 'nullable|exists:users,id',
+        ]);
+        Client::findOrFail($request->client_id)->update([
+            'account_manager_id' => $request->account_manager_id ?: null,
+        ]);
+        return back()->with('success', 'Account Manager assignment updated.');
     }
 }

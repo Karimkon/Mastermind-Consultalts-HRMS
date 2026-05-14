@@ -2,8 +2,10 @@
 namespace App\Http\Controllers;
 
 use App\Mail\LeaveSubmittedMail;
+use App\Mail\LeaveClientNotificationMail;
+use App\Mail\LeaveApprovedByClientMail;
 use App\Services\NotificationService;
-use App\Models\{LeaveRequest, LeaveType, LeaveBalance, Employee, Department, User};
+use App\Models\{LeaveRequest, LeaveType, LeaveBalance, Employee, Department, User, Client};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Carbon\Carbon;
@@ -41,16 +43,86 @@ class LeaveController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate(['leave_type_id'=>'required','from_date'=>'required|date','to_date'=>'required|date|after_or_equal:from_date','reason'=>'required|string']);
-        $days = Carbon::parse($request->from_date)->diffInWeekdays(Carbon::parse($request->to_date)) + 1;
-        $leave = LeaveRequest::create(['employee_id' => auth()->user()->employee->id, 'leave_type_id' => $request->leave_type_id, 'from_date' => $request->from_date, 'to_date' => $request->to_date, 'days_count' => $days, 'reason' => $request->reason, 'status' => 'pending']);
+        $request->validate([
+            'leave_type_id'    => 'required|exists:leave_types,id',
+            'from_date'        => 'required|date',
+            'to_date'          => 'required|date|after_or_equal:from_date',
+            'reason'           => 'required|string',
+            'replacement_name' => 'required|string|max:255',
+            'replacement_email'=> 'required|email|max:255',
+            'replacement_phone'=> 'required|string|max:30',
+        ]);
 
+        $days  = Carbon::parse($request->from_date)->diffInWeekdays(Carbon::parse($request->to_date)) + 1;
+        $empId = auth()->user()->employee->id;
+
+        $leave = LeaveRequest::create([
+            'employee_id'       => $empId,
+            'leave_type_id'     => $request->leave_type_id,
+            'from_date'         => $request->from_date,
+            'to_date'           => $request->to_date,
+            'days_count'        => $days,
+            'reason'            => $request->reason,
+            'status'            => 'pending',
+            'replacement_name'  => $request->replacement_name,
+            'replacement_email' => $request->replacement_email,
+            'replacement_phone' => $request->replacement_phone,
+        ]);
+
+        // In-app notification
         app(NotificationService::class)->leaveSubmitted($leave);
 
-        return redirect()->route('leaves.index')->with('success', 'Leave request submitted.');
+        // Email 1: Account Manager
+        $this->notifyAccountManager($leave);
+
+        // Email 2: Client company contact
+        $this->notifyClient($leave);
+
+        return redirect()->route('leaves.index')->with('success', 'Leave request submitted. Your Account Manager and Client have been notified.');
     }
 
-    public function show(LeaveRequest $leave) { return view('leaves.show', ['leave' => $leave->load(['employee', 'leaveType'])]); }
+    private function notifyAccountManager(LeaveRequest $leave): void
+    {
+        try {
+            // Find the client this employee belongs to
+            $client = Client::whereHas('employees', fn($q) => $q->where('employees.id', $leave->employee_id))->first();
+            if (!$client) return;
+
+            // Get the account manager user
+            $amUser = $client->accountManager;
+            if ($amUser && $amUser->email) {
+                Mail::to($amUser->email)->send(new LeaveSubmittedMail($leave));
+            }
+        } catch (\Exception $e) {
+            // Don't fail the request if mail fails
+            logger()->error('AM leave email failed: ' . $e->getMessage());
+        }
+    }
+
+    private function notifyClient(LeaveRequest $leave): void
+    {
+        try {
+            $client = Client::whereHas('employees', fn($q) => $q->where('employees.id', $leave->employee_id))->first();
+            if (!$client) return;
+
+            // Client contact (the user account linked to the client, or contact_person if no user)
+            $clientUser = $client->user;
+            $clientEmail = $clientUser?->email ?? null;
+
+            if ($clientEmail) {
+                Mail::to($clientEmail)->send(new LeaveClientNotificationMail($leave));
+            }
+        } catch (\Exception $e) {
+            logger()->error('Client leave email failed: ' . $e->getMessage());
+        }
+    }
+
+    public function show(LeaveRequest $leave)
+    {
+        $leave->load(['employee.user', 'employee.clients', 'employee.department', 'employee.designation', 'leaveType', 'approver']);
+        $client = $leave->employee?->clients->first();
+        return view('leaves.show', compact('leave', 'client'));
+    }
 
     public function edit(LeaveRequest $leave)
     {

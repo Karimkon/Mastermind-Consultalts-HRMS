@@ -29,7 +29,7 @@
                 <div><label class="form-label">Company Phone</label><input type="text" name="company_phone" class="form-input" value="{{ $settings['company_phone'] ?? '' }}"></div>
                 <div><label class="form-label">Address</label><textarea name="company_address" rows="3" class="form-input">{{ $settings['company_address'] ?? '' }}</textarea></div>
                 <div><label class="form-label">Company Logo</label><input type="file" name="company_logo" class="form-input" accept="image/*"></div>
-                <div><label class="form-label">Currency Symbol</label><input type="text" name="currency_symbol" class="form-input w-24" value="{{ $settings['currency_symbol'] ?? 'KES' }}"></div>
+                <div><label class="form-label">Currency Symbol</label><input type="text" name="currency_symbol" class="form-input w-24" value="{{ $settings['currency_symbol'] ?? 'UGX' }}"></div>
             </div>
             <!-- Payroll -->
             <div x-show="activeTab === 'payroll'" x-cloak class="card p-6 space-y-4">

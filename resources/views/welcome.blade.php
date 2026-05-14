@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Mastermind HRMS — Enterprise Human Resource Management System. Manage employees, payroll, attendance, recruitment, performance and more in one unified platform.">
     <title>Mastermind HRMS — Enterprise Workforce Management</title>
+    <link rel="icon" href="/favicon.ico?v=2" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png?v=2">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png?v=2">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png?v=2">
 
     {{-- Fonts --}}
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -312,14 +316,10 @@
         <div class="flex items-center justify-between h-16 sm:h-18">
 
             {{-- Logo --}}
-            <a href="/" class="flex items-center gap-2.5 group">
-                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30 group-hover:scale-110 transition-transform">
-                    <i class="fas fa-building text-white text-sm"></i>
-                </div>
-                <div class="flex flex-col leading-none">
-                    <span class="text-white font-bold text-base tracking-tight">Mastermind</span>
-                    <span class="text-blue-400 text-xs font-medium tracking-widest uppercase">HRMS</span>
-                </div>
+            <a href="/" class="flex items-center group">
+                <img src="/images/logo.png" alt="Mastermind HRMS"
+                     class="h-8 w-auto object-contain group-hover:opacity-90 transition-opacity"
+                     style="background:white; padding:4px 10px; border-radius:8px;">
             </a>
 
             {{-- Desktop Nav --}}
@@ -466,7 +466,7 @@
 
                     {{-- Stat Cards Row --}}
                     <div class="grid grid-cols-4 gap-3 mb-4">
-                        @foreach([['247','Employees','users','blue'],['92%','Attendance','clock','green'],['12','Pending','calendar-minus','yellow'],['KSh 2.4M','Payroll','money-bill-wave','purple']] as [$val,$label,$icon,$color])
+                        @foreach([['247','Employees','users','blue'],['92%','Attendance','clock','green'],['12','Pending','calendar-minus','yellow'],['UGX 2.4M','Payroll','money-bill-wave','purple']] as [$val,$label,$icon,$color])
                         <div class="rounded-xl p-3" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);">
                             <div class="flex items-center justify-between mb-2">
                                 <span class="text-xs text-slate-500 font-medium">{{ $label }}</span>
@@ -631,7 +631,7 @@
                     tagline: 'Automated Monthly Payroll Processing',
                     desc: 'Configure salary grades, allowances, and deductions once. Run payroll in one click — the engine computes gross, PAYE tax, NHIF, NSSF, and net pay for every employee, then generates beautiful PDF payslips.',
                     features: ['Salary grades & component library','One-click payroll run processing','PAYE / NHIF / NSSF calculation','DomPDF payslips with company branding'],
-                    preview: { stats: ['KSh 2.4M','247 Slips','32% Tax','Net 1.6M'], icon: 'fa-money-bill-wave', bars: [100,85,68,65,72] }
+                    preview: { stats: ['UGX 2.4M','247 Slips','32% Tax','Net 1.6M'], icon: 'fa-money-bill-wave', bars: [100,85,68,65,72] }
                 },
                 {
                     name: 'Recruitment',
@@ -1016,14 +1016,10 @@
 
             {{-- Col 1: Brand --}}
             <div class="lg:col-span-1">
-                <div class="flex items-center gap-2.5 mb-4">
-                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
-                        <i class="fas fa-building text-white text-sm"></i>
-                    </div>
-                    <div class="flex flex-col leading-none">
-                        <span class="text-white font-bold text-base">Mastermind</span>
-                        <span class="text-blue-400 text-xs font-medium tracking-widest uppercase">HRMS</span>
-                    </div>
+                <div class="mb-4">
+                    <img src="/images/logo.png" alt="Mastermind HRMS"
+                         class="h-9 w-auto object-contain"
+                         style="background:white; padding:4px 12px; border-radius:8px;">
                 </div>
                 <p class="text-slate-500 text-sm leading-relaxed mb-6">
                     The complete enterprise HR management system for modern organizations. Built with Laravel 11.
@@ -1073,19 +1069,19 @@
                 <ul class="space-y-3">
                     <li class="flex items-start gap-3 text-sm">
                         <i class="fas fa-building text-blue-400 mt-0.5 text-xs w-3"></i>
-                        <span class="text-slate-500">Mastermind Consultants Ltd<br>Nairobi, Kenya</span>
+                        <span class="text-slate-500">Mastermind Consultants Ltd<br>Kampala, Uganda</span>
                     </li>
                     <li class="flex items-center gap-3 text-sm">
                         <i class="fas fa-envelope text-blue-400 text-xs w-3"></i>
-                        <a href="mailto:hr@mastermind.co.ke" class="text-slate-500 hover:text-white transition-colors">hr@mastermind.co.ke</a>
+                        <a href="mailto:hr@mastermind.autos" class="text-slate-500 hover:text-white transition-colors">hr@mastermind.autos</a>
                     </li>
                     <li class="flex items-center gap-3 text-sm">
                         <i class="fas fa-phone text-blue-400 text-xs w-3"></i>
-                        <span class="text-slate-500">+254 700 000 000</span>
+                        <span class="text-slate-500">+256 700 000 000</span>
                     </li>
                     <li class="flex items-center gap-3 text-sm">
                         <i class="fas fa-globe text-blue-400 text-xs w-3"></i>
-                        <span class="text-slate-500">mastermind.co.ke</span>
+                        <span class="text-slate-500">mastermind.autos</span>
                     </li>
                 </ul>
                 <div class="mt-5 p-3 rounded-xl bg-green-500/10 border border-green-500/20">

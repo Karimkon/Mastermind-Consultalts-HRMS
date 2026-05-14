@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Attendance;
 use App\Http\Controllers\Controller;
 use App\Models\AttendanceLog;
 use App\Models\Employee;
+use App\Models\Setting;
 use App\Models\Shift;
 use App\Models\Holiday;
 use Carbon\Carbon;
@@ -30,7 +31,8 @@ class AttendanceController extends Controller
             "late"    => AttendanceLog::whereDate("date", $date)->where("status","late")->count(),
             "total"   => Employee::where("status","active")->count(),
         ];
-        return view("attendance.index", compact("logs","date","departments","summary"));
+        $geoEnabled  = (bool) Setting::get('office_lat') && (bool) Setting::get('office_lng');
+        return view("attendance.index", compact("logs","date","departments","summary","geoEnabled"));
     }
 
     public function clockIn(Request $request)

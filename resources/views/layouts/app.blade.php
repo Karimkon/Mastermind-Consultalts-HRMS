@@ -6,7 +6,10 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="#1d4ed8">
     <link rel="manifest" href="/manifest.json">
-    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <link rel="icon" href="/favicon.ico?v=2" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png?v=2">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png?v=2">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png?v=2">
     <title>@yield("title","Dashboard") — Mastermind HRMS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -97,11 +100,15 @@
        :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-16'">
 
     {{-- Logo --}}
-    <div class="flex items-center gap-3 h-16 px-4 border-b border-slate-700/50 shrink-0">
-        <div class="flex items-center justify-center w-9 h-9 bg-blue-600 rounded-xl shrink-0">
-            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+    <div class="flex items-center justify-center h-16 px-3 border-b border-slate-700/50 shrink-0">
+        {{-- Collapsed: small square icon --}}
+        <div class="rounded-lg overflow-hidden bg-white shrink-0" x-show="!sidebarOpen" style="width:36px;height:36px;padding:3px;">
+            <img src="/images/logo.png" alt="M" class="w-full h-full object-contain">
         </div>
-        <span class="text-white font-semibold text-sm" x-show="sidebarOpen">Mastermind HRMS</span>
+        {{-- Expanded: full logo on white pill --}}
+        <div x-show="sidebarOpen" class="rounded-xl bg-white px-3 py-2 w-full flex items-center justify-center">
+            <img src="/images/logo.png" alt="Mastermind HRMS" class="h-8 w-auto object-contain">
+        </div>
     </div>
 
     {{-- Navigation --}}
@@ -137,6 +144,12 @@
         <a href="{{ route("account-manager.leaves") }}" class="sidebar-link {{ request()->routeIs("account-manager.leaves*") ? "active" : "" }}">
             <i class="fas fa-calendar-minus w-4 text-center"></i><span x-show="sidebarOpen">Leave Management</span>
         </a>
+        <a href="{{ route('am-visits.index') }}" class="sidebar-link {{ request()->routeIs('am-visits.*') ? 'active' : '' }}">
+            <i class="fas fa-map-marker-alt w-4 text-center"></i><span x-show="sidebarOpen">Site Visits</span>
+        </a>
+        <a href="{{ route('bsc.team-appraisal') }}" class="sidebar-link {{ request()->routeIs('bsc.*') ? 'active' : '' }}">
+            <i class="fas fa-chart-bar w-4 text-center"></i><span x-show="sidebarOpen">BSC Appraisals</span>
+        </a>
         @endrole
 
         {{-- ===== EMPLOYEE ROLE: personal menu only ===== --}}
@@ -153,6 +166,9 @@
         </a>
         <a href="{{ route('training.index') }}" class="sidebar-link {{ request()->routeIs('training.*') ? 'active' : '' }}">
             <i class="fas fa-graduation-cap w-4 text-center"></i><span x-show="sidebarOpen">Training</span>
+        </a>
+        <a href="{{ route('bsc.my-appraisal') }}" class="sidebar-link {{ request()->routeIs('bsc.my-appraisal') ? 'active' : '' }}">
+            <i class="fas fa-balance-scale w-4 text-center"></i><span x-show="sidebarOpen">My Appraisal</span>
         </a>
         <a href="{{ route('meetings.calendar') }}" class="sidebar-link {{ request()->routeIs('meetings.*') ? 'active' : '' }}">
             <i class="fas fa-calendar-alt w-4 text-center"></i><span x-show="sidebarOpen">Calendar</span>
@@ -229,6 +245,14 @@
         <a href="{{ route('training.index') }}" class="sidebar-link {{ request()->routeIs('training.*') ? 'active' : '' }}">
             <i class="fas fa-graduation-cap w-4 text-center"></i><span x-show="sidebarOpen">Training</span>
         </a>
+        <a href="{{ route('bsc.index') }}" class="sidebar-link {{ request()->routeIs('bsc.*') ? 'active' : '' }}">
+            <i class="fas fa-balance-scale w-4 text-center"></i><span x-show="sidebarOpen">Balanced Scorecard</span>
+        </a>
+        @role('super-admin|hr-admin')
+        <a href="{{ route('probation.index') }}" class="sidebar-link {{ request()->routeIs('probation.*') ? 'active' : '' }}">
+            <i class="fas fa-user-clock w-4 text-center"></i><span x-show="sidebarOpen">Probation</span>
+        </a>
+        @endrole
 
         <p class="sidebar-group" x-show="sidebarOpen">Workspace</p>
         <a href="{{ route('meetings.index') }}" class="sidebar-link {{ request()->routeIs('meetings.index') || request()->routeIs('meetings.show*') ? 'active' : '' }}">
@@ -256,6 +280,9 @@
         </a>
         <a href="{{ route('admin.clients.index') }}" class="sidebar-link {{ request()->routeIs('admin.clients.*') ? 'active' : '' }}">
             <i class="fas fa-building w-4 text-center"></i><span x-show="sidebarOpen">Clients</span>
+        </a>
+        <a href="{{ route('admin.account-managers.index') }}" class="sidebar-link {{ request()->routeIs('admin.account-managers.*') ? 'active' : '' }}">
+            <i class="fas fa-user-tie w-4 text-center"></i><span x-show="sidebarOpen">Account Managers</span>
         </a>
         <a href="{{ route('admin.audit.index') }}" class="sidebar-link {{ request()->routeIs('admin.audit.*') ? 'active' : '' }}">
             <i class="fas fa-history w-4 text-center"></i><span x-show="sidebarOpen">Audit Logs</span>

@@ -1,49 +1,174 @@
 @extends("layouts.app")
-@section("title", "Managed Employees")
+@section("title", $activeClient ? $activeClient->company_name . ' — Employees' : 'All Employees')
 @section("content")
-<x-page-header title="Managed Employees" subtitle="Employees across your assigned companies">
-    <form class="flex gap-2" method="GET">
-        <input type="text" name="search" value="{{ request("search") }}" class="form-input w-56" placeholder="Search employee...">
-        <select name="status" class="form-select w-36">
-            <option value="">All Status</option>
-            @foreach(["active"=>"Active","on_leave"=>"On Leave","suspended"=>"Suspended"] as $v=>$l)
-            <option value="{{ $v }}" {{ request("status")==$v?"selected":"" }}>{{ $l }}</option>
-            @endforeach
-        </select>
-        <button type="submit" class="btn-primary"><i class="fas fa-search"></i></button>
-    </form>
+
+<x-page-header
+    :title="$activeClient ? $activeClient->company_name . ' — Employees' : 'All Employees'"
+    :subtitle="$activeClient ? 'Showing employees for ' . $activeClient->company_name . ' only' : 'Employees across all your assigned companies'">
+    <div class="flex gap-2 flex-wrap">
+        {{-- Export CSV --}}
+        <a href="{{ route('account-manager.employees.export', $clientId ? ['client_id'=>$clientId] : []) }}"
+           class="btn-secondary text-sm">
+            <i class="fas fa-file-csv mr-1 text-green-600"></i> CSV
+        </a>
+        {{-- Export Excel --}}
+        <a href="{{ route('account-manager.employees.export-excel', $clientId ? ['client_id'=>$clientId] : []) }}"
+           class="btn-secondary text-sm">
+            <i class="fas fa-file-excel mr-1 text-emerald-600"></i> Excel
+        </a>
+        {{-- Import trigger --}}
+        <button onclick="document.getElementById('import-modal').classList.remove('hidden')" class="btn-secondary text-sm">
+            <i class="fas fa-file-upload mr-1 text-blue-500"></i> Import
+        </button>
+        <a href="{{ route('account-manager.dashboard') }}" class="btn-secondary text-sm">
+            <i class="fas fa-arrow-left mr-1"></i> Dashboard
+        </a>
+    </div>
 </x-page-header>
 
+{{-- Import Modal --}}
+<div id="import-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <div class="flex items-center justify-between p-5 border-b border-slate-100">
+            <h3 class="font-bold text-slate-800 text-base"><i class="fas fa-file-upload mr-2 text-blue-500"></i>Import Employee Data</h3>
+            <button onclick="document.getElementById('import-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-5">
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-700">
+                <i class="fas fa-info-circle mr-1"></i>
+                Upload a CSV file to update employee contact info and status in bulk.
+                Updatable fields: <strong>Phone, Address, City, Status, Emergency Contact</strong>.
+            </div>
+            <a href="{{ route('account-manager.employees.import-template') }}"
+               class="text-sm text-blue-600 hover:underline flex items-center gap-1 mb-4">
+                <i class="fas fa-download"></i> Download CSV Template
+            </a>
+            <form method="POST" action="{{ route('account-manager.employees.import') }}" enctype="multipart/form-data">
+                @csrf
+                @if($clientId)<input type="hidden" name="client_id" value="{{ $clientId }}">@endif
+                <div class="mb-4">
+                    <label class="form-label">CSV File</label>
+                    <input type="file" name="csv_file" accept=".csv,.txt" class="form-input w-full" required>
+                </div>
+                <div class="flex gap-3 justify-end">
+                    <button type="button" onclick="document.getElementById('import-modal').classList.add('hidden')" class="btn-secondary">Cancel</button>
+                    <button type="submit" class="btn-primary"><i class="fas fa-upload mr-1"></i>Import</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{{-- Company filter tabs --}}
+<div class="flex flex-wrap gap-2 mb-5 items-center">
+    <a href="{{ route('account-manager.employees') }}"
+       class="px-4 py-2 rounded-lg text-sm font-medium border transition
+              {{ !$clientId ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50' }}">
+        <i class="fas fa-globe-africa mr-1"></i> All Companies
+    </a>
+    @foreach($clients as $c)
+    <a href="{{ route('account-manager.employees', ['client_id' => $c->id]) }}"
+       class="px-4 py-2 rounded-lg text-sm font-medium border transition flex items-center gap-2
+              {{ $clientId === $c->id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50' }}">
+        <span class="w-2 h-2 rounded-full {{ $c->status === 'active' ? 'bg-emerald-400' : 'bg-slate-300' }}"></span>
+        {{ $c->company_name }}
+        <span class="ml-1 text-xs {{ $clientId === $c->id ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-500' }} px-1.5 py-0.5 rounded-full">
+            {{ $c->employees->count() }}
+        </span>
+    </a>
+    @endforeach
+</div>
+
+{{-- Search / status filter --}}
+<form class="flex flex-wrap gap-2 mb-5" method="GET">
+    @if($clientId)<input type="hidden" name="client_id" value="{{ $clientId }}">@endif
+    <input type="text" name="search" value="{{ request('search') }}"
+           class="form-input w-56" placeholder="Search name or ID...">
+    <select name="status" class="form-select w-36">
+        <option value="">All Status</option>
+        @foreach(['active'=>'Active','on_leave'=>'On Leave','suspended'=>'Suspended'] as $v=>$l)
+        <option value="{{ $v }}" {{ request('status') == $v ? 'selected' : '' }}>{{ $l }}</option>
+        @endforeach
+    </select>
+    <button type="submit" class="btn-primary"><i class="fas fa-search mr-1"></i>Filter</button>
+    @if(request('search') || request('status'))
+    <a href="{{ route('account-manager.employees', $clientId ? ['client_id'=>$clientId] : []) }}" class="btn-secondary">Clear</a>
+    @endif
+</form>
+
+@if($activeClient && $activeClient->work_site_address)
+<div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 flex items-center gap-2">
+    <i class="fas fa-map-marker-alt"></i>
+    Work site: <strong>{{ $activeClient->work_site_address }}</strong>
+    @if($activeClient->geo_fence_radius)
+    &nbsp;·&nbsp; Geo-fence radius: <strong>{{ $activeClient->geo_fence_radius }}m</strong>
+    @endif
+</div>
+@endif
+
 <x-data-table>
-    <thead class="bg-slate-50"><tr>
-        <th class="table-head px-6 py-3 text-left">Employee</th>
-        <th class="table-head px-4 py-3 text-left">Department</th>
-        <th class="table-head px-4 py-3 text-left">Company</th>
-        <th class="table-head px-4 py-3 text-left">Status</th>
-        <th class="table-head px-4 py-3 text-left">Actions</th>
-    </tr></thead>
+    <thead class="bg-slate-50">
+        <tr>
+            <th class="table-head px-6 py-3 text-left">Employee</th>
+            <th class="table-head px-4 py-3 text-left">Department</th>
+            @if(!$clientId)<th class="table-head px-4 py-3 text-left">Company</th>@endif
+            <th class="table-head px-4 py-3 text-left">Contact</th>
+            <th class="table-head px-4 py-3 text-left">Status</th>
+            <th class="table-head px-4 py-3 text-left">Actions</th>
+        </tr>
+    </thead>
     <tbody class="divide-y divide-slate-100">
         @forelse($employees as $emp)
-        @php $company = $clients->first(fn($c) => $c->employees->contains("id", $emp->id)); @endphp
+        @php $company = $clients->first(fn($c) => $c->employees->contains('id', $emp->id)); @endphp
         <tr class="table-row">
             <td class="px-6 py-3">
                 <div class="flex items-center gap-3">
-                    <img src="{{ $emp->avatar_url }}" class="w-9 h-9 rounded-full object-cover">
+                    <img src="{{ $emp->avatar_url }}" class="w-9 h-9 rounded-full object-cover ring-2 ring-slate-100">
                     <div>
-                        <p class="text-sm font-medium text-slate-800">{{ $emp->full_name }}</p>
-                        <p class="text-xs text-slate-500">{{ $emp->emp_number }}</p>
+                        <p class="text-sm font-semibold text-slate-800">{{ $emp->full_name }}</p>
+                        <p class="text-xs text-slate-400">{{ $emp->emp_number }}</p>
+                        @if($emp->designation)
+                        <p class="text-xs text-slate-400">{{ $emp->designation->name }}</p>
+                        @endif
                     </div>
                 </div>
             </td>
-            <td class="px-4 py-3 text-sm text-slate-600">{{ $emp->department?->name ?? "—" }}</td>
-            <td class="px-4 py-3 text-sm text-slate-600">{{ $company?->company_name ?? "—" }}</td>
+            <td class="px-4 py-3 text-sm text-slate-600">{{ $emp->department?->name ?? '—' }}</td>
+            @if(!$clientId)
+            <td class="px-4 py-3">
+                @if($company)
+                <span class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                    <i class="fas fa-building text-indigo-400 text-xs"></i>
+                    {{ $company->company_name }}
+                </span>
+                @else
+                <span class="text-slate-400 text-xs">—</span>
+                @endif
+            </td>
+            @endif
+            <td class="px-4 py-3 text-sm text-slate-500">
+                @if($emp->user?->email)
+                <p class="text-xs">{{ $emp->user->email }}</p>
+                @endif
+                @if($emp->phone)
+                <p class="text-xs">{{ $emp->phone }}</p>
+                @endif
+            </td>
             <td class="px-4 py-3">{!! $emp->status_badge !!}</td>
             <td class="px-4 py-3">
-                <a href="{{ route("account-manager.employees.show", $emp) }}" class="btn-xs btn-blue"><i class="fas fa-eye"></i> View</a>
+                <a href="{{ route('account-manager.employees.show', $emp) }}"
+                   class="btn-xs btn-blue"><i class="fas fa-eye mr-1"></i>View</a>
             </td>
         </tr>
         @empty
-        <tr><td colspan="5" class="py-12 text-center text-slate-400">No employees found.</td></tr>
+        <tr>
+            <td colspan="{{ $clientId ? 5 : 6 }}" class="py-14 text-center text-slate-400">
+                <i class="fas fa-users text-3xl opacity-30 block mb-2"></i>
+                No employees found{{ $activeClient ? ' for ' . $activeClient->company_name : '' }}.
+            </td>
+        </tr>
         @endforelse
     </tbody>
 </x-data-table>

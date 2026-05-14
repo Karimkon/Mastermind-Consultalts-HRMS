@@ -1,9 +1,11 @@
 <?php
 namespace App\Http\Controllers;
 
+use App\Mail\LeaveApprovedByClientMail;
 use App\Models\Client;
 use App\Models\LeaveRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 
 class ClientLeaveController extends Controller
 {
@@ -67,10 +69,24 @@ class ClientLeaveController extends Controller
             'client_approval_status' => 'approved',
             'client_approved_by'     => $client->id,
             'client_actioned_at'     => now(),
+            'status'                 => 'approved',
         ]);
 
+        // Update employee status
+        $leave->employee->update(['status' => 'on_leave']);
+
+        // Send confirmation email to the employee
+        try {
+            $empUser = $leave->employee->user;
+            if ($empUser && $empUser->email) {
+                Mail::to($empUser->email)->send(new LeaveApprovedByClientMail($leave->fresh(['employee.user', 'leaveType'])));
+            }
+        } catch (\Exception $e) {
+            logger()->error('Leave approval email failed: ' . $e->getMessage());
+        }
+
         return redirect()->route('client.leaves.index')
-            ->with('success', "Leave request for {$leave->employee->full_name} approved.");
+            ->with('success', "Leave request for {$leave->employee->full_name} approved. Employee has been notified.");
     }
 
     public function reject(Request $request, LeaveRequest $leave)

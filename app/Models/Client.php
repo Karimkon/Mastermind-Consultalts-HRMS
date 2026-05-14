@@ -2,12 +2,21 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\PayrollRun;
 
 class Client extends Model
 {
     protected $fillable = [
         'user_id', 'account_manager_id', 'company_name', 'contact_person',
         'industry', 'address', 'status', 'notes',
+        'payment_day', 'work_site_address', 'work_site_lat', 'work_site_lng', 'geo_fence_radius',
+    ];
+
+    protected $casts = [
+        'work_site_lat'   => 'float',
+        'work_site_lng'   => 'float',
+        'payment_day'     => 'integer',
+        'geo_fence_radius'=> 'integer',
     ];
 
     public function user()           { return $this->belongsTo(User::class); }
@@ -18,6 +27,11 @@ class Client extends Model
         return $this->belongsToMany(Employee::class, 'client_employee_assignments')
                     ->withPivot('notes', 'assigned_by')
                     ->withTimestamps();
+    }
+
+    public function payrollRuns()
+    {
+        return $this->hasMany(PayrollRun::class);
     }
 
     public function jobPostings()

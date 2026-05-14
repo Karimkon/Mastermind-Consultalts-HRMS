@@ -25,7 +25,7 @@
             <label class="block text-sm font-medium text-slate-300 mb-1.5">Email Address</label>
             <input type="email" name="email" value="{{ old('email') }}" required autofocus
                 class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-sm"
-                placeholder="you@mastermind.co.za">
+                placeholder="you@mastermind.autos">
         </div>
         <div>
             <label class="block text-sm font-medium text-slate-300 mb-1.5">Password</label>

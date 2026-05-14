@@ -73,4 +73,47 @@ class TrainingApiController extends Controller
             'enrollments'    => $c->enrollments_count ?? 0,
         ];
     }
+
+    public function updateProgress(Request $request, TrainingCourse $training)
+    {
+        $request->validate(['progress' => 'required|integer|min:0|max:100']);
+        $employee = $request->user()->employee;
+        if (!$employee) return response()->json(['message' => 'No employee profile'], 422);
+
+        $enrollment = TrainingEnrollment::where('employee_id', $employee->id)
+            ->where('training_course_id', $training->id)->first();
+        if (!$enrollment) return response()->json(['message' => 'Not enrolled'], 404);
+
+        $progress = $request->integer('progress');
+        $enrollment->update([
+            'progress' => $progress,
+            'status'   => $progress >= 100 ? 'completed' : 'in_progress',
+            'completed_at' => $progress >= 100 ? now() : null,
+        ]);
+
+        return response()->json(['data' => ['progress' => $progress, 'status' => $enrollment->status]]);
+    }
+
+    public function report(Request $request)
+    {
+        $total     = TrainingCourse::count();
+        $active    = TrainingCourse::where('status', 'active')->count();
+        $enrollments = TrainingEnrollment::count();
+        $completed = TrainingEnrollment::where('status', 'completed')->count();
+        $certs     = Certification::count();
+        $expiring  = Certification::where('expiry_date', '>=', now())
+            ->where('expiry_date', '<=', now()->addDays(30))->count();
+
+        return response()->json([
+            'data' => [
+                'total_courses'    => $total,
+                'active_courses'   => $active,
+                'total_enrollments'=> $enrollments,
+                'completed'        => $completed,
+                'completion_rate'  => $enrollments > 0 ? round($completed / $enrollments * 100, 1) : 0,
+                'certifications'   => $certs,
+                'expiring_soon'    => $expiring,
+            ],
+        ]);
+    }
 }

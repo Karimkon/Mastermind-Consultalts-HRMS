@@ -8,6 +8,7 @@ class LeaveRequest extends Model
         'employee_id', 'leave_type_id', 'from_date', 'to_date', 'days_count',
         'reason', 'status', 'approved_by', 'rejection_reason', 'document_path',
         'client_approval_required', 'client_approval_status', 'client_approved_by', 'client_actioned_at',
+        'replacement_name', 'replacement_email', 'replacement_phone',
     ];
     protected $casts = [
         'from_date'               => 'date',

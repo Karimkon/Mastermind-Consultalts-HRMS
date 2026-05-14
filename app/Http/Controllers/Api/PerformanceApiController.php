@@ -92,4 +92,35 @@ class PerformanceApiController extends Controller
         $goal->update($request->only(['title','description','target_date','progress','status']));
         return response()->json(['data' => ['id' => $goal->id]]);
     }
+
+    public function report(Request $request)
+    {
+        $cycleId = $request->input('cycle_id');
+
+        $reviews = PerformanceReview::with('employee')
+            ->when($cycleId, fn($q) => $q->where('performance_cycle_id', $cycleId))
+            ->get();
+
+        $avgScore = $reviews->avg('overall_score') ?? 0;
+        $distribution = $reviews->groupBy(fn($r) => match(true) {
+            $r->overall_score >= 4.5 => 'Outstanding',
+            $r->overall_score >= 3.5 => 'Exceeds Expectations',
+            $r->overall_score >= 2.5 => 'Meets Expectations',
+            $r->overall_score >= 1.5 => 'Needs Improvement',
+            default                  => 'Unsatisfactory',
+        })->map->count();
+
+        $goals = EmployeeGoal::selectRaw('status, count(*) as count')->groupBy('status')->get()
+            ->pluck('count','status');
+
+        return response()->json([
+            'data' => [
+                'reviews_count'  => $reviews->count(),
+                'average_score'  => round($avgScore, 2),
+                'distribution'   => $distribution,
+                'goals_completed'=> $goals->get('completed', 0),
+                'goals_pending'  => $goals->get('in_progress', 0) + $goals->get('not_started', 0),
+            ],
+        ]);
+    }
 }

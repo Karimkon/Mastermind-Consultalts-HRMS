@@ -16,9 +16,16 @@ class Employee extends Model
         'hire_date','end_date','employment_type','status',
         'salary_grade','bank_name','bank_account','bank_branch',
         'tax_number','bio',
+        'probation_end_date','probation_status','probation_confirmed_at','probation_confirmed_by',
     ];
 
-    protected $casts = ['hire_date' => 'date', 'end_date' => 'date', 'date_of_birth' => 'date'];
+    protected $casts = [
+        'hire_date'              => 'date',
+        'end_date'               => 'date',
+        'date_of_birth'          => 'date',
+        'probation_end_date'     => 'date',
+        'probation_confirmed_at' => 'datetime',
+    ];
 
     public function user()        { return $this->belongsTo(User::class); }
     public function department()  { return $this->belongsTo(Department::class); }
@@ -43,9 +50,34 @@ class Employee extends Model
     public function exitWorkflow()    { return $this->hasOne(ExitWorkflow::class); }
     public function goals()           { return $this->hasMany(EmployeeGoal::class); }
     public function pips()            { return $this->hasMany(Pip::class); }
-    public function assessments()     { return $this->hasMany(TrainingAssessment::class); }
+    public function assessments()       { return $this->hasMany(TrainingAssessment::class); }
+    public function bscEntries()        { return $this->hasMany(\App\Models\BscEntry::class); }
+    public function probationConfirmedBy() { return $this->belongsTo(User::class, 'probation_confirmed_by'); }
+    public function clients()           { return $this->belongsToMany(Client::class, 'client_employee_assignments')->withTimestamps(); }
 
     public function getFullNameAttribute(): string { return "{$this->first_name} {$this->last_name}"; }
+
+    public function getProbationStatusBadgeAttribute(): string
+    {
+        return match($this->probation_status) {
+            'on_probation' => '<span class="badge-yellow">On Probation</span>',
+            'passed'       => '<span class="badge-green">Passed</span>',
+            'failed'       => '<span class="badge-red">Failed</span>',
+            'extended'     => '<span class="badge-blue">Extended</span>',
+            default        => '<span class="badge-gray">Not Set</span>',
+        };
+    }
+
+    public function getProbationDaysLeftAttribute(): ?int
+    {
+        if (!$this->probation_end_date) return null;
+        return max(0, now()->diffInDays($this->probation_end_date, false));
+    }
+
+    public function getIsOnProbationAttribute(): bool
+    {
+        return $this->probation_status === 'on_probation' && $this->probation_end_date?->isFuture();
+    }
 
     public function getAvatarUrlAttribute(): string
     {

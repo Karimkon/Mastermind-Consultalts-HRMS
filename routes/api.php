@@ -18,6 +18,10 @@ use App\Http\Controllers\Api\{
     AdminApiController,
     ClientPortalApiController,
     SelfServiceApiController,
+    AmVisitApiController,
+    BscApiController,
+    ProbationApiController,
+    AccountManagerApiController,
 };
 
 // ============================================================
@@ -78,11 +82,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Payroll
     Route::get('payroll',                  [PayrollApiController::class, 'index']);
+    Route::post('payroll',                 [PayrollApiController::class, 'store']);
     Route::get('payroll/{payroll}',        [PayrollApiController::class, 'show']);
     Route::post('payroll/{payroll}/process',[PayrollApiController::class, 'process']);
     Route::post('payroll/{payroll}/approve',[PayrollApiController::class, 'approve']);
     Route::get('payroll/{payroll}/payslips',[PayrollApiController::class, 'payslips']);
     Route::get('my-payslips',              [PayrollApiController::class, 'myPayslips']);
+    Route::get('my-payslips/{payslip}/pdf',[PayrollApiController::class, 'downloadPayslipPdf']);
 
     // Recruitment - Jobs
     Route::get('recruitment/jobs',             [RecruitmentApiController::class, 'jobsIndex']);
@@ -123,6 +129,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('training',                          [TrainingApiController::class, 'index']);
     Route::get('training/{training}',               [TrainingApiController::class, 'show']);
     Route::post('training/{training}/enroll',       [TrainingApiController::class, 'enroll']);
+    Route::put('training/{training}/progress',      [TrainingApiController::class, 'updateProgress']);
     Route::get('certifications',                    [TrainingApiController::class, 'certifications']);
 
     // Meetings
@@ -149,6 +156,47 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('reports/employees',   [EmployeeApiController::class, 'report']);
     Route::get('reports/attendance',  [AttendanceApiController::class, 'report']);
     Route::get('reports/leave',       [LeaveApiController::class, 'report']);
+    Route::get('reports/payroll',     [PayrollApiController::class, 'report']);
+    Route::get('reports/performance', [PerformanceApiController::class, 'report']);
+    Route::get('reports/training',    [TrainingApiController::class, 'report']);
+
+    // ============================================================
+    // AM SITE VISITS
+    // ============================================================
+    Route::get('am-visits',              [AmVisitApiController::class, 'index']);
+    Route::post('am-visits/clock-in',    [AmVisitApiController::class, 'clockIn']);
+    Route::post('am-visits/clock-out',   [AmVisitApiController::class, 'clockOut']);
+    Route::get('am-visits/active',       [AmVisitApiController::class, 'activeSessions']);
+    Route::get('am-visits/clients',      [AmVisitApiController::class, 'clients']);
+
+    // Account Manager — Employees & Leaves
+    Route::prefix('account-manager')->group(function () {
+        Route::get('clients',                          [AccountManagerApiController::class, 'clients']);
+        Route::get('employees',                        [AccountManagerApiController::class, 'employees']);
+        Route::get('leaves',                           [AccountManagerApiController::class, 'leaves']);
+        Route::post('leaves/{leave}/approve',          [AccountManagerApiController::class, 'approveLeave']);
+        Route::post('leaves/{leave}/reject',           [AccountManagerApiController::class, 'rejectLeave']);
+    });
+
+    // ============================================================
+    // BSC APPRAISALS
+    // ============================================================
+    Route::get('bsc/cycles',                         [BscApiController::class, 'cycles']);
+    Route::get('bsc/cycles/{cycle}',                 [BscApiController::class, 'showCycle']);
+    Route::get('bsc/my-appraisal',                   [BscApiController::class, 'myAppraisal']);
+    Route::get('bsc/team-appraisal',                 [BscApiController::class, 'teamAppraisal']);
+    Route::get('bsc/entries/{entry}',                [BscApiController::class, 'showEntry']);
+    Route::put('bsc/entries/{entry}',                [BscApiController::class, 'updateEntry']);
+    Route::post('bsc/entries/{entry}/submit',        [BscApiController::class, 'submitEntry']);
+    Route::post('bsc/entries/{entry}/approve',       [BscApiController::class, 'approveEntry']);
+
+    // ============================================================
+    // PROBATION
+    // ============================================================
+    Route::get('probation',                              [ProbationApiController::class, 'index']);
+    Route::get('probation/{employee}',                   [ProbationApiController::class, 'show']);
+    Route::post('probation/{employee}/set-end',          [ProbationApiController::class, 'setProbationEnd']);
+    Route::post('probation/{employee}/confirm',          [ProbationApiController::class, 'confirm']);
 
     // ============================================================
     // ADMIN ROUTES

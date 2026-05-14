@@ -6,11 +6,17 @@ use App\Http\Controllers\Admin\{UserController, DepartmentController, SettingCon
 use App\Http\Controllers\{ClientController, ClientLeaveController, ClientRecruitmentController, AiRecruitmentController};
 use App\Http\Controllers\Employee\{OnboardingController, ExitController, SelfServiceController};
 use App\Http\Controllers\AccountManagerController;
+use App\Http\Controllers\AmVisitController;
+use App\Http\Controllers\BscController;
+use App\Http\Controllers\ProbationController;
 use App\Http\Controllers\CareersController;
 use App\Http\Controllers\Performance\{GoalController, PipController};
 use App\Http\Controllers\Training\AssessmentController;
 use App\Http\Controllers\Recruitment\OfferController;
 use App\Http\Controllers\Recruitment\ShortlistingController;
+
+// Privacy Policy (required for Google Play Store)
+Route::get('/privacy', fn() => view('privacy'))->name('privacy');
 
 // =========================================================
 // PUBLIC JOB BOARD (no auth)
@@ -112,6 +118,8 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::post('payroll/{payroll}/process', [PayrollController::class, 'process'])->name('payroll.process');
         Route::post('payroll/{payroll}/approve', [PayrollController::class, 'approve'])->name('payroll.approve');
         Route::post('payroll/{payroll}/mark-paid', [PayrollController::class, 'markPaid'])->name('payroll.mark-paid');
+        Route::post('payroll/{payroll}/lock', [PayrollController::class, 'lock'])->name('payroll.lock');
+        Route::post('payroll/{payroll}/unlock', [PayrollController::class, 'unlock'])->name('payroll.unlock')->middleware('role:super-admin');
         Route::get('payroll/{payroll}/payslips', [PayrollController::class, 'payslips'])->name('payroll.payslips');
         Route::get('payroll/{payroll}/bank-export', [PayrollController::class, 'bankExport'])->name('payroll.bank-export');
         Route::get('salary', [PayrollController::class, 'salaryIndex'])->name('salary.index');
@@ -261,12 +269,18 @@ Route::middleware(['auth','mfa'])->group(function () {
     Route::prefix("account-manager")->name("account-manager.")->middleware("role:account-manager|super-admin|hr-admin")->group(function () {
         Route::get("/", [AccountManagerController::class, "dashboard"])->name("dashboard");
         Route::get("/employees", [AccountManagerController::class, "employees"])->name("employees");
+        Route::get("/employees/export", [AccountManagerController::class, "exportEmployees"])->name("employees.export");
+        Route::get("/employees/export-excel", [AccountManagerController::class, "exportEmployeesExcel"])->name("employees.export-excel");
+        Route::post("/employees/import", [AccountManagerController::class, "importEmployees"])->name("employees.import");
+        Route::get("/employees/import-template", [AccountManagerController::class, "importTemplate"])->name("employees.import-template");
         Route::get("/employees/{employee}", [AccountManagerController::class, "showEmployee"])->name("employees.show");
         Route::put("/employees/{employee}", [AccountManagerController::class, "updateEmployee"])->name("employees.update");
         Route::get("/leaves", [AccountManagerController::class, "leaves"])->name("leaves");
         Route::post("/leaves/{leave}/approve", [AccountManagerController::class, "approveLeave"])->name("leaves.approve");
         Route::post("/leaves/{leave}/reject", [AccountManagerController::class, "rejectLeave"])->name("leaves.reject");
         Route::get("/documents/{document}/download", [SelfServiceController::class, "downloadDocument"])->name("documents.download");
+        Route::get("/clients/{client}/settings", [AccountManagerController::class, "clientSettings"])->name("client.settings");
+        Route::put("/clients/{client}/settings", [AccountManagerController::class, "updateClientSettings"])->name("client.settings.update");
     });
 
     // AI Recruitment features (recruiter, hr-admin, super-admin, manager)
@@ -275,6 +289,43 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::post('/shortlist/{job}', [AiRecruitmentController::class, 'shortlist'])->name('shortlist');
         Route::post('/questions/{candidate}', [AiRecruitmentController::class, 'questions'])->name('questions');
     });
+
+    // ─── AM Visit Geo Clock-In/Out (Account Managers) ────────────────────────────
+    Route::get('am-visits',              [AmVisitController::class, 'index'])->name('am-visits.index');
+    Route::post('am-visits/clock-in',    [AmVisitController::class, 'clockIn'])->name('am-visits.clock-in');
+    Route::post('am-visits/clock-out',   [AmVisitController::class, 'clockOut'])->name('am-visits.clock-out');
+    Route::get('am-visits/active',       [AmVisitController::class, 'activeSessions'])->name('am-visits.active');
+
+    // ─── Balanced Scorecard ───────────────────────────────────────────────────
+    Route::prefix('bsc')->name('bsc.')->group(function () {
+        Route::get('/',                              [BscController::class, 'index'])->name('index');
+        Route::get('/cycles/create',                 [BscController::class, 'createCycle'])->name('cycles.create');
+        Route::post('/cycles',                       [BscController::class, 'storeCycle'])->name('cycles.store');
+        Route::get('/cycles/{cycle}',                [BscController::class, 'showCycle'])->name('cycles.show');
+        Route::get('/cycles/{cycle}/edit',           [BscController::class, 'editCycle'])->name('cycles.edit');
+        Route::put('/cycles/{cycle}',                [BscController::class, 'updateCycle'])->name('cycles.update');
+        Route::post('/cycles/{cycle}/activate',      [BscController::class, 'activateCycle'])->name('cycles.activate');
+        Route::post('/cycles/{cycle}/close',         [BscController::class, 'closeCycle'])->name('cycles.close');
+        Route::post('/cycles/{cycle}/initialize',    [BscController::class, 'initializeAppraisal'])->name('cycles.initialize');
+        Route::get('/cycles/{cycle}/kras/create',    [BscController::class, 'createKra'])->name('kras.create');
+        Route::post('/cycles/{cycle}/kras',          [BscController::class, 'storeKra'])->name('kras.store');
+        Route::get('/kras/{kra}/edit',               [BscController::class, 'editKra'])->name('kras.edit');
+        Route::put('/kras/{kra}',                    [BscController::class, 'updateKra'])->name('kras.update');
+        Route::delete('/kras/{kra}',                 [BscController::class, 'destroyKra'])->name('kras.destroy');
+        Route::get('/my-appraisal',                  [BscController::class, 'myAppraisal'])->name('my-appraisal');
+        Route::get('/team-appraisal',                [BscController::class, 'teamAppraisal'])->name('team-appraisal');
+        Route::get('/entries/{entry}',               [BscController::class, 'showEntry'])->name('entries.show');
+        Route::get('/entries/{entry}/edit',          [BscController::class, 'editEntry'])->name('entries.edit');
+        Route::put('/entries/{entry}',               [BscController::class, 'updateEntry'])->name('entries.update');
+        Route::post('/entries/{entry}/submit',       [BscController::class, 'submitEntry'])->name('entries.submit');
+        Route::post('/entries/{entry}/approve',      [BscController::class, 'approveEntry'])->name('entries.approve');
+    });
+
+    // ─── Probation Tracking ───────────────────────────────────────────────────
+    Route::get('probation',                    [ProbationController::class, 'index'])->name('probation.index');
+    Route::get('probation/{employee}',         [ProbationController::class, 'show'])->name('probation.show');
+    Route::post('probation/{employee}/set-end',[ProbationController::class, 'setProbationEnd'])->name('probation.set-end');
+    Route::post('probation/{employee}/confirm',[ProbationController::class, 'confirm'])->name('probation.confirm');
 
     // Admin
     Route::prefix('admin')->name('admin.')->middleware('role:super-admin|hr-admin')->group(function () {
@@ -287,14 +338,15 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::delete('designations/{designation}', [DepartmentController::class, 'destroyDesignation'])->name('designations.destroy');
         Route::get('settings', [SettingController::class, 'index'])->name('settings.index');
         Route::put('settings', [SettingController::class, 'update'])->name('settings.update');
-        // Roles
         Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
         Route::get('roles/{role}/edit', [RoleController::class, 'edit'])->name('roles.edit');
         Route::put('roles/{role}', [RoleController::class, 'update'])->name('roles.update');
-        // Audit logs
         Route::get('audit', [AuditLogController::class, 'index'])->name('audit.index');
-        // System documentation PDF
         Route::get('documentation/pdf', [DocumentationController::class, 'pdf'])->name('documentation.pdf');
+
+        // Account Manager Management
+        Route::get('account-managers', [AdminClientController::class, 'accountManagers'])->name('account-managers.index');
+        Route::put('account-managers/assign', [AdminClientController::class, 'assignAccountManager'])->name('account-managers.assign');
 
         // Client Management
         Route::prefix('clients')->name('clients.')->group(function () {

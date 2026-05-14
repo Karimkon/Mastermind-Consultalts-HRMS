@@ -30,6 +30,7 @@ class User extends Authenticatable
     public function employee()        { return $this->hasOne(Employee::class); }
     public function client()          { return $this->hasOne(Client::class); }
     public function hrNotifications() { return $this->hasMany(Notification::class)->latest(); }
+    public function managedClients()  { return $this->hasMany(Client::class, 'account_manager_id'); }
 
     public function getAvatarUrlAttribute(): string
     {

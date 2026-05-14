@@ -16,6 +16,38 @@
     </div>
 </div>
 
+{{-- Work site status banner --}}
+@php
+    $hasCoords  = $client->work_site_lat && $client->work_site_lng;
+    $hasAddress = (bool) $client->work_site_address;
+    $siteLabel  = $hasAddress ? $client->work_site_address : ($hasCoords ? "GPS: {$client->work_site_lat}, {$client->work_site_lng}" : null);
+@endphp
+@if($hasCoords || $hasAddress)
+<div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between text-sm">
+    <span class="text-green-700">
+        <i class="fas fa-map-marker-alt mr-1 text-green-500"></i>
+        Work site: <strong>{{ $siteLabel }}</strong>
+        @if($client->geo_fence_radius) &nbsp;·&nbsp; Geo-fence: <strong>{{ $client->geo_fence_radius }}m</strong> @endif
+        @if($hasCoords && !$hasAddress)
+        &nbsp;·&nbsp; <a href="https://www.google.com/maps?q={{ $client->work_site_lat }},{{ $client->work_site_lng }}" target="_blank" class="underline text-green-600 text-xs">View on map</a>
+        @endif
+    </span>
+    <a href="{{ route('admin.clients.edit', $client) }}" class="text-green-600 hover:underline text-xs">
+        <i class="fas fa-edit mr-1"></i>Edit
+    </a>
+</div>
+@else
+<div class="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-center justify-between text-sm">
+    <span class="text-amber-700">
+        <i class="fas fa-exclamation-triangle mr-1 text-amber-500"></i>
+        <strong>No work site location set.</strong> Account managers cannot use geo-fenced clock-in for this client.
+    </span>
+    <a href="{{ route('admin.clients.edit', $client) }}" class="btn-primary text-xs py-1 px-3">
+        <i class="fas fa-map-marker-alt mr-1"></i>Set Work Site
+    </a>
+</div>
+@endif
+
 <div x-data="{ tab: 'employees' }" class="space-y-4">
     {{-- Tabs --}}
     <div class="card p-1 flex gap-1 w-fit">
