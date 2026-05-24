@@ -8,7 +8,8 @@ class Client extends Model
 {
     protected $fillable = [
         'user_id', 'account_manager_id', 'company_name', 'contact_person',
-        'industry', 'address', 'status', 'notes',
+        'phone', 'email',
+        'industry', 'address', 'deployment_area', 'work_area', 'status', 'notes',
         'payment_day', 'work_site_address', 'work_site_lat', 'work_site_lng', 'geo_fence_radius',
     ];
 
@@ -32,6 +33,11 @@ class Client extends Model
     public function payrollRuns()
     {
         return $this->hasMany(PayrollRun::class);
+    }
+
+    public function transferHistory()
+    {
+        return $this->hasMany(EmployeeClientTransfer::class)->orderByDesc('effective_date');
     }
 
     public function jobPostings()

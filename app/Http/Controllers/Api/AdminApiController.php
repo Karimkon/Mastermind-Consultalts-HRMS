@@ -2,7 +2,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\{User, Department, Client, Employee};
+use App\Models\{User, Department, Client, Employee, PayrollRun};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
@@ -282,5 +282,13 @@ class AdminApiController extends Controller
             'roles'       => $u->getRoleNames(),
             'created_at'  => $u->created_at?->format('Y-m-d'),
         ];
+    }
+
+    // ===================== PAYROLL UNLOCK (Super Admin only) =====================
+    public function unlockPayroll(PayrollRun $payroll)
+    {
+        abort_unless(request()->user()->hasRole('super-admin'), 403);
+        $payroll->update(['locked_at' => null, 'locked_by' => null]);
+        return response()->json(['message' => 'Payroll run unlocked.', 'id' => $payroll->id]);
     }
 }

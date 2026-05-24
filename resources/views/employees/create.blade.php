@@ -115,15 +115,28 @@
             </div>
 
             <div class="card p-6">
-                <h3 class="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2"><i class="fas fa-university text-blue-500"></i> Banking</h3>
-                <div class="space-y-3">
+                <h3 class="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2"><i class="fas fa-university text-blue-500"></i> Banking & Payment</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="sm:col-span-2">
+                        <label class="form-label">Payment Mode <span class="text-red-500">*</span></label>
+                        <select name="payment_mode" class="form-input">
+                            <option value="bank"   @selected(old('payment_mode','bank')==='bank')>Bank Transfer (EFT)</option>
+                            <option value="mtn"    @selected(old('payment_mode')==='mtn')>MTN Mobile Money</option>
+                            <option value="airtel" @selected(old('payment_mode')==='airtel')>Airtel Mobile Money</option>
+                            <option value="cash"   @selected(old('payment_mode')==='cash')>Cash</option>
+                        </select>
+                    </div>
                     <div>
                         <label class="form-label">Bank Name</label>
-                        <input type="text" name="bank_name" value="{{ old('bank_name') }}" class="form-input">
+                        <input type="text" name="bank_name" value="{{ old('bank_name') }}" class="form-input" placeholder="e.g. Stanbic Bank">
                     </div>
                     <div>
                         <label class="form-label">Account Number</label>
                         <input type="text" name="bank_account" value="{{ old('bank_account') }}" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label">Bank Branch</label>
+                        <input type="text" name="bank_branch" value="{{ old('bank_branch') }}" class="form-input" placeholder="e.g. Kampala Main">
                     </div>
                     <div>
                         <label class="form-label">Tax Number</label>

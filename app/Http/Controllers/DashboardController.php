@@ -1,7 +1,7 @@
 <?php
 namespace App\Http\Controllers;
 
-use App\Models\{Employee, AttendanceLog, LeaveRequest, Meeting, PayrollRun, TrainingEnrollment, Payslip, LeaveBalance};
+use App\Models\{Employee, AttendanceLog, LeaveRequest, Meeting, PayrollRun, TrainingEnrollment, Payslip, LeaveBalance, EmployeeClientTransfer};
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
@@ -51,7 +51,29 @@ class DashboardController extends Controller
         $todayAttendance = AttendanceLog::with('employee')->whereDate('date', today())
             ->whereNotNull('clock_in')->latest('clock_in')->limit(8)->get();
 
-        return view('dashboard.index', compact('stats','pendingLeaves','recentEmployees','upcomingMeetings','todayAttendance'));
+        // Contracts expiring within 30 days
+        $expiringContracts = Employee::with(['department', 'designation', 'clients'])
+            ->where('contract_applicable', true)
+            ->whereNotNull('end_date')
+            ->where('status', 'active')
+            ->whereBetween('end_date', [now()->toDateString(), now()->addDays(30)->toDateString()])
+            ->orderBy('end_date')
+            ->limit(10)
+            ->get();
+
+        // Add expiring contract count to stats
+        $stats['expiring_contracts'] = Employee::where('contract_applicable', true)
+            ->whereNotNull('end_date')
+            ->where('status', 'active')
+            ->whereBetween('end_date', [now()->toDateString(), now()->addDays(30)->toDateString()])
+            ->count();
+
+        $stats['on_probation'] = Employee::where('probation_status', 'on_probation')
+            ->whereNotNull('probation_end_date')
+            ->where('probation_end_date', '>=', now())
+            ->count();
+
+        return view('dashboard.index', compact('stats','pendingLeaves','recentEmployees','upcomingMeetings','todayAttendance','expiringContracts'));
     }
 
     private function employeeDashboard($user)

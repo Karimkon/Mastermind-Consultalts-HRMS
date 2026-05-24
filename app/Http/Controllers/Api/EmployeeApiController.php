@@ -9,7 +9,7 @@ class EmployeeApiController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Employee::with(['user', 'department', 'designation']);
+        $query = Employee::with(['user', 'department', 'designation', 'clients']);
 
         if ($request->search) {
             $s = $request->search;
@@ -20,10 +20,11 @@ class EmployeeApiController extends Controller
             );
         }
         if ($request->department_id) $query->where('department_id', $request->department_id);
-        if ($request->status)        $query->where('status', $request->status);
+        if ($request->status && $request->status !== 'all') $query->where('status', $request->status);
+        if ($request->client_id)  $query->whereHas('clients', fn($q) => $q->where('clients.id', $request->client_id));
 
         return response()->json([
-            'data' => $query->orderBy('first_name')->paginate(20)->through(fn($e) => $this->format($e)),
+            'data' => $query->orderBy('first_name')->paginate(50)->through(fn($e) => $this->format($e)),
         ]);
     }
 
@@ -92,6 +93,7 @@ class EmployeeApiController extends Controller
 
     private function format(Employee $e, bool $full = false): array
     {
+        $primaryClient = $e->relationLoaded('clients') ? $e->clients->first() : null;
         $data = [
             'id'              => $e->id,
             'emp_number'      => $e->emp_number,
@@ -107,6 +109,8 @@ class EmployeeApiController extends Controller
             'employment_type' => $e->employment_type,
             'hire_date'       => $e->hire_date?->format('Y-m-d'),
             'phone'           => $e->phone,
+            'client_name'     => $primaryClient?->company_name,
+            'client_id'       => $primaryClient?->id,
         ];
 
         if ($full) {

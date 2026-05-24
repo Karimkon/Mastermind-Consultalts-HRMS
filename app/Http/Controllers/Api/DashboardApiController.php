@@ -24,6 +24,9 @@ class DashboardApiController extends Controller
         if ($user->hasRole('recruiter')) {
             return response()->json($this->recruiterDashboard());
         }
+        if ($user->hasRole('account-manager')) {
+            return response()->json($this->accountManagerDashboard($user));
+        }
         return response()->json($this->employeeDashboard($user));
     }
 
@@ -191,6 +194,43 @@ class DashboardApiController extends Controller
                 'status'     => $j->status,
                 'candidates' => $j->candidates()->count(),
             ]),
+        ];
+    }
+
+    private function accountManagerDashboard($user): array
+    {
+        $clients = Client::where('account_manager_id', $user->id)->with('employees')->get();
+        $empIds  = $clients->flatMap(fn($c) => $c->employees->pluck('id'))->unique()->values();
+        $today   = Carbon::today();
+        $soon    = $today->copy()->addDays(30);
+
+        $pendingLeaves = LeaveRequest::whereIn('employee_id', $empIds)
+            ->where('status', 'pending')->with('employee', 'leaveType')
+            ->latest()->limit(5)->get()
+            ->map(fn($l) => [
+                'id'         => $l->id,
+                'employee'   => $l->employee->full_name,
+                'leave_type' => $l->leaveType->name,
+                'from_date'  => $l->from_date->format('Y-m-d'),
+                'to_date'    => $l->to_date->format('Y-m-d'),
+                'days'       => $l->days_count,
+                'status'     => $l->status,
+            ]);
+
+        $expiringDocs = \App\Models\EmployeeDocument::whereIn('employee_id', $empIds)
+            ->whereNotNull('expiry_date')
+            ->whereBetween('expiry_date', [$today->toDateString(), $soon->toDateString()])
+            ->count();
+
+        return [
+            'role' => 'account-manager',
+            'stats' => [
+                'total_clients'    => $clients->count(),
+                'total_employees'  => $empIds->count(),
+                'pending_leaves'   => LeaveRequest::whereIn('employee_id', $empIds)->where('status', 'pending')->count(),
+                'expiring_docs'    => $expiringDocs,
+            ],
+            'pending_leaves' => $pendingLeaves,
         ];
     }
 

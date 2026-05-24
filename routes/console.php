@@ -20,5 +20,11 @@ Schedule::command('hrms:cert-expiry-alert')->dailyAt('08:00');
 // Document & certification expiry alerts (Phase 4) — daily at 08:15
 Schedule::command('hrms:document-expiry-alerts')->dailyAt('08:15');
 
+// Contract expiry alerts — daily at 08:30 (30-day and 15-day warnings to AM + HR)
+Schedule::command('hrms:contract-expiry-alerts')->dailyAt('08:30');
+
+// Auto-release employee holds whose end date has passed — daily at 00:10
+Schedule::command('hrms:auto-release-holds')->dailyAt('00:10');
+
 // Recurring meeting instances — generate daily at 01:00
 Schedule::command('hrms:generate-recurring-meetings')->dailyAt('01:00');

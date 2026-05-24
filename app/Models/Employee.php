@@ -8,23 +8,77 @@ class Employee extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'user_id','emp_number','department_id','designation_id','manager_id',
-        'first_name','last_name','phone','personal_email','date_of_birth','gender',
+        // Identity
+        'user_id','emp_number','payroll_number','title','first_name','middle_name','last_name',
+        // Job
+        'department_id','designation_id','manager_id','hire_date','end_date',
+        'employment_type','status','salary_grade',
+        // Job Profile
+        'week_off_type','week_off_day','holiday_calendar','contract_applicable','is_expatriate',
+        'contract_start_date','contract_notes',
+        // Placement
+        'work_location','sub_department','employee_category','class_name','position_name','organization_unit',
+        // Personal
+        'phone','personal_email','date_of_birth','gender','marital_status',
+        'children_count','dependents_count','anniversary_date',
         'national_id','passport_number','address','city','country',
+        'religion','nationality','mother_tongue','bio',
+        // Emergency & NOK
         'emergency_contact_name','emergency_contact_phone',
         'next_of_kin_name','next_of_kin_relation','next_of_kin_phone','next_of_kin_email',
-        'hire_date','end_date','employment_type','status',
-        'salary_grade','bank_name','bank_account','bank_branch',
-        'tax_number','bio',
+        // Insurance & Statutory IDs
+        'insurance_relief','nssf_number','tin_number','ifms_supplier_no','pension_no',
+        // Statutory Deductions
+        'charge_nssf','force_fixed_nssf','fixed_nssf_amount','nssf_paid_by_employer',
+        'do_not_charge_nssf_employee','voluntary_nssf',
+        'charge_lst','lst_paid_by_employer','tax_paid_by_employer',
+        'apply_special_tax','special_tax_percentage',
+        // Banking & Salary Calculation
+        'bank_name','bank_account','bank_branch','tax_number','payment_mode',
+        'ot_calc_hours','absenteeism_calc_hours','ot1_calc_hours','ot2_calc_hours','min_daily_working_hours',
+        // Provident Fund
+        'pf_applicable','pf_deduction_type','pf_calculate_on','pf_employee_rate','pf_employer_rate','pf_scheme',
+        'voluntary_pf_deduction_type','voluntary_pf_calculate_on','voluntary_pf_amount','do_not_deduct_voluntary_pf',
+        // Pension
+        'pension_applicable','pension_deduction_type','pension_calculate_on',
+        'pension_employee_rate','pension_employer_rate','pension_scheme',
+        'voluntary_pension_deduction_type','voluntary_pension_calculate_on',
+        'voluntary_pension_amount','do_not_deduct_voluntary_pension',
+        // Blacklist & Hold
+        'is_blacklisted','blacklist_date','blacklist_reason',
+        'on_hold','hold_date','hold_end_date','hold_reason',
+        // Probation
         'probation_end_date','probation_status','probation_confirmed_at','probation_confirmed_by',
     ];
 
     protected $casts = [
         'hire_date'              => 'date',
         'end_date'               => 'date',
+        'contract_start_date'    => 'date',
         'date_of_birth'          => 'date',
+        'anniversary_date'       => 'date',
+        'blacklist_date'         => 'date',
+        'hold_date'              => 'date',
+        'hold_end_date'          => 'date',
         'probation_end_date'     => 'date',
         'probation_confirmed_at' => 'datetime',
+        'contract_applicable'         => 'boolean',
+        'is_expatriate'               => 'boolean',
+        'insurance_relief'            => 'boolean',
+        'charge_nssf'                 => 'boolean',
+        'force_fixed_nssf'            => 'boolean',
+        'nssf_paid_by_employer'       => 'boolean',
+        'do_not_charge_nssf_employee' => 'boolean',
+        'charge_lst'                  => 'boolean',
+        'lst_paid_by_employer'        => 'boolean',
+        'tax_paid_by_employer'        => 'boolean',
+        'apply_special_tax'           => 'boolean',
+        'pf_applicable'               => 'boolean',
+        'do_not_deduct_voluntary_pf'  => 'boolean',
+        'pension_applicable'                => 'boolean',
+        'do_not_deduct_voluntary_pension'   => 'boolean',
+        'is_blacklisted'              => 'boolean',
+        'on_hold'                     => 'boolean',
     ];
 
     public function user()        { return $this->belongsTo(User::class); }
@@ -54,6 +108,7 @@ class Employee extends Model
     public function bscEntries()        { return $this->hasMany(\App\Models\BscEntry::class); }
     public function probationConfirmedBy() { return $this->belongsTo(User::class, 'probation_confirmed_by'); }
     public function clients()           { return $this->belongsToMany(Client::class, 'client_employee_assignments')->withTimestamps(); }
+    public function clientTransfers()  { return $this->hasMany(EmployeeClientTransfer::class)->with('client')->orderByDesc('effective_date'); }
 
     public function getFullNameAttribute(): string { return "{$this->first_name} {$this->last_name}"; }
 

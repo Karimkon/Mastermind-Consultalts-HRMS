@@ -1,7 +1,7 @@
 <?php
 namespace App\Http\Controllers;
 
-use App\Exports\BankPaymentExport;
+use App\Exports\{BankPaymentExport, KcbEftExport, KcbMtnExport, KcbAirtelExport};
 use App\Models\{PayrollRun, Payslip, Employee, SalaryGrade, SalaryComponent, EmployeeSalary, Client};
 use App\Services\Payroll\PayrollService;
 use App\Services\NotificationService;
@@ -104,53 +104,100 @@ class PayrollController extends Controller
         return redirect()->route('payroll.index')->with('success', 'Deleted.');
     }
 
+    /**
+     * Stage 1 — Account Manager runs/processes payroll then submits to HR
+     */
     public function process(PayrollRun $payroll)
     {
-        if ($payroll->isLocked()) {
-            return back()->with('error', 'This payroll is locked and cannot be re-processed.');
-        }
-        if ($payroll->status === 'approved') {
-            return back()->with('error', 'Payroll already approved.');
+        if ($payroll->isLocked()) return back()->with('error', 'This payroll is locked.');
+        if (in_array($payroll->status, ['hr_approved','finance_approved','md_approved','approved','paid'])) {
+            return back()->with('error', 'Payroll is already in approval workflow.');
         }
         app(PayrollService::class)->processRun($payroll);
-        return back()->with('success', 'Payroll processed successfully.');
+        $payroll->update([
+            'status'       => 'processed',
+            'processed_by' => auth()->id(),
+            'processed_at' => now(),
+        ]);
+        return back()->with('success', 'Payroll processed and submitted to HR for approval.');
     }
 
-    public function approve(PayrollRun $payroll)
+    /**
+     * Stage 2 — HR Admin approves
+     */
+    public function hrApprove(PayrollRun $payroll)
     {
-        if ($payroll->isLocked()) {
-            return back()->with('error', 'This payroll is locked.');
+        abort_unless(auth()->user()->hasAnyRole(['super-admin','hr-admin']), 403);
+        if ($payroll->status !== 'processed') {
+            return back()->with('error', 'Payroll must be in Submitted to HR status to approve.');
         }
         $payroll->update([
-            'status'      => 'approved',
-            'approved_by' => auth()->id(),
-            'approved_at' => now(),
+            'status'          => 'hr_approved',
+            'hr_approved_by'  => auth()->id(),
+            'hr_approved_at'  => now(),
         ]);
-        return back()->with('success', 'Payroll approved.');
+        return back()->with('success', 'HR approved. Payroll submitted to Finance.');
+    }
+
+    /**
+     * Stage 3 — Finance / Payroll Officer approves
+     */
+    public function financeApprove(PayrollRun $payroll)
+    {
+        abort_unless(auth()->user()->hasAnyRole(['super-admin','payroll-officer']), 403);
+        if ($payroll->status !== 'hr_approved') {
+            return back()->with('error', 'Payroll must be HR-approved before Finance can approve.');
+        }
+        $payroll->update([
+            'status'              => 'finance_approved',
+            'finance_approved_by' => auth()->id(),
+            'finance_approved_at' => now(),
+        ]);
+        return back()->with('success', 'Finance approved. Payroll submitted to MD for final approval.');
+    }
+
+    /**
+     * Stage 4 — MD (Super Admin) final approval — auto-locks payroll
+     */
+    public function approve(PayrollRun $payroll)
+    {
+        abort_unless(auth()->user()->hasRole('super-admin'), 403, 'Only the MD (Super Admin) can give final approval.');
+        if ($payroll->status !== 'finance_approved') {
+            return back()->with('error', 'Payroll must be Finance-approved before MD approval.');
+        }
+        $payroll->update([
+            'status'        => 'md_approved',
+            'md_approved_by'=> auth()->id(),
+            'md_approved_at'=> now(),
+            'approved_by'   => auth()->id(),
+            'approved_at'   => now(),
+            'locked_at'     => now(),
+            'locked_by'     => auth()->id(),
+        ]);
+        return back()->with('success', 'MD approved. Payroll is now locked. Finance can download PDF and Excel.');
     }
 
     public function markPaid(PayrollRun $payroll)
     {
-        if ($payroll->isLocked()) {
-            return back()->with('error', 'This payroll is locked.');
+        abort_unless(auth()->user()->hasAnyRole(['super-admin','payroll-officer']), 403);
+        if (!in_array($payroll->status, ['md_approved','approved'])) {
+            return back()->with('error', 'Payroll must be MD-approved before marking as paid.');
         }
-        $payroll->update(['status' => 'paid', 'payment_date' => now()->toDateString()]);
-
-        // Auto-lock after marking paid
-        $payroll->update(['locked_at' => now(), 'locked_by' => auth()->id()]);
-
+        $payroll->update([
+            'status'       => 'paid',
+            'payment_date' => now()->toDateString(),
+            'paid_by'      => auth()->id(),
+            'paid_at'      => now(),
+        ]);
         $ns = app(NotificationService::class);
         $payroll->payslips()->with(['employee.user', 'payrollRun'])->each(fn($slip) => $ns->payrollProcessed($slip));
-
-        return back()->with('success', 'Payroll marked as paid and locked. Only a Super Admin can unlock it.');
+        return back()->with('success', 'Payroll marked as paid. Employees have been notified.');
     }
 
-    /** Lock payroll — any admin can lock */
+    /** Lock payroll manually */
     public function lock(PayrollRun $payroll)
     {
-        if ($payroll->isLocked()) {
-            return back()->with('error', 'Already locked.');
-        }
+        if ($payroll->isLocked()) return back()->with('error', 'Already locked.');
         $payroll->update(['locked_at' => now(), 'locked_by' => auth()->id()]);
         return back()->with('success', 'Payroll run locked successfully.');
     }
@@ -163,9 +210,81 @@ class PayrollController extends Controller
         return back()->with('success', 'Payroll run unlocked. Changes are now allowed.');
     }
 
+    /** Export full payroll summary PDF — available after MD approval */
+    public function exportPdf(PayrollRun $payroll)
+    {
+        abort_unless(auth()->user()->can('reports.export'), 403);
+        if (!in_array($payroll->status, ['md_approved','approved','paid'])) {
+            return back()->with('error', 'Payroll must be MD-approved before downloading.');
+        }
+        $payroll->load(['payslips.employee.department', 'client', 'processor', 'hrApprover', 'financeApprover', 'mdApprover']);
+        $totals = [
+            'count'      => $payroll->payslips->count(),
+            'gross'      => $payroll->payslips->sum('gross_salary'),
+            'net'        => $payroll->payslips->sum('net_salary'),
+            'tax'        => $payroll->payslips->sum('tax_amount'),
+            'deductions' => $payroll->payslips->sum('total_deductions'),
+        ];
+        $company = [
+            'name'     => \App\Models\Setting::get('company_name', 'Mastermind Consultants'),
+            'email'    => \App\Models\Setting::get('company_email', ''),
+            'currency' => \App\Models\Setting::get('currency_symbol', 'UGX'),
+        ];
+        $pdf = Pdf::loadView('payroll.summary-pdf', compact('payroll','totals','company'))->setPaper('a4','landscape');
+        return $pdf->download("payroll-{$payroll->year}-{$payroll->month}-summary.pdf");
+    }
+
+    /** Export full payroll Excel — available after MD approval */
+    public function exportExcel(PayrollRun $payroll)
+    {
+        abort_unless(auth()->user()->can('reports.export'), 403);
+        if (!in_array($payroll->status, ['md_approved','approved','paid'])) {
+            return back()->with('error', 'Payroll must be MD-approved before downloading.');
+        }
+        $filename = 'payroll-'.$payroll->year.'-'.str_pad($payroll->month,2,'0',STR_PAD_LEFT).'.xlsx';
+        return Excel::download(new \App\Exports\PayrollRunExport($payroll), $filename);
+    }
+
+    // ─── KCB Bulk Payment Exports ─────────────────────────────────────
+
+    private function requiresApproval(PayrollRun $payroll): bool
+    {
+        return !in_array($payroll->status, ['md_approved', 'approved', 'paid']);
+    }
+
+    public function kcbEft(PayrollRun $payroll)
+    {
+        abort_unless(auth()->user()->can('reports.export'), 403);
+        if ($this->requiresApproval($payroll)) {
+            return back()->with('error', 'Payroll must be MD-approved before downloading payment files.');
+        }
+        $month = str_pad($payroll->month, 2, '0', STR_PAD_LEFT);
+        return Excel::download(new KcbEftExport($payroll), "KCB-EFT-{$payroll->year}-{$month}.xlsx");
+    }
+
+    public function kcbMtn(PayrollRun $payroll)
+    {
+        abort_unless(auth()->user()->can('reports.export'), 403);
+        if ($this->requiresApproval($payroll)) {
+            return back()->with('error', 'Payroll must be MD-approved before downloading payment files.');
+        }
+        $month = str_pad($payroll->month, 2, '0', STR_PAD_LEFT);
+        return Excel::download(new KcbMtnExport($payroll), "KCB-MTN-{$payroll->year}-{$month}.xlsx");
+    }
+
+    public function kcbAirtel(PayrollRun $payroll)
+    {
+        abort_unless(auth()->user()->can('reports.export'), 403);
+        if ($this->requiresApproval($payroll)) {
+            return back()->with('error', 'Payroll must be MD-approved before downloading payment files.');
+        }
+        $month = str_pad($payroll->month, 2, '0', STR_PAD_LEFT);
+        return Excel::download(new KcbAirtelExport($payroll), "KCB-AIRTEL-{$payroll->year}-{$month}.xlsx");
+    }
+
     public function bankExport(PayrollRun $payroll)
     {
-        if (!in_array($payroll->status, ['approved', 'paid'])) {
+        if (!in_array($payroll->status, ['approved', 'paid', 'md_approved'])) {
             return back()->with('error', 'Payroll must be approved before exporting bank file.');
         }
         $filename = 'bank_payment_' . $payroll->year . '_' . str_pad($payroll->month, 2, '0', STR_PAD_LEFT) . '.csv';

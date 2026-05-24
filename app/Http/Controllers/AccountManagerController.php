@@ -2,7 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Exports\AmEmployeesExport;
-use App\Models\{Client, Employee, LeaveRequest, AttendanceLog, EmployeeDocument};
+use App\Models\{Client, Employee, EmployeeSalary, LeaveRequest, AttendanceLog, EmployeeDocument, PayrollRun, AmSalaryPayment};
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -122,15 +122,33 @@ class AccountManagerController extends Controller
         abort_unless(in_array($employee->id, $this->managedEmployeeIds()), 403);
 
         $request->validate([
-            'phone'   => 'nullable|string|max:20',
-            'address' => 'nullable|string|max:500',
-            'status'  => 'in:active,on_leave,suspended',
+            'phone'        => 'nullable|string|max:20',
+            'address'      => 'nullable|string|max:500',
+            'status'       => 'in:active,on_leave,suspended',
+            'basic_salary' => 'nullable|numeric|min:0',
         ]);
+
         $employee->update($request->only(
             'phone', 'address', 'city', 'status',
             'emergency_contact_name', 'emergency_contact_phone',
             'next_of_kin_name', 'next_of_kin_relation', 'next_of_kin_phone', 'next_of_kin_email'
         ));
+
+        if ($request->filled('basic_salary')) {
+            $existing = $employee->salary;
+            if ($existing) {
+                $existing->update(['basic_salary' => $request->basic_salary]);
+            } else {
+                EmployeeSalary::create([
+                    'employee_id'    => $employee->id,
+                    'basic_salary'   => $request->basic_salary,
+                    'effective_from' => today(),
+                    'is_current'     => true,
+                    'created_by'     => auth()->id(),
+                ]);
+            }
+        }
+
         return back()->with('success', 'Employee updated.');
     }
 
@@ -310,6 +328,77 @@ class AccountManagerController extends Controller
         return back()->with('success', 'Leave rejected.');
     }
 
+    /* ─────────────────────────── Payroll ─────────────────────────── */
+
+    public function payroll(Request $request)
+    {
+        $clients  = $this->managedClients();
+        $clientId = $request->client_id ? (int)$request->client_id : null;
+
+        if ($clientId && !$clients->contains('id', $clientId)) {
+            $clientId = null;
+        }
+
+        $clientIds = $clients->pluck('id')->toArray();
+
+        // Show runs for this AM's clients AND global runs (client_id NULL) that include their employees
+        $runs = PayrollRun::with('client')
+            ->where(function ($q) use ($clientId, $clientIds) {
+                if ($clientId) {
+                    $q->where('client_id', $clientId)->orWhereNull('client_id');
+                } else {
+                    $q->whereIn('client_id', $clientIds)->orWhereNull('client_id');
+                }
+            })
+            ->latest()
+            ->paginate(20);
+
+        $activeClient = $clientId ? $clients->firstWhere('id', $clientId) : null;
+
+        return view('account-manager.payroll', compact('runs', 'clients', 'activeClient', 'clientId'));
+    }
+
+    public function payrollMarkPaid(Request $request, PayrollRun $run)
+    {
+        $clientIds = $this->managedClients()->pluck('id')->toArray();
+        abort_unless(is_null($run->client_id) || in_array($run->client_id, $clientIds), 403);
+
+        if (!in_array($run->status, ['approved', 'processed'])) {
+            return back()->with('error', 'Only approved or processed payroll runs can be marked as paid.');
+        }
+
+        $request->validate([
+            'payment_method'    => 'required|in:bank_transfer,mobile_money,cash,cheque',
+            'payment_reference' => 'nullable|string|max:255',
+            'payment_date'      => 'nullable|date',
+        ]);
+
+        $run->update([
+            'status'             => 'paid',
+            'payment_method'     => $request->payment_method,
+            'payment_reference'  => $request->payment_reference,
+            'payment_date'       => $request->payment_date ?: today(),
+            'paid_by'            => auth()->id(),
+            'paid_at'            => now(),
+        ]);
+
+        return back()->with('success', 'Payroll marked as paid. Reference: ' . ($request->payment_reference ?: 'N/A'));
+    }
+
+    public function payrollShow(PayrollRun $run)
+    {
+        $clientIds = $this->managedClients()->pluck('id')->toArray();
+        // Allow global runs (null client_id) and client-specific runs
+        abort_unless(is_null($run->client_id) || in_array($run->client_id, $clientIds), 403);
+
+        $run->load(['payslips.employee.department', 'client']);
+        // For global runs, filter to only AM's employees
+        $empIds   = $this->managedEmployeeIds($run->client_id);
+        $payslips = $run->payslips->whereIn('employee_id', $empIds)->values();
+
+        return view('account-manager.payroll-show', compact('run', 'payslips'));
+    }
+
     /* ─────────────────────────── Client Settings ─────────────────────────── */
 
     public function clientSettings(Client $client)
@@ -340,5 +429,163 @@ class AccountManagerController extends Controller
             'payment_day', 'work_site_address', 'work_site_lat', 'work_site_lng', 'geo_fence_radius'
         ));
         return back()->with('success', 'Client settings updated.');
+    }
+
+    // ── Salary Payments ──────────────────────────────────────────────────────
+
+    public function salaryPayments(Request $request)
+    {
+        $clients  = $this->managedClients();
+        $empIds   = $this->managedEmployeeIds();
+        $clientId = $request->client_id ? (int) $request->client_id : null;
+        $month    = $request->month ? (int) $request->month : null;
+        $year     = $request->year  ? (int) $request->year  : null;
+
+        $payments = AmSalaryPayment::with(['employee.department', 'client'])
+            ->whereIn('employee_id', $empIds)
+            ->when($clientId, fn($q) => $q->where('client_id', $clientId))
+            ->when($month,    fn($q) => $q->where('period_month', $month))
+            ->when($year,     fn($q) => $q->where('period_year', $year))
+            ->latest()
+            ->paginate(30);
+
+        $employees = Employee::with('department')
+            ->whereIn('id', $empIds)->where('status', 'active')->get();
+
+        return view('account-manager.salary-payments', compact('payments', 'clients', 'employees', 'clientId', 'month', 'year'));
+    }
+
+    public function createSalaryPayment()
+    {
+        $clients   = $this->managedClients();
+        $empIds    = $this->managedEmployeeIds();
+        $employees = Employee::with(['department', 'designation', 'salary'])
+            ->whereIn('id', $empIds)->where('status', 'active')->orderBy('first_name')->get();
+
+        $employeeSalaries = $employees->mapWithKeys(fn($e) => [
+            $e->id => (float) ($e->salary?->basic_salary ?? 0),
+        ]);
+
+        return view('account-manager.salary-payment-form', compact('clients', 'employees', 'employeeSalaries'));
+    }
+
+    public function storeSalaryPayment(Request $request)
+    {
+        $empIds = $this->managedEmployeeIds();
+        $request->validate([
+            'employee_id'     => 'required|integer|in:' . implode(',', $empIds),
+            'client_id'       => 'required|integer',
+            'period_month'    => 'required|integer|min:1|max:12',
+            'period_year'     => 'required|integer|min:2020|max:2100',
+            'basic_salary'    => 'required|numeric|min:0',
+            'allowances'      => 'nullable|numeric|min:0',
+            'paye_tax'        => 'nullable|numeric|min:0',
+            'nssf'            => 'nullable|numeric|min:0',
+            'other_deductions'=> 'nullable|numeric|min:0',
+            'payment_method'  => 'nullable|in:bank_transfer,mobile_money,cash,cheque',
+            'payment_reference'=> 'nullable|string|max:255',
+            'payment_date'    => 'nullable|date',
+            'notes'           => 'nullable|string|max:1000',
+        ]);
+
+        $basic      = (float) $request->basic_salary;
+        $allowances = (float) ($request->allowances ?? 0);
+        $paye       = (float) ($request->paye_tax ?? 0);
+        $nssf       = (float) ($request->nssf ?? 0);
+        $other      = (float) ($request->other_deductions ?? 0);
+        $gross      = $basic + $allowances;
+        $totalDed   = $paye + $nssf + $other;
+        $net        = $gross - $totalDed;
+
+        AmSalaryPayment::updateOrCreate(
+            [
+                'employee_id'  => $request->employee_id,
+                'period_month' => $request->period_month,
+                'period_year'  => $request->period_year,
+            ],
+            [
+                'client_id'          => $request->client_id,
+                'account_manager_id' => auth()->id(),
+                'basic_salary'       => $basic,
+                'allowances'         => $allowances,
+                'gross_salary'       => $gross,
+                'paye_tax'           => $paye,
+                'nssf'               => $nssf,
+                'other_deductions'   => $other,
+                'total_deductions'   => $totalDed,
+                'net_salary'         => $net,
+                'payment_method'     => $request->payment_method,
+                'payment_reference'  => $request->payment_reference,
+                'payment_date'       => $request->payment_date ?: today(),
+                'notes'              => $request->notes,
+            ]
+        );
+
+        return redirect()->route('account-manager.salary-payments')
+            ->with('success', 'Salary payment recorded successfully.');
+    }
+
+    public function editSalaryPayment(AmSalaryPayment $payment)
+    {
+        $empIds = $this->managedEmployeeIds();
+        abort_unless(in_array($payment->employee_id, $empIds), 403);
+
+        $clients   = $this->managedClients();
+        $employees = Employee::with(['department', 'designation'])
+            ->whereIn('id', $empIds)->where('status', 'active')->orderBy('first_name')->get();
+
+        return view('account-manager.salary-payment-form', compact('clients', 'employees', 'payment'));
+    }
+
+    public function updateSalaryPayment(Request $request, AmSalaryPayment $payment)
+    {
+        $empIds = $this->managedEmployeeIds();
+        abort_unless(in_array($payment->employee_id, $empIds), 403);
+
+        $request->validate([
+            'basic_salary'     => 'required|numeric|min:0',
+            'allowances'       => 'nullable|numeric|min:0',
+            'paye_tax'         => 'nullable|numeric|min:0',
+            'nssf'             => 'nullable|numeric|min:0',
+            'other_deductions' => 'nullable|numeric|min:0',
+            'payment_method'   => 'nullable|in:bank_transfer,mobile_money,cash,cheque',
+            'payment_reference'=> 'nullable|string|max:255',
+            'payment_date'     => 'nullable|date',
+            'notes'            => 'nullable|string|max:1000',
+        ]);
+
+        $basic    = (float) $request->basic_salary;
+        $allow    = (float) ($request->allowances ?? 0);
+        $paye     = (float) ($request->paye_tax ?? 0);
+        $nssf     = (float) ($request->nssf ?? 0);
+        $other    = (float) ($request->other_deductions ?? 0);
+        $gross    = $basic + $allow;
+        $totalDed = $paye + $nssf + $other;
+
+        $payment->update([
+            'basic_salary'     => $basic,
+            'allowances'       => $allow,
+            'gross_salary'     => $gross,
+            'paye_tax'         => $paye,
+            'nssf'             => $nssf,
+            'other_deductions' => $other,
+            'total_deductions' => $totalDed,
+            'net_salary'       => $gross - $totalDed,
+            'payment_method'   => $request->payment_method,
+            'payment_reference'=> $request->payment_reference,
+            'payment_date'     => $request->payment_date ?: $payment->payment_date,
+            'notes'            => $request->notes,
+        ]);
+
+        return redirect()->route('account-manager.salary-payments')
+            ->with('success', 'Payment updated successfully.');
+    }
+
+    public function deleteSalaryPayment(AmSalaryPayment $payment)
+    {
+        $empIds = $this->managedEmployeeIds();
+        abort_unless(in_array($payment->employee_id, $empIds), 403);
+        $payment->delete();
+        return back()->with('success', 'Payment record deleted.');
     }
 }

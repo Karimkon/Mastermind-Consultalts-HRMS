@@ -1,8 +1,13 @@
 @extends('mail.layout')
 @section('content')
-<h2 style="color:#991b1b;">⚠ Documents Expiring Soon</h2>
+@php $isUrgent = isset($days) && $days <= 7; @endphp
+<h2 style="color:{{ $isUrgent ? '#991b1b' : '#92400e' }};">
+    {{ $isUrgent ? '🚨 URGENT: Documents Expiring in ' . ($days ?? 7) . ' Days' : '⚠ Documents Expiring in ' . ($days ?? 30) . ' Days' }}
+</h2>
 <p>Dear HR Team,</p>
-<p>The following employee has documents and/or certifications expiring within the next <strong>30 days</strong>. Please take action to renew or update them before they expire.</p>
+<p>The following employee has documents and/or certifications expiring
+    {{ $isUrgent ? 'in <strong>' . ($days ?? 7) . ' days</strong> — <span style="color:#dc2626">immediate action required</span>' : 'within the next <strong>' . ($days ?? 30) . ' days</strong>' }}.
+    Please take action to renew or update them before they expire.</p>
 
 <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin:16px 0;">
     <strong style="font-size:16px;color:#1e293b;">{{ $employee->full_name }}</strong><br>

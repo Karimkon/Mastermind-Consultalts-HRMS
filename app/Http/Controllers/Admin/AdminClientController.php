@@ -2,7 +2,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\{Client, Employee, JobPosting, User};
+use App\Models\{Client, Employee, EmployeeClientTransfer, JobPosting, User};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -44,13 +44,17 @@ class AdminClientController extends Controller
         $user->syncRoles('client');
 
         $client = Client::create([
-            'user_id'        => $user->id,
-            'company_name'   => $request->company_name,
-            'contact_person' => $request->contact_person,
-            'industry'       => $request->industry,
-            'address'        => $request->address,
-            'status'         => 'active',
-            'notes'          => $request->notes,
+            'user_id'         => $user->id,
+            'company_name'    => $request->company_name,
+            'contact_person'  => $request->contact_person,
+            'phone'           => $request->phone,
+            'email'           => $request->client_email,
+            'industry'        => $request->industry,
+            'address'         => $request->address,
+            'deployment_area' => $request->deployment_area,
+            'work_area'       => $request->work_area,
+            'status'          => 'active',
+            'notes'           => $request->notes,
         ]);
 
         return redirect()->route('admin.clients.show', $client)
@@ -95,9 +99,11 @@ class AdminClientController extends Controller
         ]);
 
         $client->update($request->only(
-            'company_name', 'contact_person', 'industry', 'address', 'status', 'notes',
+            'company_name', 'contact_person', 'phone', 'industry', 'address',
+            'deployment_area', 'work_area', 'status', 'notes',
             'payment_day', 'work_site_address', 'work_site_lat', 'work_site_lng', 'geo_fence_radius'
         ));
+        if ($request->filled('client_email')) $client->update(['email' => $request->client_email]);
 
         return redirect()->route('admin.clients.show', $client)
             ->with('success', 'Client updated successfully.');
@@ -111,6 +117,16 @@ class AdminClientController extends Controller
             $request->employee_id => ['assigned_by' => auth()->id(), 'notes' => $request->notes],
         ]);
 
+        // Record transfer history
+        EmployeeClientTransfer::create([
+            'employee_id'    => $request->employee_id,
+            'client_id'      => $client->id,
+            'type'           => 'assignment',
+            'effective_date' => now()->toDateString(),
+            'reason'         => $request->notes ?: 'Assigned to client',
+            'recorded_by'    => auth()->id(),
+        ]);
+
         // Mark future leave requests from this employee as needing client approval
         \App\Models\LeaveRequest::where('employee_id', $request->employee_id)
             ->where('status', 'pending')
@@ -122,6 +138,14 @@ class AdminClientController extends Controller
     public function unassignEmployee(Client $client, Employee $employee)
     {
         $client->employees()->detach($employee->id);
+        EmployeeClientTransfer::create([
+            'employee_id'    => $employee->id,
+            'client_id'      => $client->id,
+            'type'           => 'removal',
+            'effective_date' => now()->toDateString(),
+            'reason'         => 'Removed from client',
+            'recorded_by'    => auth()->id(),
+        ]);
         return back()->with('success', 'Employee removed from client.');
     }
 

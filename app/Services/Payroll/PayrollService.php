@@ -17,10 +17,28 @@ class PayrollService
 
     public function processRun(PayrollRun $run): int
     {
-        $employees = Employee::where('status', 'active')->orWhere('status', 'on_leave')->get();
+        $query = Employee::whereIn('status', ['active', 'on_leave'])
+            ->where('is_blacklisted', false)
+            ->where(function ($q) {
+                // Exclude employees currently on hold
+                $q->where('on_hold', false)
+                  ->orWhere(function ($q2) {
+                      // Allow if hold has already expired (end date passed)
+                      $q2->where('on_hold', true)->whereNotNull('hold_end_date')->where('hold_end_date', '<', now()->toDateString());
+                  });
+            });
+
+        // Scope to client's employees if this is a client-specific run
+        if ($run->client_id) {
+            $query->whereHas('clients', fn($q) => $q->where('clients.id', $run->client_id));
+        }
+
+        $employees = $query->get();
+
         foreach ($employees as $employee) {
             $this->processEmployee($employee, $run);
         }
+
         $run->update(['status' => 'processed', 'processed_by' => auth()->id(), 'processed_at' => now()]);
         return $employees->count();
     }

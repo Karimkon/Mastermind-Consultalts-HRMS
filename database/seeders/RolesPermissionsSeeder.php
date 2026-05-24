@@ -68,6 +68,21 @@ class RolesPermissionsSeeder extends Seeder
             'reports.view','reports.export',
         ]);
 
+        // Account Manager — manages client accounts and their employees, can process payroll and download payment files
+        $accountManager = Role::firstOrCreate(['name' => 'account-manager']);
+        $accountManager->syncPermissions([
+            'employees.view','employees.create','employees.edit','employees.documents','employees.history',
+            'attendance.view','attendance.manage',
+            'leave.view','leave.approve','leave.manage',
+            'payroll.view','payroll.process','payroll.manage',
+            'recruitment.view','recruitment.manage','recruitment.interview',
+            'performance.view','performance.review',
+            'training.view',
+            'meetings.view','meetings.manage',
+            'reports.view','reports.export',
+            'client-portal','client-leave-approve','client-shortlist',
+        ]);
+
         $recruiter = Role::firstOrCreate(['name' => 'recruiter']);
         $recruiter->syncPermissions([
             'recruitment.view','recruitment.manage','recruitment.interview',

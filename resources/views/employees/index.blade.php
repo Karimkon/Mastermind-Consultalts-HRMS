@@ -1,8 +1,8 @@
 @extends("layouts.app")
-@section("title","Employees")
-@section("breadcrumb")<span class="text-slate-600 text-sm font-medium">Employees</span>@endsection
+@section("title","Employee Central")
+@section("breadcrumb")<span class="text-slate-600 text-sm font-medium">Employee Central</span>@endsection
 @section("content")
-<x-page-header title="Employees" subtitle="Manage all employee records">
+<x-page-header title="Employee Central" subtitle="Manage all employee records">
     <a href="{{ route('employees.create') }}" class="btn-primary"><i class="fas fa-plus"></i> Add Employee</a>
     <a href="{{ route('export.employees') }}" class="btn-secondary"><i class="fas fa-file-excel text-green-600"></i> Export Excel</a>
     <a href="{{ route('import.form') }}" class="btn-secondary"><i class="fas fa-file-upload text-blue-600"></i> Import</a>

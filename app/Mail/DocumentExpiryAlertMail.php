@@ -17,17 +17,21 @@ class DocumentExpiryAlertMail extends Mailable
     public Collection $documents;
     public Collection $certifications;
 
-    public function __construct(Employee $employee, $documents, $certifications)
+    public int $days;
+
+    public function __construct(Employee $employee, $documents, $certifications, int $days = 30)
     {
         $this->employee       = $employee;
         $this->documents      = collect($documents);
         $this->certifications = collect($certifications);
+        $this->days           = $days;
     }
 
     public function envelope(): Envelope
     {
+        $prefix = $this->days <= 7 ? '🚨 URGENT' : '⚠ Action Required';
         return new Envelope(
-            subject: 'Action Required: Employee Documents Expiring Soon — ' . $this->employee->full_name,
+            subject: "{$prefix}: Employee Documents Expiring in {$this->days} Days — {$this->employee->full_name}",
         );
     }
 
@@ -39,6 +43,7 @@ class DocumentExpiryAlertMail extends Mailable
                 'employee'       => $this->employee,
                 'documents'      => $this->documents,
                 'certifications' => $this->certifications,
+                'days'           => $this->days,
             ]
         );
     }

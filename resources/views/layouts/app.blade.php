@@ -144,6 +144,12 @@
         <a href="{{ route("account-manager.leaves") }}" class="sidebar-link {{ request()->routeIs("account-manager.leaves*") ? "active" : "" }}">
             <i class="fas fa-calendar-minus w-4 text-center"></i><span x-show="sidebarOpen">Leave Management</span>
         </a>
+        <a href="{{ route("account-manager.payroll") }}" class="sidebar-link {{ request()->routeIs("account-manager.payroll*") ? "active" : "" }}">
+            <i class="fas fa-file-invoice-dollar w-4 text-center"></i><span x-show="sidebarOpen">Payroll Runs</span>
+        </a>
+        <a href="{{ route('account-manager.salary-payments') }}" class="sidebar-link {{ request()->routeIs('account-manager.salary-payments*') ? 'active' : '' }}">
+            <i class="fas fa-money-bill-wave w-4 text-center"></i><span x-show="sidebarOpen">Salary Payments</span>
+        </a>
         <a href="{{ route('am-visits.index') }}" class="sidebar-link {{ request()->routeIs('am-visits.*') ? 'active' : '' }}">
             <i class="fas fa-map-marker-alt w-4 text-center"></i><span x-show="sidebarOpen">Site Visits</span>
         </a>
@@ -185,7 +191,7 @@
             <i class="fas fa-coins w-4 text-center"></i><span x-show="sidebarOpen">Salary Setup</span>
         </a>
         <a href="{{ route('employees.index') }}" class="sidebar-link {{ request()->routeIs('employees.*') ? 'active' : '' }}">
-            <i class="fas fa-users w-4 text-center"></i><span x-show="sidebarOpen">Employees</span>
+            <i class="fas fa-users w-4 text-center"></i><span x-show="sidebarOpen">Employee Central</span>
         </a>
         <a href="{{ route('reports.payroll') }}" class="sidebar-link {{ request()->routeIs('reports.payroll*') ? 'active' : '' }}">
             <i class="fas fa-chart-bar w-4 text-center"></i><span x-show="sidebarOpen">Payroll Report</span>
@@ -210,7 +216,7 @@
         @role('super-admin|hr-admin|manager')
         <p class="sidebar-group" x-show="sidebarOpen">Human Resources</p>
         <a href="{{ route('employees.index') }}" class="sidebar-link {{ request()->routeIs('employees.*') ? 'active' : '' }}">
-            <i class="fas fa-users w-4 text-center"></i><span x-show="sidebarOpen">Employees</span>
+            <i class="fas fa-users w-4 text-center"></i><span x-show="sidebarOpen">Employee Central</span>
         </a>
         <a href="{{ route('attendance.index') }}" class="sidebar-link {{ request()->routeIs('attendance.*') ? 'active' : '' }}">
             <i class="fas fa-clock w-4 text-center"></i><span x-show="sidebarOpen">Attendance</span>

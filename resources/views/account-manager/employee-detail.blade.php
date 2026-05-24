@@ -22,7 +22,7 @@
                 <div class="flex justify-between"><dt class="text-slate-500">Phone</dt><dd class="font-medium">{{ $employee->phone ?? '—' }}</dd></div>
                 <div class="flex justify-between"><dt class="text-slate-500">Hired</dt><dd class="font-medium">{{ $employee->hire_date?->format('d M Y') }}</dd></div>
                 <div class="flex justify-between"><dt class="text-slate-500">Type</dt><dd class="font-medium">{{ ucfirst(str_replace('_',' ',$employee->employment_type)) }}</dd></div>
-                <div class="flex justify-between"><dt class="text-slate-500">Salary</dt><dd class="font-medium">{{ $employee->salary ? 'R '.number_format($employee->salary->gross_salary ?? 0,0) : '—' }}</dd></div>
+                <div class="flex justify-between"><dt class="text-slate-500">Gross Salary</dt><dd class="font-medium">{{ $employee->salary ? 'R '.number_format($employee->salary->basic_salary ?? 0,0) : '—' }}</dd></div>
                 <div class="flex justify-between"><dt class="text-slate-500">Next of Kin</dt><dd class="font-medium">{{ $employee->next_of_kin_name ?? '—' }}</dd></div>
                 <div class="flex justify-between"><dt class="text-slate-500">NOK Phone</dt><dd class="font-medium">{{ $employee->next_of_kin_phone ?? '—' }}</dd></div>
             </dl>
@@ -41,6 +41,12 @@
                         <option value="{{ $v }}" {{ $employee->status==$v?'selected':'' }}>{{ $l }}</option>
                         @endforeach
                     </select>
+                </div>
+                <div>
+                    <label class="form-label">Gross Salary (R)</label>
+                    <input type="number" name="basic_salary" class="form-input" min="0" step="1"
+                           value="{{ $employee->salary?->basic_salary ?? '' }}"
+                           placeholder="e.g. 800000">
                 </div>
                 <button type="submit" class="btn-primary w-full justify-center"><i class="fas fa-save"></i> Save</button>
             </form>

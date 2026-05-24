@@ -22,6 +22,16 @@
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
+                <label class="form-label">Contact Phone</label>
+                <input type="text" name="phone" class="form-input" value="{{ old('phone', $client->phone) }}" placeholder="+256 ...">
+            </div>
+            <div>
+                <label class="form-label">Contact Email</label>
+                <input type="email" name="client_email" class="form-input" value="{{ old('client_email', $client->email) }}">
+            </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
                 <label class="form-label">Industry</label>
                 <input type="text" name="industry" class="form-input" value="{{ old('industry', $client->industry) }}">
             </div>
@@ -31,6 +41,16 @@
                     <option value="active"   {{ $client->status === 'active'   ? 'selected' : '' }}>Active</option>
                     <option value="inactive" {{ $client->status === 'inactive' ? 'selected' : '' }}>Inactive</option>
                 </select>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="form-label">Deployment Area</label>
+                <input type="text" name="deployment_area" class="form-input" value="{{ old('deployment_area', $client->deployment_area) }}" placeholder="e.g. Kampala Central, Entebbe">
+            </div>
+            <div>
+                <label class="form-label">Work Area / Site</label>
+                <input type="text" name="work_area" class="form-input" value="{{ old('work_area', $client->work_area) }}" placeholder="e.g. Factory, Office, Warehouse">
             </div>
         </div>
         <div>

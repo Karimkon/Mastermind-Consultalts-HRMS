@@ -169,14 +169,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('am-visits/active',       [AmVisitApiController::class, 'activeSessions']);
     Route::get('am-visits/clients',      [AmVisitApiController::class, 'clients']);
 
-    // Account Manager — Employees & Leaves
+    // Account Manager — Employees, Leaves & Payroll
     Route::prefix('account-manager')->group(function () {
         Route::get('clients',                          [AccountManagerApiController::class, 'clients']);
         Route::get('employees',                        [AccountManagerApiController::class, 'employees']);
         Route::get('leaves',                           [AccountManagerApiController::class, 'leaves']);
         Route::post('leaves/{leave}/approve',          [AccountManagerApiController::class, 'approveLeave']);
         Route::post('leaves/{leave}/reject',           [AccountManagerApiController::class, 'rejectLeave']);
+        Route::get('payroll',                          [AccountManagerApiController::class, 'payroll']);
+        Route::get('payroll/{run}/payslips',           [AccountManagerApiController::class, 'payrollPayslips']);
+        Route::get('salary-payments',                  [AccountManagerApiController::class, 'salaryPayments']);
+        Route::post('salary-payments',                 [AccountManagerApiController::class, 'storeSalaryPayment']);
+        Route::delete('salary-payments/{payment}',     [AccountManagerApiController::class, 'deleteSalaryPayment']);
     });
+
+    // Admin — Payroll unlock
+    Route::post('admin/payroll/{payroll}/unlock',      [AdminApiController::class, 'unlockPayroll']);
 
     // ============================================================
     // BSC APPRAISALS

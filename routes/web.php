@@ -28,7 +28,14 @@ Route::post("/careers/{job}/apply", [CareersController::class, "apply"])->name("
 // Landing page (public)
 Route::get('/', function () {
     if (auth()->check()) return redirect()->route('dashboard');
-    return view('welcome');
+    $jobs = \App\Models\JobPosting::with('department')
+        ->where('status', 'open')
+        ->where(fn($q) => $q->whereNull('deadline')->orWhere('deadline', '>=', now()))
+        ->latest()->take(6)->get();
+    $heroSlides  = json_decode(\App\Models\Setting::get('hero_slides',  '[]'), true) ?: [];
+    $teamPhotos  = json_decode(\App\Models\Setting::get('team_photos',  '[]'), true) ?: [];
+    $clientLogos = json_decode(\App\Models\Setting::get('client_logos', '[]'), true) ?: [];
+    return view('welcome', compact('jobs', 'heroSlides', 'teamPhotos', 'clientLogos'));
 })->name('home');
 
 // Auth
@@ -116,12 +123,19 @@ Route::middleware(['auth','mfa'])->group(function () {
     Route::middleware('role:super-admin|hr-admin|payroll-officer')->group(function () {
         Route::resource('payroll', PayrollController::class);
         Route::post('payroll/{payroll}/process', [PayrollController::class, 'process'])->name('payroll.process');
+        Route::post('payroll/{payroll}/hr-approve', [PayrollController::class, 'hrApprove'])->name('payroll.hr-approve');
+        Route::post('payroll/{payroll}/finance-approve', [PayrollController::class, 'financeApprove'])->name('payroll.finance-approve');
         Route::post('payroll/{payroll}/approve', [PayrollController::class, 'approve'])->name('payroll.approve');
         Route::post('payroll/{payroll}/mark-paid', [PayrollController::class, 'markPaid'])->name('payroll.mark-paid');
         Route::post('payroll/{payroll}/lock', [PayrollController::class, 'lock'])->name('payroll.lock');
         Route::post('payroll/{payroll}/unlock', [PayrollController::class, 'unlock'])->name('payroll.unlock')->middleware('role:super-admin');
+        Route::get('payroll/{payroll}/export-pdf', [PayrollController::class, 'exportPdf'])->name('payroll.export-pdf');
+        Route::get('payroll/{payroll}/export-excel', [PayrollController::class, 'exportExcel'])->name('payroll.export-excel');
         Route::get('payroll/{payroll}/payslips', [PayrollController::class, 'payslips'])->name('payroll.payslips');
         Route::get('payroll/{payroll}/bank-export', [PayrollController::class, 'bankExport'])->name('payroll.bank-export');
+        Route::get('payroll/{payroll}/kcb-eft', [PayrollController::class, 'kcbEft'])->name('payroll.kcb-eft');
+        Route::get('payroll/{payroll}/kcb-mtn', [PayrollController::class, 'kcbMtn'])->name('payroll.kcb-mtn');
+        Route::get('payroll/{payroll}/kcb-airtel', [PayrollController::class, 'kcbAirtel'])->name('payroll.kcb-airtel');
         Route::get('salary', [PayrollController::class, 'salaryIndex'])->name('salary.index');
         Route::get('salary/create', [PayrollController::class, 'salaryCreate'])->name('salary.create');
         Route::post('salary', [PayrollController::class, 'salaryStore'])->name('salary.store');
@@ -275,12 +289,22 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::get("/employees/import-template", [AccountManagerController::class, "importTemplate"])->name("employees.import-template");
         Route::get("/employees/{employee}", [AccountManagerController::class, "showEmployee"])->name("employees.show");
         Route::put("/employees/{employee}", [AccountManagerController::class, "updateEmployee"])->name("employees.update");
+        Route::get("/payroll", [AccountManagerController::class, "payroll"])->name("payroll");
+        Route::get("/payroll/{run}", [AccountManagerController::class, "payrollShow"])->name("payroll.show");
+        Route::post("/payroll/{run}/mark-paid", [AccountManagerController::class, "payrollMarkPaid"])->name("payroll.mark-paid");
         Route::get("/leaves", [AccountManagerController::class, "leaves"])->name("leaves");
         Route::post("/leaves/{leave}/approve", [AccountManagerController::class, "approveLeave"])->name("leaves.approve");
         Route::post("/leaves/{leave}/reject", [AccountManagerController::class, "rejectLeave"])->name("leaves.reject");
         Route::get("/documents/{document}/download", [SelfServiceController::class, "downloadDocument"])->name("documents.download");
         Route::get("/clients/{client}/settings", [AccountManagerController::class, "clientSettings"])->name("client.settings");
         Route::put("/clients/{client}/settings", [AccountManagerController::class, "updateClientSettings"])->name("client.settings.update");
+        // Salary Payments
+        Route::get("/salary-payments", [AccountManagerController::class, "salaryPayments"])->name("salary-payments");
+        Route::get("/salary-payments/create", [AccountManagerController::class, "createSalaryPayment"])->name("salary-payments.create");
+        Route::post("/salary-payments", [AccountManagerController::class, "storeSalaryPayment"])->name("salary-payments.store");
+        Route::get("/salary-payments/{payment}/edit", [AccountManagerController::class, "editSalaryPayment"])->name("salary-payments.edit");
+        Route::put("/salary-payments/{payment}", [AccountManagerController::class, "updateSalaryPayment"])->name("salary-payments.update");
+        Route::delete("/salary-payments/{payment}", [AccountManagerController::class, "deleteSalaryPayment"])->name("salary-payments.destroy");
     });
 
     // AI Recruitment features (recruiter, hr-admin, super-admin, manager)
@@ -338,6 +362,7 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::delete('designations/{designation}', [DepartmentController::class, 'destroyDesignation'])->name('designations.destroy');
         Route::get('settings', [SettingController::class, 'index'])->name('settings.index');
         Route::put('settings', [SettingController::class, 'update'])->name('settings.update');
+        Route::post('settings/website', [SettingController::class, 'updateWebsite'])->name('settings.website');
         Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
         Route::get('roles/{role}/edit', [RoleController::class, 'edit'])->name('roles.edit');
         Route::put('roles/{role}', [RoleController::class, 'update'])->name('roles.update');

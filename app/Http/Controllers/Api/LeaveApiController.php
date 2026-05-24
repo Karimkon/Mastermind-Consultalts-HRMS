@@ -139,8 +139,12 @@ class LeaveApiController extends Controller
     public function reject(Request $request, LeaveRequest $leave)
     {
         $user = $request->user();
-        if (!$user->hasRole(['super-admin','hr-admin','manager'])) abort(403);
-        if ($leave->status !== 'pending') return response()->json(['message' => 'Leave is not pending.'], 422);
+        if (!$user->hasRole(['super-admin','hr-admin','manager','account-manager'])) abort(403);
+
+        $wasApproved = $leave->status === 'approved';
+        if (!in_array($leave->status, ['pending','approved'])) {
+            return response()->json(['message' => 'Leave cannot be rejected in its current state.'], 422);
+        }
 
         $leave->update([
             'status'           => 'rejected',
@@ -149,10 +153,29 @@ class LeaveApiController extends Controller
             'actioned_at'      => now(),
         ]);
 
-        LeaveBalance::where('employee_id', $leave->employee_id)
-            ->where('leave_type_id', $leave->leave_type_id)
-            ->where('year', Carbon::now()->year)
-            ->decrement('pending_days', $leave->days_count);
+        if ($wasApproved) {
+            // Restore used_days balance if leave was already approved
+            LeaveBalance::where('employee_id', $leave->employee_id)
+                ->where('leave_type_id', $leave->leave_type_id)
+                ->where('year', $leave->from_date->year)
+                ->decrement('used_days', $leave->days_count);
+        } else {
+            LeaveBalance::where('employee_id', $leave->employee_id)
+                ->where('leave_type_id', $leave->leave_type_id)
+                ->where('year', Carbon::now()->year)
+                ->decrement('pending_days', $leave->days_count);
+        }
+
+        // Reset employee status to active if no other active approved leaves
+        $today = now()->toDateString();
+        $hasActiveLeave = LeaveRequest::where('employee_id', $leave->employee_id)
+            ->where('status', 'approved')
+            ->where('from_date', '<=', $today)
+            ->where('to_date', '>=', $today)
+            ->exists();
+        if (!$hasActiveLeave) {
+            Employee::where('id', $leave->employee_id)->where('status', 'on_leave')->update(['status' => 'active']);
+        }
 
         return response()->json(['data' => $this->format($leave->fresh())]);
     }
@@ -164,10 +187,12 @@ class LeaveApiController extends Controller
             return response()->json(['message' => 'Cannot cancel.'], 422);
         }
 
-        if ($leave->status === 'approved') {
+        $wasApproved = $leave->status === 'approved';
+
+        if ($wasApproved) {
             LeaveBalance::where('employee_id', $leave->employee_id)
                 ->where('leave_type_id', $leave->leave_type_id)
-                ->where('year', Carbon::now()->year)
+                ->where('year', $leave->from_date->year)
                 ->decrement('used_days', $leave->days_count);
         } else {
             LeaveBalance::where('employee_id', $leave->employee_id)
@@ -177,6 +202,20 @@ class LeaveApiController extends Controller
         }
 
         $leave->update(['status' => 'cancelled']);
+
+        // Reset employee status if no other active approved leaves
+        if ($wasApproved) {
+            $today = now()->toDateString();
+            $hasActiveLeave = LeaveRequest::where('employee_id', $leave->employee_id)
+                ->where('status', 'approved')
+                ->where('from_date', '<=', $today)
+                ->where('to_date', '>=', $today)
+                ->exists();
+            if (!$hasActiveLeave) {
+                Employee::where('id', $leave->employee_id)->where('status', 'on_leave')->update(['status' => 'active']);
+            }
+        }
+
         return response()->json(['data' => $this->format($leave->fresh())]);
     }
 

@@ -7,7 +7,13 @@
         <a href="{{ route('admin.clients.index') }}" class="btn-secondary"><i class="fas fa-arrow-left mr-2"></i>Back</a>
         <div>
             <h1 class="text-2xl font-bold text-slate-800">{{ $client->company_name }}</h1>
-            <p class="text-slate-500 text-sm">{{ $client->contact_person }} · {{ $client->user->email }}</p>
+            <div class="flex flex-wrap gap-3 text-xs text-slate-500 mt-0.5">
+                <span><i class="fas fa-user mr-1"></i>{{ $client->contact_person }}</span>
+                @if($client->phone)<span><i class="fas fa-phone mr-1"></i>{{ $client->phone }}</span>@endif
+                @if($client->email)<span><i class="fas fa-envelope mr-1"></i>{{ $client->email }}</span>@endif
+                @if($client->deployment_area)<span><i class="fas fa-map-marker-alt mr-1"></i>{{ $client->deployment_area }}</span>@endif
+                @if($client->work_area)<span><i class="fas fa-building mr-1"></i>{{ $client->work_area }}</span>@endif
+            </div>
         </div>
     </div>
     <div class="flex items-center gap-3">
@@ -50,14 +56,18 @@
 
 <div x-data="{ tab: 'employees' }" class="space-y-4">
     {{-- Tabs --}}
-    <div class="card p-1 flex gap-1 w-fit">
+    <div class="card p-1 flex gap-1 flex-wrap w-fit">
         <button @click="tab='employees'" :class="tab==='employees' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'"
             class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            <i class="fas fa-users mr-2"></i>Assigned Employees ({{ $client->employees->count() }})
+            <i class="fas fa-users mr-2"></i>Employees ({{ $client->employees->count() }})
         </button>
         <button @click="tab='jobs'" :class="tab==='jobs' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'"
             class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            <i class="fas fa-briefcase mr-2"></i>Assigned Jobs ({{ $client->jobPostings->count() }})
+            <i class="fas fa-briefcase mr-2"></i>Jobs ({{ $client->jobPostings->count() }})
+        </button>
+        <button @click="tab='history'" :class="tab==='history' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'"
+            class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <i class="fas fa-history mr-2"></i>Transfer History
         </button>
     </div>
 
@@ -187,6 +197,49 @@
                 </form>
             </div>
         </div>
+    </div>
+
+    {{-- Transfer History Tab --}}
+    <div x-show="tab==='history'" class="card overflow-hidden">
+        <div class="p-4 border-b border-slate-100">
+            <h3 class="font-semibold text-slate-700 flex items-center gap-2"><i class="fas fa-history text-blue-500"></i> Employee Transfer History</h3>
+            <p class="text-xs text-slate-400 mt-0.5">All assignments, transfers, and removals for this client</p>
+        </div>
+        @php $transfers = $client->transferHistory()->with(['employee.user','recordedBy'])->get(); @endphp
+        @if($transfers->isEmpty())
+        <div class="text-center py-10 text-slate-400">
+            <i class="fas fa-history text-3xl mb-3 text-slate-200"></i>
+            <p class="text-sm">No transfer history yet. History is recorded when employees are assigned or removed.</p>
+        </div>
+        @else
+        <table class="w-full">
+            <thead class="table-header"><tr>
+                <th class="px-4 py-3 text-left">Employee</th>
+                <th class="px-4 py-3 text-left">Type</th>
+                <th class="px-4 py-3 text-left">Effective Date</th>
+                <th class="px-4 py-3 text-left">End Date</th>
+                <th class="px-4 py-3 text-left">Reason</th>
+                <th class="px-4 py-3 text-left">Recorded By</th>
+            </tr></thead>
+            <tbody class="divide-y divide-slate-100">
+                @foreach($transfers as $t)
+                <tr class="table-row">
+                    <td class="px-4 py-3">
+                        <p class="text-sm font-medium text-slate-800">{{ $t->employee?->full_name ?? '—' }}</p>
+                        <p class="text-xs text-slate-400">{{ $t->employee?->emp_number }}</p>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="badge-{{ $t->type === 'assignment' ? 'green' : ($t->type === 'transfer' ? 'blue' : 'red') }}">{{ ucfirst($t->type) }}</span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-slate-600">{{ $t->effective_date?->format('d M Y') }}</td>
+                    <td class="px-4 py-3 text-sm text-slate-600">{{ $t->end_date?->format('d M Y') ?? '—' }}</td>
+                    <td class="px-4 py-3 text-sm text-slate-500">{{ $t->reason ?? '—' }}</td>
+                    <td class="px-4 py-3 text-xs text-slate-400">{{ $t->recordedBy?->name ?? '—' }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+        @endif
     </div>
 </div>
 @endsection

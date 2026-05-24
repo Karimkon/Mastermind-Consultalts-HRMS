@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: DejaVu Sans, Arial, sans-serif; font-size:10px; color:#1e293b; }
+.page { padding:20px 24px; }
+h1 { font-size:16px; font-weight:700; color:#1e40af; }
+.sub { font-size:10px; color:#64748b; margin-top:2px; }
+.meta { margin:12px 0; display:flex; gap:24px; }
+.meta div { display:inline-block; }
+.meta .lbl { font-size:8px; color:#64748b; text-transform:uppercase; }
+.meta .val { font-size:10px; font-weight:600; }
+.approval-strip { background:#f0fdf4; border:1px solid #bbf7d0; border-radius:4px; padding:8px 12px; margin:10px 0; font-size:9px; }
+.approval-strip span { margin-right:20px; }
+table { width:100%; border-collapse:collapse; margin-top:12px; }
+thead tr { background:#1e40af; color:#fff; }
+thead th { padding:6px 8px; text-align:left; font-size:8px; text-transform:uppercase; letter-spacing:.03em; }
+tbody tr:nth-child(even) { background:#f8fafc; }
+tbody tr td { padding:5px 8px; border-bottom:1px solid #f1f5f9; font-size:9px; }
+.num { text-align:right; }
+tfoot tr td { padding:6px 8px; font-weight:700; font-size:10px; border-top:2px solid #1e40af; }
+.footer { margin-top:20px; font-size:8px; color:#94a3b8; text-align:center; border-top:1px solid #e2e8f0; padding-top:8px; }
+</style>
+</head>
+<body>
+<div class="page">
+    <table style="margin:0;border:none;"><tr>
+        <td><h1>{{ $company['name'] }}</h1><div class="sub">Payroll Summary — {{ date('F', mktime(0,0,0,$payroll->month,1)) }} {{ $payroll->year }}@if($payroll->client) &bull; {{ $payroll->client->company_name }}@endif</div></td>
+        <td style="text-align:right;vertical-align:top;"><div class="sub">Generated: {{ now()->format('d M Y H:i') }}</div></td>
+    </tr></table>
+
+    <div class="approval-strip">
+        <strong>Approval Chain:</strong>
+        <span>Processed by: {{ $payroll->processor?->name ?? '—' }} ({{ $payroll->processed_at?->format('d M Y') ?? '—' }})</span>
+        <span>HR: {{ $payroll->hrApprover?->name ?? '—' }} ({{ $payroll->hr_approved_at?->format('d M Y') ?? '—' }})</span>
+        <span>Finance: {{ $payroll->financeApprover?->name ?? '—' }} ({{ $payroll->finance_approved_at?->format('d M Y') ?? '—' }})</span>
+        <span>MD: {{ $payroll->mdApprover?->name ?? '—' }} ({{ $payroll->md_approved_at?->format('d M Y') ?? '—' }})</span>
+    </div>
+
+    <table style="margin:8px 0;border:none;"><tr>
+        <td><div class="lbl">Total Employees</div><div class="val" style="font-size:14px;font-weight:700;">{{ $totals['count'] }}</div></td>
+        <td><div class="lbl">Total Gross</div><div class="val" style="font-size:14px;font-weight:700;">{{ $company['currency'] }} {{ number_format($totals['gross'],0) }}</div></td>
+        <td><div class="lbl">Total Deductions</div><div class="val" style="font-size:14px;font-weight:700;">{{ $company['currency'] }} {{ number_format($totals['deductions'],0) }}</div></td>
+        <td><div class="lbl">Total PAYE</div><div class="val" style="font-size:14px;font-weight:700;">{{ $company['currency'] }} {{ number_format($totals['tax'],0) }}</div></td>
+        <td><div class="lbl">Total Net Pay</div><div class="val" style="font-size:16px;font-weight:700;color:#166534;">{{ $company['currency'] }} {{ number_format($totals['net'],0) }}</div></td>
+    </tr></table>
+
+    <table>
+        <thead><tr>
+            <th>#</th><th>Emp No</th><th>Name</th><th>Department</th>
+            <th class="num">Basic</th><th class="num">Gross</th>
+            <th class="num">Deductions</th><th class="num">PAYE</th><th class="num">Net Pay</th>
+        </tr></thead>
+        <tbody>
+        @foreach($payroll->payslips as $i => $slip)
+        <tr>
+            <td>{{ $i + 1 }}</td>
+            <td>{{ $slip->employee->emp_number }}</td>
+            <td>{{ $slip->employee->full_name }}</td>
+            <td>{{ $slip->employee->department?->name ?? '—' }}</td>
+            <td class="num">{{ number_format($slip->basic_salary ?? 0, 0) }}</td>
+            <td class="num">{{ number_format($slip->gross_salary ?? 0, 0) }}</td>
+            <td class="num">{{ number_format($slip->total_deductions ?? 0, 0) }}</td>
+            <td class="num">{{ number_format($slip->tax_amount ?? 0, 0) }}</td>
+            <td class="num"><strong>{{ number_format($slip->net_salary ?? 0, 0) }}</strong></td>
+        </tr>
+        @endforeach
+        </tbody>
+        <tfoot><tr>
+            <td colspan="4">TOTALS</td>
+            <td class="num">{{ number_format($payroll->payslips->sum('basic_salary'), 0) }}</td>
+            <td class="num">{{ number_format($totals['gross'], 0) }}</td>
+            <td class="num">{{ number_format($totals['deductions'], 0) }}</td>
+            <td class="num">{{ number_format($totals['tax'], 0) }}</td>
+            <td class="num">{{ $company['currency'] }} {{ number_format($totals['net'], 0) }}</td>
+        </tr></tfoot>
+    </table>
+
+    <div class="footer">This payroll summary was generated by Mastermind Consultants HRMS &bull; {{ $company['email'] }} &bull; Confidential — For Internal Use Only</div>
+</div>
+</body>
+</html>

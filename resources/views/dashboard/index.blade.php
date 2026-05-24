@@ -19,14 +19,58 @@
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
     <x-stat-card icon="fas fa-briefcase" label="Open Jobs" :value="$stats['open_jobs']" color="purple" />
     <x-stat-card icon="fas fa-video" label="Meetings Today" :value="$stats['meetings_today']" color="indigo" />
-    <x-stat-card icon="fas fa-graduation-cap" label="Active Trainings" :value="$stats['trainings_active']" color="teal" />
-    <a href="{{ route('attendance.index') }}" class="card p-4 hover:shadow-md transition-shadow flex items-center gap-4 group">
-        <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
-            <i class="fas fa-arrow-right text-slate-400 group-hover:text-blue-600 text-sm"></i>
+    @php $ec = $stats['expiring_contracts'] ?? 0; @endphp
+    <a href="{{ route('employees.index') }}?expiring_soon=1"
+       class="card p-4 hover:shadow-md transition-shadow flex items-center gap-4 group {{ $ec > 0 ? 'border-2 border-orange-200' : '' }}">
+        <div class="w-10 h-10 rounded-xl {{ $ec > 0 ? 'bg-orange-100' : 'bg-slate-100' }} flex items-center justify-center">
+            <i class="fas fa-file-contract {{ $ec > 0 ? 'text-orange-500' : 'text-slate-400' }} text-sm"></i>
         </div>
-        <div><p class="text-xs text-slate-500">Quick Link</p><p class="text-sm font-semibold text-slate-700">View Attendance</p></div>
+        <div>
+            <p class="text-2xl font-bold {{ $ec > 0 ? 'text-orange-600' : 'text-slate-800' }}">{{ $ec }}</p>
+            <p class="text-xs text-slate-500">Contracts Expiring (30d)</p>
+        </div>
+    </a>
+    @php $op = $stats['on_probation'] ?? 0; @endphp
+    <a href="{{ route('probation.index') }}"
+       class="card p-4 hover:shadow-md transition-shadow flex items-center gap-4 group {{ $op > 0 ? 'border-2 border-yellow-200' : '' }}">
+        <div class="w-10 h-10 rounded-xl {{ $op > 0 ? 'bg-yellow-100' : 'bg-slate-100' }} flex items-center justify-center">
+            <i class="fas fa-hourglass-half {{ $op > 0 ? 'text-yellow-500' : 'text-slate-400' }} text-sm"></i>
+        </div>
+        <div>
+            <p class="text-2xl font-bold {{ $op > 0 ? 'text-yellow-600' : 'text-slate-800' }}">{{ $op }}</p>
+            <p class="text-xs text-slate-500">On Probation</p>
+        </div>
     </a>
 </div>
+
+{{-- Expiring Contracts Alert Banner --}}
+@if(isset($expiringContracts) && $expiringContracts->count())
+<div class="card border-l-4 border-orange-400 p-4 mb-5">
+    <div class="flex items-start justify-between mb-3">
+        <div class="flex items-center gap-2">
+            <i class="fas fa-exclamation-triangle text-orange-500"></i>
+            <h3 class="font-semibold text-slate-800">Contracts Expiring Within 30 Days</h3>
+            <span class="badge-orange">{{ $expiringContracts->count() }} employee(s)</span>
+        </div>
+        <a href="{{ route('employees.index') }}" class="text-xs text-blue-600 hover:underline">View all</a>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+        @foreach($expiringContracts as $emp)
+        @php $daysLeft = now()->diffInDays($emp->end_date); $urgent = $daysLeft <= 15; @endphp
+        <a href="{{ route('employees.show', $emp) }}"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg {{ $urgent ? 'bg-red-50 border border-red-200' : 'bg-orange-50 border border-orange-200' }} hover:shadow-sm transition-shadow">
+            <img src="{{ $emp->avatar_url }}" class="w-8 h-8 rounded-full object-cover shrink-0">
+            <div class="min-w-0">
+                <p class="text-sm font-semibold text-slate-800 truncate">{{ $emp->full_name }}</p>
+                <p class="text-xs {{ $urgent ? 'text-red-600 font-semibold' : 'text-orange-600' }}">
+                    <i class="fas fa-calendar mr-1"></i>{{ $emp->end_date->format('d M Y') }} — {{ $daysLeft }} day(s) left
+                </p>
+            </div>
+        </a>
+        @endforeach
+    </div>
+</div>
+@endif
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
     {{-- Attendance Chart --}}

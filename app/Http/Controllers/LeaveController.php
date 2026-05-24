@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 use App\Mail\LeaveSubmittedMail;
 use App\Mail\LeaveClientNotificationMail;
 use App\Mail\LeaveApprovedByClientMail;
+use App\Mail\LeaveStatusMail;
 use App\Services\NotificationService;
 use App\Models\{LeaveRequest, LeaveType, LeaveBalance, Employee, Department, User, Client};
 use Illuminate\Http\Request;
@@ -143,28 +144,123 @@ class LeaveController extends Controller
 
     public function approve(LeaveRequest $leave)
     {
+        // Check annual limit based on leave type days_allowed
+        $leaveType = $leave->leaveType;
+        if ($leaveType) {
+            $usedThisYear = LeaveBalance::where('employee_id', $leave->employee_id)
+                ->where('leave_type_id', $leave->leave_type_id)
+                ->where('year', now()->year)
+                ->value('used_days') ?? 0;
+
+            $maxAllowed = $leaveType->days_allowed ?? 999;
+            if (($usedThisYear + $leave->days_count) > $maxAllowed) {
+                return back()->with('error', "Cannot approve: employee has only " . ($maxAllowed - $usedThisYear) . " day(s) remaining for {$leaveType->name} this year (max {$maxAllowed} days).");
+            }
+        }
+
         $leave->update(['status' => 'approved', 'approved_by' => auth()->user()->employee?->id]);
-        LeaveBalance::where('employee_id', $leave->employee_id)->where('leave_type_id', $leave->leave_type_id)->where('year', now()->year)->increment('used_days', $leave->days_count);
+
+        // Deduct from leave balance
+        LeaveBalance::where('employee_id', $leave->employee_id)
+            ->where('leave_type_id', $leave->leave_type_id)
+            ->where('year', now()->year)
+            ->increment('used_days', $leave->days_count);
+
         $leave->employee->update(['status' => 'on_leave']);
         app(NotificationService::class)->leaveStatusChanged($leave->fresh());
-        return back()->with('success', 'Leave approved.');
+
+        // Email to applicant
+        $this->emailApplicant($leave->fresh());
+
+        // Email to replacement person
+        $this->emailReplacement($leave->fresh());
+
+        return back()->with('success', 'Leave approved. Employee and replacement person notified by email.');
+    }
+
+    private function emailApplicant(LeaveRequest $leave): void
+    {
+        try {
+            $email = $leave->employee?->user?->email ?? $leave->employee?->personal_email;
+            if ($email) {
+                Mail::to($email)->send(new LeaveStatusMail($leave));
+            }
+        } catch (\Exception $e) {
+            logger()->error('Leave status email to applicant failed: ' . $e->getMessage());
+        }
+    }
+
+    private function emailReplacement(LeaveRequest $leave): void
+    {
+        try {
+            if ($leave->replacement_email) {
+                Mail::to($leave->replacement_email)->send(new \App\Mail\LeaveReplacementMail($leave));
+            }
+        } catch (\Exception $e) {
+            logger()->error('Leave replacement email failed: ' . $e->getMessage());
+        }
     }
 
     public function reject(Request $request, LeaveRequest $leave)
     {
+        $wasApproved = $leave->status === 'approved';
+
         $leave->update([
             'status'           => 'rejected',
             'approved_by'      => auth()->user()->employee?->id,
             'rejection_reason' => $request->rejection_reason,
         ]);
+
+        // Restore leave balance if it was previously approved (balance was already deducted)
+        if ($wasApproved) {
+            LeaveBalance::where('employee_id', $leave->employee_id)
+                ->where('leave_type_id', $leave->leave_type_id)
+                ->where('year', $leave->from_date->year)
+                ->decrement('used_days', $leave->days_count);
+        }
+
+        // Reset employee status to active if no other active approved leaves exist
+        $this->maybeRestoreEmployeeStatus($leave->employee_id);
+
         app(NotificationService::class)->leaveStatusChanged($leave->fresh());
         return back()->with('success', 'Leave rejected.');
     }
 
     public function cancel(LeaveRequest $leave)
     {
+        $wasApproved = $leave->status === 'approved';
+
         $leave->update(['status' => 'cancelled']);
+
+        // Restore leave balance if cancelling an already-approved leave
+        if ($wasApproved) {
+            LeaveBalance::where('employee_id', $leave->employee_id)
+                ->where('leave_type_id', $leave->leave_type_id)
+                ->where('year', $leave->from_date->year)
+                ->decrement('used_days', $leave->days_count);
+        }
+
+        // Reset employee status to active if no other active approved leaves exist
+        $this->maybeRestoreEmployeeStatus($leave->employee_id);
+
         return back()->with('success', 'Leave cancelled.');
+    }
+
+    /**
+     * Restore employee status to 'active' if they have no other currently active approved leaves.
+     */
+    private function maybeRestoreEmployeeStatus(int $employeeId): void
+    {
+        $today = now()->toDateString();
+        $hasActiveLeave = LeaveRequest::where('employee_id', $employeeId)
+            ->where('status', 'approved')
+            ->where('from_date', '<=', $today)
+            ->where('to_date', '>=', $today)
+            ->exists();
+
+        if (!$hasActiveLeave) {
+            Employee::where('id', $employeeId)->where('status', 'on_leave')->update(['status' => 'active']);
+        }
     }
 
     public function types()

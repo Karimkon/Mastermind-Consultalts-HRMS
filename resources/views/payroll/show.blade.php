@@ -6,54 +6,117 @@
     subtitle="{{ date('F Y', mktime(0,0,0,$payroll->month,1,$payroll->year)) }} · {{ $payroll->client?->company_name ?? 'General Payroll' }}">
     <a href="{{ route('payroll.index') }}" class="btn-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
 
-    @if(!$payroll->isLocked())
-        @if(in_array($payroll->status, ['draft','processing']))
-        <form method="POST" action="{{ route('payroll.process', $payroll) }}" class="inline">
-            @csrf <button class="btn-primary"><i class="fas fa-play mr-1"></i> Process Payroll</button>
-        </form>
-        @endif
-
-        @if($payroll->status === 'processed')
-        <form method="POST" action="{{ route('payroll.approve', $payroll) }}" class="inline">
-            @csrf <button class="btn-primary"><i class="fas fa-check-circle mr-1"></i> Approve Payroll</button>
-        </form>
-        @endif
-
-        @if($payroll->status === 'approved')
-        <form method="POST" action="{{ route('payroll.mark-paid', $payroll) }}" class="inline"
-              onsubmit="return confirm('Mark as paid? This will automatically lock this payroll run.')">
-            @csrf <button class="btn-primary bg-emerald-600 hover:bg-emerald-700"><i class="fas fa-money-bill-wave mr-1"></i> Mark as Paid & Lock</button>
-        </form>
-        @endif
-
-        @if(in_array($payroll->status, ['processed','approved']))
-        <form method="POST" action="{{ route('payroll.lock', $payroll) }}" class="inline"
-              onsubmit="return confirm('Lock this payroll run? Only a Super Admin can unlock it later.')">
-            @csrf <button class="bg-slate-600 text-white hover:bg-slate-700 px-4 py-2 rounded-lg text-sm font-medium">
-                <i class="fas fa-lock mr-1"></i> Lock Run
-            </button>
-        </form>
-        @endif
-    @else
-        <div class="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-            <i class="fas fa-lock"></i>
-            <span>Locked by <strong>{{ $payroll->locker?->name ?? 'System' }}</strong>
-            on {{ $payroll->locked_at->format('d M Y H:i') }}</span>
-        </div>
-        @if(auth()->user()->hasRole('super-admin'))
-        <form method="POST" action="{{ route('payroll.unlock', $payroll) }}" class="inline"
-              onsubmit="return confirm('Unlock this payroll? Changes will be allowed.')">
-            @csrf <button class="bg-red-600 text-white hover:bg-red-700 px-4 py-2 rounded-lg text-sm font-medium">
-                <i class="fas fa-unlock mr-1"></i> Unlock (Super Admin)
-            </button>
-        </form>
-        @endif
+    {{-- Stage 1: AM processes --}}
+    @if(!$payroll->isLocked() && in_array($payroll->status, ['draft','processing']))
+    <form method="POST" action="{{ route('payroll.process', $payroll) }}" class="inline">
+        @csrf <button class="btn-primary"><i class="fas fa-play mr-1"></i> Run &amp; Submit to HR</button>
+    </form>
     @endif
 
-    @if(in_array($payroll->status, ['approved','paid']))
-    <a href="{{ route('payroll.bank-export', $payroll) }}" class="btn-secondary">
-        <i class="fas fa-download mr-1"></i> Bank Export
+    {{-- Stage 2: HR approves --}}
+    @if(!$payroll->isLocked() && $payroll->status === 'processed')
+    @role('super-admin|hr-admin')
+    <form method="POST" action="{{ route('payroll.hr-approve', $payroll) }}" class="inline">
+        @csrf <button class="btn-primary"><i class="fas fa-check mr-1"></i> HR Approve → Finance</button>
+    </form>
+    @endrole
+    @endif
+
+    {{-- Stage 3: Finance approves --}}
+    @if(!$payroll->isLocked() && $payroll->status === 'hr_approved')
+    @role('super-admin|payroll-officer')
+    <form method="POST" action="{{ route('payroll.finance-approve', $payroll) }}" class="inline">
+        @csrf <button class="btn-primary" style="background:#7c3aed;"><i class="fas fa-check-double mr-1"></i> Finance Approve → MD</button>
+    </form>
+    @endrole
+    @endif
+
+    {{-- Stage 4: MD final approval — auto-locks --}}
+    @if(!$payroll->isLocked() && $payroll->status === 'finance_approved')
+    @role('super-admin')
+    <form method="POST" action="{{ route('payroll.approve', $payroll) }}" class="inline"
+          onsubmit="return confirm('Give MD final approval? This will lock the payroll immediately.')">
+        @csrf <button class="btn-primary" style="background:#059669;"><i class="fas fa-stamp mr-1"></i> MD Final Approval (Locks)</button>
+    </form>
+    @endrole
+    @endif
+
+    {{-- After MD approval: mark paid --}}
+    @if(in_array($payroll->status, ['md_approved','approved']) && $payroll->isLocked())
+    @role('super-admin|payroll-officer')
+    <form method="POST" action="{{ route('payroll.mark-paid', $payroll) }}" class="inline"
+          onsubmit="return confirm('Mark as paid? Employees will be notified.')">
+        @csrf <button class="btn-primary" style="background:#059669;"><i class="fas fa-money-bill-wave mr-1"></i> Mark as Paid</button>
+    </form>
+    @endrole
+    @endif
+
+    {{-- Downloads: available after MD approval --}}
+    @if(in_array($payroll->status, ['md_approved','approved','paid']))
+    @can('reports.export')
+    <a href="{{ route('payroll.export-pdf', $payroll) }}" class="btn-secondary">
+        <i class="fas fa-file-pdf text-red-500 mr-1"></i> Summary PDF
     </a>
+    <a href="{{ route('payroll.export-excel', $payroll) }}" class="btn-secondary">
+        <i class="fas fa-file-excel text-green-600 mr-1"></i> Export Excel
+    </a>
+    {{-- KCB Bulk Payment Files --}}
+    <div x-data="{ open: false }" class="relative">
+        <button @click="open = !open" type="button" class="btn-secondary flex items-center gap-1">
+            <i class="fas fa-landmark text-blue-600 mr-1"></i> KCB Payment Files
+            <i class="fas fa-chevron-down text-xs ml-1" :class="open ? 'rotate-180' : ''" style="transition:transform .2s"></i>
+        </button>
+        <div x-show="open" @click.outside="open=false" x-cloak
+             class="absolute right-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1">
+            <a href="{{ route('payroll.kcb-eft', $payroll) }}"
+               class="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                <span class="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
+                    <i class="fas fa-university text-blue-600 text-xs"></i>
+                </span>
+                <div>
+                    <p class="font-medium">EFT Bank Transfer</p>
+                    <p class="text-xs text-slate-400">Bank account employees</p>
+                </div>
+            </a>
+            <a href="{{ route('payroll.kcb-mtn', $payroll) }}"
+               class="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                <span class="w-7 h-7 rounded-lg bg-yellow-100 flex items-center justify-center">
+                    <i class="fas fa-mobile-alt text-yellow-600 text-xs"></i>
+                </span>
+                <div>
+                    <p class="font-medium">MTN Mobile Money</p>
+                    <p class="text-xs text-slate-400">MTN payment employees</p>
+                </div>
+            </a>
+            <a href="{{ route('payroll.kcb-airtel', $payroll) }}"
+               class="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                <span class="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center">
+                    <i class="fas fa-mobile-alt text-red-600 text-xs"></i>
+                </span>
+                <div>
+                    <p class="font-medium">Airtel Mobile Money</p>
+                    <p class="text-xs text-slate-400">Airtel payment employees</p>
+                </div>
+            </a>
+        </div>
+    </div>
+    @endcan
+    @endif
+
+    {{-- Locked indicator --}}
+    @if($payroll->isLocked())
+    <div class="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+        <i class="fas fa-lock"></i>
+        <span>Locked by <strong>{{ $payroll->locker?->name ?? 'System' }}</strong></span>
+    </div>
+    @role('super-admin')
+    <form method="POST" action="{{ route('payroll.unlock', $payroll) }}" class="inline"
+          onsubmit="return confirm('Unlock this payroll? Changes will be allowed.')">
+        @csrf <button class="bg-red-600 text-white hover:bg-red-700 px-3 py-2 rounded-lg text-xs font-medium">
+            <i class="fas fa-unlock mr-1"></i> Unlock
+        </button>
+    </form>
+    @endrole
     @endif
 </x-page-header>
 
@@ -82,6 +145,36 @@
     </div>
 </div>
 @endif
+
+{{-- Approval Workflow Progress --}}
+@php
+    $stage = $payroll->workflowStage();
+    $stages = [
+        ['label'=>'AM Processes','sub'=>$payroll->processor?->name ?? 'Pending','date'=>$payroll->processed_at,'icon'=>'fa-cogs'],
+        ['label'=>'HR Approval','sub'=>$payroll->hrApprover?->name ?? 'Pending','date'=>$payroll->hr_approved_at,'icon'=>'fa-user-check'],
+        ['label'=>'Finance Approval','sub'=>$payroll->financeApprover?->name ?? 'Pending','date'=>$payroll->finance_approved_at,'icon'=>'fa-calculator'],
+        ['label'=>'MD Approval','sub'=>$payroll->mdApprover?->name ?? 'Pending','date'=>$payroll->md_approved_at,'icon'=>'fa-stamp'],
+        ['label'=>'Paid','sub'=>$payroll->status === 'paid' ? 'Completed' : 'Pending','date'=>$payroll->paid_at,'icon'=>'fa-check-circle'],
+    ];
+@endphp
+<div class="card p-5 mb-5">
+    <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Approval Workflow</h3>
+    <div class="flex items-start justify-between relative">
+        <div class="absolute top-5 left-0 right-0 h-0.5 bg-slate-200 z-0" style="margin:0 10%"></div>
+        @foreach($stages as $i => $s)
+        @php $done = $stage > $i; $current = $stage === $i; @endphp
+        <div class="flex flex-col items-center z-10 flex-1">
+            <div class="w-10 h-10 rounded-full flex items-center justify-center border-2 mb-2
+                {{ $done ? 'bg-green-500 border-green-500 text-white' : ($current ? 'bg-blue-500 border-blue-500 text-white animate-pulse' : 'bg-white border-slate-200 text-slate-400') }}">
+                <i class="fas {{ $s['icon'] }} text-sm"></i>
+            </div>
+            <p class="text-xs font-semibold text-slate-700 text-center">{{ $s['label'] }}</p>
+            <p class="text-xs text-slate-400 text-center">{{ $s['sub'] }}</p>
+            @if($s['date'])<p class="text-xs text-green-600 text-center">{{ \Carbon\Carbon::parse($s['date'])->format('d M') }}</p>@endif
+        </div>
+        @endforeach
+    </div>
+</div>
 
 {{-- Client info bar --}}
 @if($payroll->client)
