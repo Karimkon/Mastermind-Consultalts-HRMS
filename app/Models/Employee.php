@@ -15,7 +15,7 @@ class Employee extends Model
         'employment_type','status','salary_grade',
         // Job Profile
         'week_off_type','week_off_day','holiday_calendar','contract_applicable','is_expatriate',
-        'contract_start_date','contract_notes',
+        'contract_start_date','contract_end_date','contract_notes',
         // Placement
         'work_location','sub_department','employee_category','class_name','position_name','organization_unit',
         // Personal
@@ -31,10 +31,10 @@ class Employee extends Model
         // Statutory Deductions
         'charge_nssf','force_fixed_nssf','fixed_nssf_amount','nssf_paid_by_employer',
         'do_not_charge_nssf_employee','voluntary_nssf',
-        'charge_lst','lst_paid_by_employer','tax_paid_by_employer',
+        'charge_lst','lst_paid_by_employer','tax_paid_by_employer','charge_paye',
         'apply_special_tax','special_tax_percentage',
         // Banking & Salary Calculation
-        'bank_name','bank_account','bank_branch','tax_number','payment_mode',
+        'bank_name','bank_account','bank_branch','mobile_money_number','tax_number','payment_mode',
         'ot_calc_hours','absenteeism_calc_hours','ot1_calc_hours','ot2_calc_hours','min_daily_working_hours',
         // Provident Fund
         'pf_applicable','pf_deduction_type','pf_calculate_on','pf_employee_rate','pf_employer_rate','pf_scheme',
@@ -47,6 +47,8 @@ class Employee extends Model
         // Blacklist & Hold
         'is_blacklisted','blacklist_date','blacklist_reason',
         'on_hold','hold_date','hold_end_date','hold_reason',
+        // Termination & Retirement
+        'termination_reason','retirement_date','retirement_reason',
         // Probation
         'probation_end_date','probation_status','probation_confirmed_at','probation_confirmed_by',
     ];
@@ -55,6 +57,8 @@ class Employee extends Model
         'hire_date'              => 'date',
         'end_date'               => 'date',
         'contract_start_date'    => 'date',
+        'contract_end_date'      => 'date',
+        'retirement_date'        => 'date',
         'date_of_birth'          => 'date',
         'anniversary_date'       => 'date',
         'blacklist_date'         => 'date',
@@ -72,6 +76,7 @@ class Employee extends Model
         'charge_lst'                  => 'boolean',
         'lst_paid_by_employer'        => 'boolean',
         'tax_paid_by_employer'        => 'boolean',
+        'charge_paye'                 => 'boolean',
         'apply_special_tax'           => 'boolean',
         'pf_applicable'               => 'boolean',
         'do_not_deduct_voluntary_pf'  => 'boolean',
@@ -143,11 +148,13 @@ class Employee extends Model
     public function getStatusBadgeAttribute(): string
     {
         return match($this->status) {
-            'active'     => '<span class="badge-green">Active</span>',
-            'on_leave'   => '<span class="badge-yellow">On Leave</span>',
-            'terminated' => '<span class="badge-red">Terminated</span>',
-            'suspended'  => '<span class="badge-orange">Suspended</span>',
-            default      => '<span class="badge-gray">Unknown</span>',
+            'active'            => '<span class="badge-green">Active</span>',
+            'on_leave'          => '<span class="badge-yellow">On Leave</span>',
+            'terminated'        => '<span class="badge-red">Terminated</span>',
+            'suspended'         => '<span class="badge-orange">Suspended</span>',
+            'retired'           => '<span class="badge-gray">Retired</span>',
+            'contract_expired'  => '<span class="badge-red">Contract Expired</span>',
+            default             => '<span class="badge-gray">Unknown</span>',
         };
     }
 }

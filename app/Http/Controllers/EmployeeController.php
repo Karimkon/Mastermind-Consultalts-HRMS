@@ -100,8 +100,9 @@ class EmployeeController extends Controller
         $request->validate([
             'first_name'     => 'required|string|max:100',
             'last_name'      => 'required|string|max:100',
-            'department_id'  => 'required|exists:departments,id',
-            'designation_id' => 'required|exists:designations,id',
+            'department_id'  => 'nullable|exists:departments,id',
+            'designation_id' => 'nullable|exists:designations,id',
+            'login_email'    => 'nullable|email|max:255',
         ]);
 
         $fields = [
@@ -112,7 +113,7 @@ class EmployeeController extends Controller
             'department_id','designation_id','manager_id',
             'hire_date','end_date','employment_type','status','salary_grade',
             // Job Profile
-            'week_off_type','week_off_day','holiday_calendar','contract_start_date','contract_notes',
+            'week_off_type','week_off_day','holiday_calendar','contract_start_date','contract_end_date','contract_notes',
             // Placement
             'work_location','sub_department','employee_category','class_name','position_name','organization_unit',
             // Personal
@@ -135,8 +136,9 @@ class EmployeeController extends Controller
             // Pension
             'pension_deduction_type','pension_calculate_on','pension_employee_rate','pension_employer_rate','pension_scheme',
             'voluntary_pension_deduction_type','voluntary_pension_calculate_on','voluntary_pension_amount',
-            // Blacklist & Hold
+            // Blacklist, Hold, Termination & Retirement
             'blacklist_date','blacklist_reason','hold_date','hold_end_date','hold_reason',
+            'termination_reason','retirement_date','retirement_reason',
         ];
 
         $data = $request->only($fields);
@@ -155,10 +157,18 @@ class EmployeeController extends Controller
 
         $previousStatus = $employee->status;
         $employee->update($data);
-        $employee->user->update(['name' => trim(($request->first_name ?? '').' '.($request->last_name ?? ''))]);
 
-        // When employee is terminated or suspended, cancel all pending/approved future leaves
-        if (in_array($data['status'] ?? '', ['terminated', 'suspended']) && $previousStatus !== ($data['status'] ?? '')) {
+        $userUpdates = ['name' => trim(($request->first_name ?? '').' '.($request->last_name ?? ''))];
+        if ($request->filled('login_email') && filter_var($request->login_email, FILTER_VALIDATE_EMAIL)) {
+            $newEmail = strtolower(trim($request->login_email));
+            // Only update if not already taken by another user
+            $taken = \App\Models\User::where('email', $newEmail)->where('id', '!=', $employee->user->id)->exists();
+            if (!$taken) $userUpdates['email'] = $newEmail;
+        }
+        $employee->user->update($userUpdates);
+
+        // When employee is terminated, suspended, retired, or contract expired — cancel all future leaves
+        if (in_array($data['status'] ?? '', ['terminated', 'suspended', 'retired', 'contract_expired']) && $previousStatus !== ($data['status'] ?? '')) {
             $today = now()->toDateString();
 
             // Cancel pending leaves
@@ -237,14 +247,12 @@ class EmployeeController extends Controller
         if ($clientId) {
             $client = \App\Models\Client::find($clientId);
             if ($client) {
-                // Build abbreviation from company name (up to 3 uppercase letters)
-                $words  = preg_split('/\s+/', $client->company_name);
-                $abbr   = '';
-                foreach ($words as $w) {
-                    if (strlen($abbr) >= 3) break;
-                    if (ctype_alpha($w[0] ?? '')) $abbr .= strtoupper($w[0]);
+                // Use first 3 letters of the first word: "Roofings Uganda Limited" → "ROF"
+                $firstWord = preg_replace('/[^A-Za-z]/', '', explode(' ', trim($client->company_name))[0]);
+                $abbr      = strtoupper(substr($firstWord, 0, 3));
+                if (strlen($abbr) < 2) {
+                    $abbr = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $client->company_name), 0, 3));
                 }
-                $abbr = $abbr ?: strtoupper(substr(preg_replace('/[^A-Za-z]/','',$client->company_name), 0, 3));
                 // Count existing employees for this client
                 $count = $client->employees()->withTrashed()->count() + 1;
                 return $abbr . str_pad($count, 3, '0', STR_PAD_LEFT);

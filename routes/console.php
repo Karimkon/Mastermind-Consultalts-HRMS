@@ -26,5 +26,8 @@ Schedule::command('hrms:contract-expiry-alerts')->dailyAt('08:30');
 // Auto-release employee holds whose end date has passed — daily at 00:10
 Schedule::command('hrms:auto-release-holds')->dailyAt('00:10');
 
+// Auto-terminate employees whose end_date or contract_end_date has passed — daily at 00:15
+Schedule::command('hrms:auto-terminate-employees')->dailyAt('00:15');
+
 // Recurring meeting instances — generate daily at 01:00
 Schedule::command('hrms:generate-recurring-meetings')->dailyAt('01:00');

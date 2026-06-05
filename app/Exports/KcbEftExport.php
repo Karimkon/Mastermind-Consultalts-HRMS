@@ -1,121 +1,102 @@
-<?php
+﻿<?php
 namespace App\Exports;
 
-use App\Models\{PayrollRun, Setting};
-use App\Support\BankCodes;
+use App\Models\PayrollRun;
+use App\Models\Setting;
 use Maatwebsite\Excel\Concerns\FromArray;
-use Maatwebsite\Excel\Concerns\WithStyles;
-use Maatwebsite\Excel\Concerns\WithColumnWidths;
-use Maatwebsite\Excel\Concerns\WithTitle;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use Maatwebsite\Excel\Concerns\WithEvents;
+use Maatwebsite\Excel\Events\AfterSheet;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 
-class KcbEftExport implements FromArray, WithStyles, WithColumnWidths, WithTitle
+class KcbEftExport implements FromArray, WithEvents
 {
-    private string $debitAccount;
-    private string $sortCode;
-    private string $reference;
+    private const SORT_CODES = [
+        "absa"            => "013847",
+        "baroda"          => "020147",
+        "stanbic"         => "040047",
+        "guaranty"        => "270147",
+        "finance trust"   => "370147",
+        "centenary"       => "168547",
+        "cairo"           => "180047",
+        "diamond trust"   => "190047",
+        "dtb"             => "190047",
+        "dfcu"            => "053647",
+        "tropical"        => "060147",
+        "standard chart"  => "080147",
+        "orient"          => "110147",
+        "bank of africa"  => "130447",
+        "citi"            => "220147",
+        "equity"          => "300047",
+        "abc"             => "310047",
+        "exim"            => "320047",
+        "bank of uganda"  => "990147",
+        "bank of india"   => "340147",
+        "ncba"            => "360147",
+        "ecobank"         => "290147",
+        "uba"             => "260147",
+        "housing finance" => "230147",
+        "kcb"             => "252947",
+    ];
 
-    public function __construct(private PayrollRun $run)
-    {
-        $this->debitAccount = Setting::get('kcb_account_number', '');
-        $this->sortCode     = Setting::get('kcb_sort_code', '252947');
-        $this->reference    = 'SALARY ' . date('M Y', mktime(0, 0, 0, $run->month, 1, $run->year));
-    }
+    public function __construct(private PayrollRun $run) {}
 
     public function array(): array
     {
-        $rows = [];
+        $kcbAccount = Setting::get("kcb_account_number", "");
+        $ref = "SAL-" . $this->run->year . "-" . str_pad($this->run->month, 2, "0", STR_PAD_LEFT);
 
-        // Row 1: Title
-        $rows[] = [null, 'Customer - Multi Debit payments', null, null, null, null, null, null, null];
-
-        // Row 2: Headers (exact KCB column names)
-        $rows[] = [
-            'Debit /From Account',
-            'Your Branch / Originator SORT Code',
-            'Beneficiary Name',
-            'Credit/To Account',
-            'Beneficiary Bank',
-            'BIC/SORT Code',
-            'Amount',
-            'My reference',
-            'Beneficiary Ref',
+        $rows = [
+            [null, "Customer - Multi Debit payments", null, null, null, null, null, null, null],
+            ["Debit /From Account", "Your Branch / Originator SORT Code", "Beneficiary Name",
+             "Credit/To Account", "Beneficiary Bank", "BIC/SORT Code", "Amount", "My reference", "Beneficiary Ref"],
         ];
 
-        // Data rows — bank-paying employees only
-        $total = 0;
-        $slips = $this->run->payslips()
-            ->with('employee')
-            ->get()
-            ->filter(fn($s) => in_array($s->employee?->payment_mode, ['bank', null, '']) && !empty($s->employee?->bank_account));
+        $payslips = $this->run->payslips()->with("employee")->get()
+            ->filter(fn($s) => in_array($s->employee->payment_mode ?? "bank", ["bank", ""]));
 
-        foreach ($slips as $slip) {
-            $emp     = $slip->employee;
-            $net     = (float) $slip->net_salary;
-            $total  += $net;
+        foreach ($payslips as $slip) {
+            $emp = $slip->employee;
             $rows[] = [
-                $this->debitAccount,
-                $this->sortCode,
-                strtoupper($emp->full_name),
-                $emp->bank_account ?? '',
-                $emp->bank_name ?? '',
-                BankCodes::sortCode($emp->bank_name ?? ''),
-                $net,
-                $this->reference,
-                $emp->emp_number,
+                $kcbAccount,
+                252947,
+                $emp->full_name,
+                $emp->bank_account ?? "",
+                $emp->bank_name ?? "",
+                $this->sortCode($emp->bank_name ?? ""),
+                (int) $slip->net_salary,
+                $ref,
+                $emp->full_name,
             ];
         }
-
-        // Total row (Amount column only)
-        $rows[] = [null, null, null, null, null, null, $total, null, null];
-
         return $rows;
     }
 
-    public function styles(Worksheet $sheet): array
+    private function sortCode(string $bank): string
     {
-        $lastRow = $sheet->getHighestRow();
-
-        // Title row
-        $sheet->mergeCells('B1:I1');
-        $sheet->getStyle('A1:I1')->applyFromArray([
-            'font' => ['bold' => true, 'size' => 13],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FF1F4E79']],
-            'font' => ['bold' => true, 'color' => ['argb' => 'FFFFFFFF'], 'size' => 12],
-        ]);
-
-        // Header row
-        $sheet->getStyle('A2:I2')->applyFromArray([
-            'font' => ['bold' => true, 'color' => ['argb' => 'FFFFFFFF']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FF2E75B6']],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-        ]);
-
-        // Total row
-        $sheet->getStyle("G{$lastRow}")->applyFromArray([
-            'font' => ['bold' => true],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FFFFF2CC']],
-        ]);
-
-        // Amount column — number format
-        $sheet->getStyle("G3:G{$lastRow}")->getNumberFormat()->setFormatCode('#,##0.00');
-
-        // Borders on data
-        $sheet->getStyle("A2:I{$lastRow}")->getBorders()->getAllBorders()->setBorderStyle('thin');
-
-        return [];
+        $lower = strtolower($bank);
+        foreach (self::SORT_CODES as $key => $code) {
+            if (str_contains($lower, $key)) return $code;
+        }
+        return "";
     }
 
-    public function columnWidths(): array
+    public function registerEvents(): array
     {
         return [
-            'A' => 22, 'B' => 30, 'C' => 28,
-            'D' => 22, 'E' => 28, 'F' => 16,
-            'G' => 16, 'H' => 22, 'I' => 16,
+            AfterSheet::class => function (AfterSheet $event) {
+                $sheet = $event->sheet->getDelegate();
+                $last  = $sheet->getHighestRow();
+                for ($i = 3; $i <= $last; $i++) {
+                    foreach (["A", "D"] as $col) {
+                        $cell = $sheet->getCell("{$col}{$i}");
+                        $cell->setValueExplicit((string) $cell->getValue(), DataType::TYPE_STRING);
+                    }
+                }
+                $sheet->getColumnDimension("A")->setWidth(22);
+                $sheet->getColumnDimension("C")->setWidth(28);
+                $sheet->getColumnDimension("D")->setWidth(22);
+                $sheet->getColumnDimension("E")->setWidth(22);
+            },
         ];
     }
-
-    public function title(): string { return 'EFT Bank Transfer'; }
 }

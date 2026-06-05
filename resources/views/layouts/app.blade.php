@@ -198,6 +198,14 @@
         </a>
         @endrole
 
+        {{-- ===== MD (Managing Director) ===== --}}
+        @role('md')
+        <p class="sidebar-group" x-show="sidebarOpen">Payroll Approval</p>
+        <a href="{{ route('payroll.index') }}" class="sidebar-link {{ request()->routeIs('payroll.*') ? 'active' : '' }}">
+            <i class="fas fa-money-bill-wave w-4 text-center"></i><span x-show="sidebarOpen">Payroll Runs</span>
+        </a>
+        @endrole
+
         {{-- ===== RECRUITER ===== --}}
         @role('recruiter')
         <p class="sidebar-group" x-show="sidebarOpen">Recruitment</p>

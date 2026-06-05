@@ -1,7 +1,7 @@
 <?php
 namespace App\Services\Payroll;
 
-use App\Models\{Employee, PayrollRun, Payslip, EmployeeSalary, SalaryComponent, AttendanceLog, LeaveRequest};
+use App\Models\{Employee, PayrollRun, Payslip, EmployeeSalary, SalaryComponent, AttendanceLog, LeaveRequest, PayrollManualDays};
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 
@@ -12,20 +12,24 @@ class PayrollService
         [235001,   335000,     0.10, 0],
         [335001,   410000,     0.20, 10000],
         [410001,   10000000,   0.30, 25000],
-        [10000001, PHP_INT_MAX, 0.40, 2992000],
+        [10000001, PHP_INT_MAX, 0.40, 2902000],
     ];
 
     public function processRun(PayrollRun $run): int
     {
+        $today = now()->toDateString();
         $query = Employee::whereIn('status', ['active', 'on_leave'])
             ->where('is_blacklisted', false)
-            ->where(function ($q) {
-                // Exclude employees currently on hold
+            ->where(function ($q) use ($today) {
+                // Exclude employees currently on hold (unless hold has expired)
                 $q->where('on_hold', false)
-                  ->orWhere(function ($q2) {
-                      // Allow if hold has already expired (end date passed)
-                      $q2->where('on_hold', true)->whereNotNull('hold_end_date')->where('hold_end_date', '<', now()->toDateString());
+                  ->orWhere(function ($q2) use ($today) {
+                      $q2->where('on_hold', true)->whereNotNull('hold_end_date')->where('hold_end_date', '<', $today);
                   });
+            })
+            ->where(function ($q) use ($today) {
+                // Exclude employees whose contract has expired
+                $q->whereNull('contract_end_date')->orWhere('contract_end_date', '>=', $today);
             });
 
         // Scope to client's employees if this is a client-specific run
@@ -48,7 +52,8 @@ class PayrollService
         $salary = EmployeeSalary::where('employee_id', $employee->id)
             ->where('is_current', true)->latest()->first();
 
-        $basic = $salary ? (float) $salary->basic_salary : 0;
+        $salaryType = $salary ? ($salary->salary_type ?? 'monthly') : 'monthly';
+        $rateValue  = $salary ? (float) $salary->basic_salary : 0;
 
         $start = Carbon::create($run->year, $run->month, 1)->startOfDay();
         $end   = $start->copy()->endOfMonth()->endOfDay();
@@ -56,39 +61,62 @@ class PayrollService
         // Total working days in the month (Mon–Fri)
         $totalWorkingDays = $this->countWorkingDays($start, $end);
 
-        // ── Pro-rata factor ────────────────────────────────────────
-        $prorateFactor = 1.0;
-        $hireDate = $employee->hire_date;
-        $endDate  = $employee->end_date;
-
-        if ($hireDate && $hireDate->between($start, $end)) {
-            // Mid-month join
-            $workingDaysFromHire = $this->countWorkingDays($hireDate, $end);
-            $prorateFactor = $totalWorkingDays > 0 ? round($workingDaysFromHire / $totalWorkingDays, 4) : 1;
-        } elseif ($endDate && $endDate->between($start, $end)) {
-            // Mid-month exit
-            $workingDaysToExit = $this->countWorkingDays($start, $endDate);
-            $prorateFactor = $totalWorkingDays > 0 ? round($workingDaysToExit / $totalWorkingDays, 4) : 1;
-        }
-
-        $basic = round($basic * $prorateFactor, 0);
-
         // ── Attendance ──────────────────────────────────────────────
-        $workedDays = AttendanceLog::where('employee_id', $employee->id)
-            ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
-            ->where('status', 'present')->count();
-        $absentDays = AttendanceLog::where('employee_id', $employee->id)
-            ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
-            ->where('status', 'absent')->count();
+        // Check for manual days override (e.g. from uploaded Excel payroll sheet)
+        $manualDays = PayrollManualDays::where('payroll_run_id', $run->id)
+            ->where('employee_id', $employee->id)->first();
+
+        if ($manualDays) {
+            $workedDays = (int) $manualDays->days_worked;
+            $absentDays = max(0, $totalWorkingDays - $workedDays);
+        } else {
+            $workedDays = AttendanceLog::where('employee_id', $employee->id)
+                ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
+                ->where('status', 'present')->count();
+            $absentDays = AttendanceLog::where('employee_id', $employee->id)
+                ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
+                ->where('status', 'absent')->count();
+        }
 
         // ── Overtime ────────────────────────────────────────────────
         $totalOvertimeHours = (float) AttendanceLog::where('employee_id', $employee->id)
             ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
             ->sum('overtime_hours');
 
-        $dailyRate  = $totalWorkingDays > 0 ? ($salary ? (float)$salary->basic_salary / $totalWorkingDays : 0) : 0;
-        $hourlyRate = $dailyRate / 8;
-        $overtimePay = round($totalOvertimeHours * $hourlyRate * 1.5, 0);
+        // ── Basic salary computation based on salary type ───────────
+        $prorateFactor = 1.0;
+        $basic         = 0;
+        $overtimePay   = 0;
+
+        if ($salaryType === 'daily') {
+            // Daily rate: basic pay = daily_rate x days_worked
+            $basic       = round($rateValue * $workedDays, 0);
+            $hourlyRate  = $rateValue / 8;
+            $overtimePay = round($totalOvertimeHours * $hourlyRate * 1.5, 0);
+
+        } elseif ($salaryType === 'hourly') {
+            // Hourly rate: basic pay = hourly_rate x (days_worked x 8 regular hrs)
+            $basic       = round($rateValue * ($workedDays * 8), 0);
+            $overtimePay = round($totalOvertimeHours * $rateValue * 1.5, 0);
+
+        } else {
+            // Monthly (default): pro-rata for mid-month joins/exits
+            $hireDate = $employee->hire_date;
+            $endDate  = $employee->end_date;
+
+            if ($hireDate && $hireDate->between($start, $end)) {
+                $workingDaysFromHire = $this->countWorkingDays($hireDate, $end);
+                $prorateFactor = $totalWorkingDays > 0 ? round($workingDaysFromHire / $totalWorkingDays, 4) : 1;
+            } elseif ($endDate && $endDate->between($start, $end)) {
+                $workingDaysToExit = $this->countWorkingDays($start, $endDate);
+                $prorateFactor = $totalWorkingDays > 0 ? round($workingDaysToExit / $totalWorkingDays, 4) : 1;
+            }
+
+            $basic       = round($rateValue * $prorateFactor, 0);
+            $dailyRate   = $totalWorkingDays > 0 ? $rateValue / $totalWorkingDays : 0;
+            $hourlyRate  = $dailyRate / 8;
+            $overtimePay = round($totalOvertimeHours * $hourlyRate * 1.5, 0);
+        }
 
         // ── Salary Components ───────────────────────────────────────
         $allowances = 0;
@@ -139,9 +167,16 @@ class PayrollService
                   ->orWhereBetween('to_date', [$start->toDateString(), $end->toDateString()]);
             })->sum('days_count');
 
-        $leaveDeduction = round(($unpaidLeaveDays > 0 && $totalWorkingDays > 0)
-            ? ($salary ? (float)$salary->basic_salary / $totalWorkingDays * $unpaidLeaveDays : 0)
-            : 0, 0);
+        // Leave deduction: per-day rate depends on salary type
+        $leaveDeductionRate = 0;
+        if ($salaryType === 'daily') {
+            $leaveDeductionRate = $rateValue;
+        } elseif ($salaryType === 'hourly') {
+            $leaveDeductionRate = $rateValue * 8;
+        } elseif ($totalWorkingDays > 0) {
+            $leaveDeductionRate = $rateValue / $totalWorkingDays;
+        }
+        $leaveDeduction = round($unpaidLeaveDays > 0 ? $leaveDeductionRate * $unpaidLeaveDays : 0, 0);
 
         if ($leaveDeduction > 0) {
             $deductions += $leaveDeduction;
@@ -155,11 +190,17 @@ class PayrollService
         }
 
         $gross   = $basic + $allowances;
-        $taxable = max(0, $gross - $deductions);
-        $paye    = $this->calculatePAYE($taxable);
+        // Uganda PAYE is assessed on gross employment income before NSSF deductions
+        $taxable = $gross;
 
-        $details[]  = ['name' => 'PAYE (Income Tax)', 'code' => 'PAYE', 'type' => 'deduction', 'amount' => $paye, 'taxable' => false];
-        $deductions += $paye;
+        // PAYE: deduct only when charge_paye is enabled for this employee
+        $chargePaye = ($employee->charge_paye ?? true);
+        $paye = 0;
+        if ($chargePaye) {
+            $paye = $this->calculatePAYE($taxable);
+            $details[]  = ['name' => 'PAYE (Income Tax)', 'code' => 'PAYE', 'type' => 'deduction', 'amount' => $paye, 'taxable' => false];
+            $deductions += $paye;
+        }
 
         $net = max(0, round($gross - $deductions, 0));
 

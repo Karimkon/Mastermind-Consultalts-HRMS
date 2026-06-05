@@ -44,6 +44,7 @@ tfoot tr td { padding:6px 8px; font-weight:700; font-size:10px; border-top:2px s
         <td><div class="lbl">Total Gross</div><div class="val" style="font-size:14px;font-weight:700;">{{ $company['currency'] }} {{ number_format($totals['gross'],0) }}</div></td>
         <td><div class="lbl">Total Deductions</div><div class="val" style="font-size:14px;font-weight:700;">{{ $company['currency'] }} {{ number_format($totals['deductions'],0) }}</div></td>
         <td><div class="lbl">Total PAYE</div><div class="val" style="font-size:14px;font-weight:700;">{{ $company['currency'] }} {{ number_format($totals['tax'],0) }}</div></td>
+        <td><div class="lbl">NSSF (Emp 5%)</div><div class="val" style="font-size:14px;font-weight:700;color:#7c3aed;">{{ $company['currency'] }} {{ number_format($totals['nssf'],0) }}</div></td>
         <td><div class="lbl">Total Net Pay</div><div class="val" style="font-size:16px;font-weight:700;color:#166534;">{{ $company['currency'] }} {{ number_format($totals['net'],0) }}</div></td>
     </tr></table>
 
@@ -51,10 +52,16 @@ tfoot tr td { padding:6px 8px; font-weight:700; font-size:10px; border-top:2px s
         <thead><tr>
             <th>#</th><th>Emp No</th><th>Name</th><th>Department</th>
             <th class="num">Basic</th><th class="num">Gross</th>
-            <th class="num">Deductions</th><th class="num">PAYE</th><th class="num">Net Pay</th>
+            <th class="num">Deductions</th><th class="num">PAYE</th><th class="num">NSSF 5%</th><th class="num">Net Pay</th>
         </tr></thead>
         <tbody>
         @foreach($payroll->payslips as $i => $slip)
+        @php
+            $pdfNssf = 0;
+            foreach ($slip->component_details ?? [] as $_pd) {
+                if (($_pd['code'] ?? '') === 'NSSF_EMP') { $pdfNssf = $_pd['amount'] ?? 0; break; }
+            }
+        @endphp
         <tr>
             <td>{{ $i + 1 }}</td>
             <td>{{ $slip->employee->emp_number }}</td>
@@ -64,6 +71,7 @@ tfoot tr td { padding:6px 8px; font-weight:700; font-size:10px; border-top:2px s
             <td class="num">{{ number_format($slip->gross_salary ?? 0, 0) }}</td>
             <td class="num">{{ number_format($slip->total_deductions ?? 0, 0) }}</td>
             <td class="num">{{ number_format($slip->tax_amount ?? 0, 0) }}</td>
+            <td class="num">{{ number_format($pdfNssf, 0) }}</td>
             <td class="num"><strong>{{ number_format($slip->net_salary ?? 0, 0) }}</strong></td>
         </tr>
         @endforeach
@@ -74,6 +82,7 @@ tfoot tr td { padding:6px 8px; font-weight:700; font-size:10px; border-top:2px s
             <td class="num">{{ number_format($totals['gross'], 0) }}</td>
             <td class="num">{{ number_format($totals['deductions'], 0) }}</td>
             <td class="num">{{ number_format($totals['tax'], 0) }}</td>
+            <td class="num">{{ number_format($totals['nssf'], 0) }}</td>
             <td class="num">{{ $company['currency'] }} {{ number_format($totals['net'], 0) }}</td>
         </tr></tfoot>
     </table>

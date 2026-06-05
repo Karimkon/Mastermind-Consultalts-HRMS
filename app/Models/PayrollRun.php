@@ -24,6 +24,7 @@ class PayrollRun extends Model {
     ];
 
     public function payslips()        { return $this->hasMany(Payslip::class); }
+    public function comments()        { return $this->hasMany(PayrollComment::class)->orderBy('created_at'); }
     public function processor()       { return $this->belongsTo(User::class, 'processed_by'); }
     public function approver()        { return $this->belongsTo(User::class, 'approved_by'); }
     public function hrApprover()      { return $this->belongsTo(User::class, 'hr_approved_by'); }

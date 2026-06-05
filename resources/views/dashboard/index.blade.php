@@ -10,15 +10,15 @@
 
 {{-- Stat Cards --}}
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-    <x-stat-card icon="fas fa-users" label="Total Employees" :value="$stats['total_employees']" color="blue" />
-    <x-stat-card icon="fas fa-user-check" label="Present Today" :value="$stats['present_today']" color="green" />
-    <x-stat-card icon="fas fa-calendar-minus" label="On Leave Today" :value="$stats['on_leave_today']" color="yellow" />
-    <x-stat-card icon="fas fa-clock" label="Pending Leaves" :value="$stats['pending_leaves']" color="red" />
+    <x-stat-card icon="fas fa-users" label="Total Employees" :value="$stats['total_employees'] ?? 0" color="blue" />
+    <x-stat-card icon="fas fa-user-check" label="Present Today" :value="$stats['present_today'] ?? 0" color="green" />
+    <x-stat-card icon="fas fa-calendar-minus" label="On Leave Today" :value="$stats['on_leave_today'] ?? 0" color="yellow" />
+    <x-stat-card icon="fas fa-clock" label="Pending Leaves" :value="$stats['pending_leaves'] ?? 0" color="red" />
 </div>
 
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-    <x-stat-card icon="fas fa-briefcase" label="Open Jobs" :value="$stats['open_jobs']" color="purple" />
-    <x-stat-card icon="fas fa-video" label="Meetings Today" :value="$stats['meetings_today']" color="indigo" />
+    <x-stat-card icon="fas fa-briefcase" label="Open Jobs" :value="$stats['open_jobs'] ?? 0" color="purple" />
+    <x-stat-card icon="fas fa-video" label="Meetings Today" :value="$stats['meetings_today'] ?? 0" color="indigo" />
     @php $ec = $stats['expiring_contracts'] ?? 0; @endphp
     <a href="{{ route('employees.index') }}?expiring_soon=1"
        class="card p-4 hover:shadow-md transition-shadow flex items-center gap-4 group {{ $ec > 0 ? 'border-2 border-orange-200' : '' }}">

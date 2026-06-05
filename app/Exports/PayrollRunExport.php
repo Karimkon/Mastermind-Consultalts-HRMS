@@ -14,20 +14,27 @@ class PayrollRunExport implements FromCollection, WithHeadings, WithTitle, WithS
 
     public function collection()
     {
-        return $this->run->payslips()->with('employee.department')->get()->map(fn ($slip) => [
-            $slip->employee->emp_number ?? '',
-            $slip->employee->payroll_number ?? '',
-            $slip->employee->full_name,
-            $slip->employee->department?->name ?? '',
-            $slip->employee->designation?->title ?? '',
-            $slip->employee->bank_name ?? '',
-            $slip->employee->bank_account ?? '',
-            number_format($slip->basic_salary ?? 0, 2, '.', ''),
-            number_format($slip->gross_salary ?? 0, 2, '.', ''),
-            number_format($slip->total_deductions ?? 0, 2, '.', ''),
-            number_format($slip->tax_amount ?? 0, 2, '.', ''),
-            number_format($slip->net_salary ?? 0, 2, '.', ''),
-        ]);
+        return $this->run->payslips()->with('employee.department')->get()->map(function ($slip) {
+            $nssf = 0;
+            foreach ($slip->component_details ?? [] as $d) {
+                if (($d['code'] ?? '') === 'NSSF_EMP') { $nssf = $d['amount'] ?? 0; break; }
+            }
+            return [
+                $slip->employee->emp_number ?? '',
+                $slip->employee->payroll_number ?? '',
+                $slip->employee->full_name,
+                $slip->employee->department?->name ?? '',
+                $slip->employee->designation?->title ?? '',
+                $slip->employee->bank_name ?? '',
+                $slip->employee->bank_account ?? '',
+                number_format($slip->basic_salary ?? 0, 2, '.', ''),
+                number_format($slip->gross_salary ?? 0, 2, '.', ''),
+                number_format($slip->total_deductions ?? 0, 2, '.', ''),
+                number_format($slip->tax_amount ?? 0, 2, '.', ''),
+                number_format($nssf, 2, '.', ''),
+                number_format($slip->net_salary ?? 0, 2, '.', ''),
+            ];
+        });
     }
 
     public function headings(): array
@@ -35,7 +42,7 @@ class PayrollRunExport implements FromCollection, WithHeadings, WithTitle, WithS
         return [
             'Emp No', 'Payroll No', 'Full Name', 'Department', 'Designation',
             'Bank Name', 'Account No',
-            'Basic Salary', 'Gross Salary', 'Total Deductions', 'Tax (PAYE)', 'Net Pay (UGX)',
+            'Basic Salary', 'Gross Salary', 'Total Deductions', 'Tax (PAYE)', 'NSSF (Emp 5%)', 'Net Pay (UGX)',
         ];
     }
 

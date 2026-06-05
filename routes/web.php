@@ -119,14 +119,18 @@ Route::middleware(['auth','mfa'])->group(function () {
     Route::post('leave-types', [LeaveController::class, 'storeType'])->name('leaves.types.store');
     Route::get('leave-balance', [LeaveController::class, 'balance'])->name('leaves.balance');
 
-    // Payroll — payroll-officer, hr-admin, super-admin only
-    Route::middleware('role:super-admin|hr-admin|payroll-officer')->group(function () {
+    // Payroll — payroll-officer, hr-admin, super-admin, md (md can only view + final approve)
+    Route::middleware('role:super-admin|hr-admin|payroll-officer|md')->group(function () {
         Route::resource('payroll', PayrollController::class);
         Route::post('payroll/{payroll}/process', [PayrollController::class, 'process'])->name('payroll.process');
         Route::post('payroll/{payroll}/hr-approve', [PayrollController::class, 'hrApprove'])->name('payroll.hr-approve');
         Route::post('payroll/{payroll}/finance-approve', [PayrollController::class, 'financeApprove'])->name('payroll.finance-approve');
         Route::post('payroll/{payroll}/approve', [PayrollController::class, 'approve'])->name('payroll.approve');
         Route::post('payroll/{payroll}/mark-paid', [PayrollController::class, 'markPaid'])->name('payroll.mark-paid');
+        Route::post('payroll/{payroll}/send-back', [PayrollController::class, 'sendBack'])->name('payroll.send-back');
+        Route::get('payroll/{payroll}/hr-review',      [PayrollController::class, 'hrReview'])->name('payroll.hr-review');
+        Route::get('payroll/{payroll}/finance-review', [PayrollController::class, 'financeReview'])->name('payroll.finance-review');
+        Route::get('payroll/{payroll}/md-review',      [PayrollController::class, 'mdReview'])->name('payroll.md-review');
         Route::post('payroll/{payroll}/lock', [PayrollController::class, 'lock'])->name('payroll.lock');
         Route::post('payroll/{payroll}/unlock', [PayrollController::class, 'unlock'])->name('payroll.unlock')->middleware('role:super-admin');
         Route::get('payroll/{payroll}/export-pdf', [PayrollController::class, 'exportPdf'])->name('payroll.export-pdf');
@@ -136,6 +140,10 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::get('payroll/{payroll}/kcb-eft', [PayrollController::class, 'kcbEft'])->name('payroll.kcb-eft');
         Route::get('payroll/{payroll}/kcb-mtn', [PayrollController::class, 'kcbMtn'])->name('payroll.kcb-mtn');
         Route::get('payroll/{payroll}/kcb-airtel', [PayrollController::class, 'kcbAirtel'])->name('payroll.kcb-airtel');
+        Route::get('payroll/{payroll}/manual-days-template', [PayrollController::class, 'manualDaysTemplate'])->name('payroll.manual-days-template');
+        Route::post('payroll/{payroll}/import-manual-days', [PayrollController::class, 'importManualDays'])->name('payroll.import-manual-days');
+        Route::post('payroll/{payroll}/email-all-payslips', [PayrollController::class, 'emailAllPayslips'])->name('payroll.email-all-payslips');
+        Route::post('payroll/{payroll}/payslips/{employee}/email', [PayrollController::class, 'emailPayslip'])->name('payroll.payslip.email');
         Route::get('salary', [PayrollController::class, 'salaryIndex'])->name('salary.index');
         Route::get('salary/create', [PayrollController::class, 'salaryCreate'])->name('salary.create');
         Route::post('salary', [PayrollController::class, 'salaryStore'])->name('salary.store');

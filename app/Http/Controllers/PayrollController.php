@@ -2,15 +2,24 @@
 namespace App\Http\Controllers;
 
 use App\Exports\{BankPaymentExport, KcbEftExport, KcbMtnExport, KcbAirtelExport};
-use App\Models\{PayrollRun, Payslip, Employee, SalaryGrade, SalaryComponent, EmployeeSalary, Client};
+use App\Imports\PayrollManualDaysImport;
+use App\Mail\PayslipMail;
+use App\Models\{PayrollRun, Payslip, PayrollManualDays, PayrollComment, Employee, SalaryGrade, SalaryComponent, EmployeeSalary, Client};
 use App\Services\Payroll\PayrollService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Maatwebsite\Excel\Facades\Excel;
 
 class PayrollController extends Controller
 {
+    /** MD role can only view payroll and give final approval — block everything else. */
+    private function denyMd(): void
+    {
+        abort_if(auth()->user()->hasRole('md') && !auth()->user()->hasRole('super-admin'), 403, 'MD accounts can only view payroll and give final approval.');
+    }
+
     public function index(Request $request)
     {
         $clients = Client::orderBy('company_name')->get();
@@ -28,12 +37,14 @@ class PayrollController extends Controller
 
     public function create()
     {
+        $this->denyMd();
         $clients = Client::where('status', 'active')->orderBy('company_name')->get();
         return view('payroll.create', compact('clients'));
     }
 
     public function store(Request $request)
     {
+        $this->denyMd();
         $request->validate([
             'month'     => 'required|integer|min:1|max:12',
             'year'      => 'required|integer|min:2020',
@@ -76,18 +87,26 @@ class PayrollController extends Controller
             'net'        => $payroll->payslips->sum('net_salary'),
             'tax'        => $payroll->payslips->sum('tax_amount'),
             'deductions' => $payroll->payslips->sum('total_deductions'),
+            'nssf'       => $payroll->payslips->sum(function ($slip) {
+                foreach ($slip->component_details ?? [] as $d) {
+                    if (($d['code'] ?? '') === 'NSSF_EMP') return $d['amount'] ?? 0;
+                }
+                return 0;
+            }),
         ];
         return view('payroll.show', ['payroll' => $payroll, 'totals' => $totals]);
     }
 
     public function edit(PayrollRun $payroll)
     {
+        $this->denyMd();
         $clients = Client::where('status', 'active')->orderBy('company_name')->get();
         return view('payroll.edit', ['run' => $payroll, 'clients' => $clients]);
     }
 
     public function update(Request $request, PayrollRun $payroll)
     {
+        $this->denyMd();
         if ($payroll->isLocked()) {
             return back()->with('error', 'This payroll is locked. Only a Super Admin can unlock it.');
         }
@@ -97,6 +116,7 @@ class PayrollController extends Controller
 
     public function destroy(PayrollRun $payroll)
     {
+        $this->denyMd();
         if ($payroll->isLocked()) {
             return back()->with('error', 'Cannot delete a locked payroll run.');
         }
@@ -109,6 +129,7 @@ class PayrollController extends Controller
      */
     public function process(PayrollRun $payroll)
     {
+        $this->denyMd();
         if ($payroll->isLocked()) return back()->with('error', 'This payroll is locked.');
         if (in_array($payroll->status, ['hr_approved','finance_approved','md_approved','approved','paid'])) {
             return back()->with('error', 'Payroll is already in approval workflow.');
@@ -123,48 +144,146 @@ class PayrollController extends Controller
     }
 
     /**
-     * Stage 2 — HR Admin approves
+     * Stage 2a — HR Review page: select which employees to include
      */
-    public function hrApprove(PayrollRun $payroll)
+    public function hrReview(PayrollRun $payroll)
     {
+        $this->denyMd();
         abort_unless(auth()->user()->hasAnyRole(['super-admin','hr-admin']), 403);
         if ($payroll->status !== 'processed') {
-            return back()->with('error', 'Payroll must be in Submitted to HR status to approve.');
+            return back()->with('error', 'Payroll must be submitted to HR before review.');
         }
-        $payroll->update([
-            'status'          => 'hr_approved',
-            'hr_approved_by'  => auth()->id(),
-            'hr_approved_at'  => now(),
-        ]);
-        return back()->with('success', 'HR approved. Payroll submitted to Finance.');
+        $payslips = $payroll->payslips()->with('employee.department')->orderBy('employee_id')->get();
+        return view('payroll.hr-review', compact('payroll', 'payslips'));
     }
 
     /**
-     * Stage 3 — Finance / Payroll Officer approves
+     * Stage 2b — HR submits review: mark withheld employees, approve to Finance
+     */
+    public function hrApprove(PayrollRun $payroll)
+    {
+        $this->denyMd();
+        abort_unless(auth()->user()->hasAnyRole(['super-admin','hr-admin']), 403);
+        if ($payroll->status !== 'processed') {
+            return back()->with('error', 'Payroll must be submitted to HR before approving.');
+        }
+
+        $selectedIds    = request()->input('selected_payslips', []);
+        $withheldReason = request()->input('withheld_reason', 'Withheld by HR review.');
+
+        // Mark each payslip as pending (selected) or withheld (deselected)
+        $withheld = 0;
+        foreach ($payroll->payslips as $slip) {
+            if (in_array((string)$slip->id, $selectedIds)) {
+                $slip->update(['payment_status' => 'pending', 'withheld_reason' => null, 'withheld_stage' => null]);
+            } else {
+                $slip->update(['payment_status' => 'withheld', 'withheld_reason' => $withheldReason, 'withheld_stage' => 'hr']);
+                $withheld++;
+            }
+        }
+
+        $payroll->update([
+            'status'         => 'hr_approved',
+            'hr_approved_by' => auth()->id(),
+            'hr_approved_at' => now(),
+        ]);
+
+        $msg = 'HR approved. Payroll submitted to Finance.';
+        if ($withheld) $msg .= " {$withheld} employee(s) withheld from payment.";
+        return redirect()->route('payroll.show', $payroll)->with('success', $msg);
+    }
+
+    /**
+     * Stage 3a — Finance review page (select/deselect employees)
+     */
+    public function financeReview(PayrollRun $payroll)
+    {
+        $this->denyMd();
+        abort_unless(auth()->user()->hasAnyRole(['super-admin','payroll-officer']), 403);
+        if ($payroll->status !== 'hr_approved') {
+            return back()->with('error', 'Payroll must be HR-approved before Finance review.');
+        }
+        $payslips = $payroll->payslips()->with('employee.department')->orderBy('employee_id')->get();
+        return view('payroll.finance-review', compact('payroll', 'payslips'));
+    }
+
+    /**
+     * Stage 3b — Finance / Payroll Officer approves with selection
      */
     public function financeApprove(PayrollRun $payroll)
     {
+        $this->denyMd();
         abort_unless(auth()->user()->hasAnyRole(['super-admin','payroll-officer']), 403);
         if ($payroll->status !== 'hr_approved') {
             return back()->with('error', 'Payroll must be HR-approved before Finance can approve.');
         }
+
+        $selectedIds    = request()->input('selected_payslips', []);
+        $withheldReason = request()->input('withheld_reason', 'Withheld at Finance review.');
+        $withheld = 0;
+        foreach ($payroll->payslips as $slip) {
+            if (in_array((string)$slip->id, $selectedIds)) {
+                $slip->update(['payment_status' => 'pending', 'withheld_reason' => null, 'withheld_stage' => null]);
+            } else {
+                $slip->update([
+                    'payment_status' => 'withheld',
+                    'withheld_reason' => $slip->withheld_reason ?: $withheldReason,
+                    'withheld_stage'  => $slip->withheld_stage  ?: 'finance',
+                ]);
+                $withheld++;
+            }
+        }
+
         $payroll->update([
             'status'              => 'finance_approved',
             'finance_approved_by' => auth()->id(),
             'finance_approved_at' => now(),
         ]);
-        return back()->with('success', 'Finance approved. Payroll submitted to MD for final approval.');
+
+        $msg = 'Finance approved. Payroll submitted to MD for final approval.';
+        if ($withheld) $msg .= " {$withheld} employee(s) withheld.";
+        return redirect()->route('payroll.show', $payroll)->with('success', $msg);
     }
 
     /**
-     * Stage 4 — MD (Super Admin) final approval — auto-locks payroll
+     * Stage 4a — MD review page (select/deselect employees)
+     */
+    public function mdReview(PayrollRun $payroll)
+    {
+        abort_unless(auth()->user()->hasAnyRole(['super-admin','md']), 403);
+        if ($payroll->status !== 'finance_approved') {
+            return back()->with('error', 'Payroll must be Finance-approved before MD review.');
+        }
+        $payslips = $payroll->payslips()->with('employee.department')->orderBy('employee_id')->get();
+        return view('payroll.md-review', compact('payroll', 'payslips'));
+    }
+
+    /**
+     * Stage 4b — MD final approval with selection — auto-locks payroll
      */
     public function approve(PayrollRun $payroll)
     {
-        abort_unless(auth()->user()->hasRole('super-admin'), 403, 'Only the MD (Super Admin) can give final approval.');
+        abort_unless(auth()->user()->hasAnyRole(['super-admin', 'md']), 403, 'Only the MD can give final approval.');
         if ($payroll->status !== 'finance_approved') {
             return back()->with('error', 'Payroll must be Finance-approved before MD approval.');
         }
+
+        $selectedIds    = request()->input('selected_payslips', []);
+        $withheldReason = request()->input('withheld_reason', 'Withheld at MD review.');
+        $withheld = 0;
+        foreach ($payroll->payslips as $slip) {
+            if (in_array((string)$slip->id, $selectedIds)) {
+                $slip->update(['payment_status' => 'pending', 'withheld_reason' => null, 'withheld_stage' => null]);
+            } else {
+                $slip->update([
+                    'payment_status' => 'withheld',
+                    'withheld_reason' => $slip->withheld_reason ?: $withheldReason,
+                    'withheld_stage'  => $slip->withheld_stage  ?: 'md',
+                ]);
+                $withheld++;
+            }
+        }
+
         $payroll->update([
             'status'        => 'md_approved',
             'md_approved_by'=> auth()->id(),
@@ -174,29 +293,109 @@ class PayrollController extends Controller
             'locked_at'     => now(),
             'locked_by'     => auth()->id(),
         ]);
-        return back()->with('success', 'MD approved. Payroll is now locked. Finance can download PDF and Excel.');
+
+        $msg = 'MD approved. Payroll is now locked. Finance can proceed to Mark as Paid.';
+        if ($withheld) $msg .= " {$withheld} employee(s) withheld.";
+        return redirect()->route('payroll.show', $payroll)->with('success', $msg);
     }
 
+    /**
+     * Send payroll back to previous stage with a reason comment.
+     * Each role can only send back from the stage they approve.
+     */
+    public function sendBack(Request $request, PayrollRun $payroll)
+    {
+        $request->validate(['comment' => 'required|string|max:1000']);
+        $user = auth()->user();
+
+        // Map: current status → status it reverts to, and who is allowed
+        $revertMap = [
+            'processed'        => ['to' => 'draft',            'roles' => ['super-admin','hr-admin']],
+            'hr_approved'      => ['to' => 'processed',        'roles' => ['super-admin','payroll-officer']],
+            'finance_approved' => ['to' => 'hr_approved',      'roles' => ['super-admin','md']],
+            'md_approved'      => ['to' => 'finance_approved', 'roles' => ['super-admin']],
+        ];
+
+        if (!isset($revertMap[$payroll->status])) {
+            return back()->with('error', 'This payroll cannot be sent back from its current status.');
+        }
+
+        $map = $revertMap[$payroll->status];
+        abort_unless($user->hasAnyRole($map['roles']), 403, 'You are not authorised to send back at this stage.');
+
+        $fromStatus = $payroll->status;
+        $toStatus   = $map['to'];
+
+        // Record the comment
+        PayrollComment::create([
+            'payroll_run_id' => $payroll->id,
+            'user_id'        => $user->id,
+            'action'         => 'sent_back',
+            'from_status'    => $fromStatus,
+            'to_status'      => $toStatus,
+            'comment'        => $request->comment,
+        ]);
+
+        // Clear the approval fields for that stage
+        $clearFields = match($fromStatus) {
+            'hr_approved'      => ['hr_approved_by' => null, 'hr_approved_at' => null],
+            'finance_approved' => ['finance_approved_by' => null, 'finance_approved_at' => null],
+            'md_approved'      => ['md_approved_by' => null, 'md_approved_at' => null, 'locked_at' => null, 'locked_by' => null],
+            default            => [],
+        };
+
+        $payroll->update(array_merge(['status' => $toStatus], $clearFields));
+
+        $stageLabels = [
+            'draft'            => 'Draft (Account Manager)',
+            'processed'        => 'HR Review',
+            'hr_approved'      => 'Finance Review',
+            'finance_approved' => 'MD Review',
+        ];
+
+        return back()->with('success',
+            "Payroll sent back to {$stageLabels[$toStatus]}. Reason recorded: \"{$request->comment}\""
+        );
+    }
+
+    /**
+     * Mark as Paid — simple one-click after MD approval.
+     * HR already filtered employees during review; just mark all pending as paid.
+     */
     public function markPaid(PayrollRun $payroll)
     {
+        $this->denyMd();
         abort_unless(auth()->user()->hasAnyRole(['super-admin','payroll-officer']), 403);
         if (!in_array($payroll->status, ['md_approved','approved'])) {
             return back()->with('error', 'Payroll must be MD-approved before marking as paid.');
         }
+
+        // Mark only pending payslips as paid (withheld ones stay withheld)
+        $paid = $payroll->payslips()->where('payment_status','pending')->count();
+        $payroll->payslips()->where('payment_status','pending')->update(['payment_status' => 'paid']);
+
         $payroll->update([
             'status'       => 'paid',
             'payment_date' => now()->toDateString(),
             'paid_by'      => auth()->id(),
             'paid_at'      => now(),
         ]);
+
         $ns = app(NotificationService::class);
-        $payroll->payslips()->with(['employee.user', 'payrollRun'])->each(fn($slip) => $ns->payrollProcessed($slip));
-        return back()->with('success', 'Payroll marked as paid. Employees have been notified.');
+        $payroll->payslips()->where('payment_status','paid')->with(['employee.user','payrollRun'])->each(
+            fn($slip) => $ns->payrollProcessed($slip)
+        );
+
+        $withheld = $payroll->payslips()->where('payment_status','withheld')->count();
+        $msg = "{$paid} employees paid and notified.";
+        if ($withheld) $msg .= " {$withheld} withheld employees not notified.";
+        return back()->with('success', $msg);
     }
 
     /** Lock payroll manually */
     public function lock(PayrollRun $payroll)
     {
+        $this->denyMd();
         if ($payroll->isLocked()) return back()->with('error', 'Already locked.');
         $payroll->update(['locked_at' => now(), 'locked_by' => auth()->id()]);
         return back()->with('success', 'Payroll run locked successfully.');
@@ -224,6 +423,12 @@ class PayrollController extends Controller
             'net'        => $payroll->payslips->sum('net_salary'),
             'tax'        => $payroll->payslips->sum('tax_amount'),
             'deductions' => $payroll->payslips->sum('total_deductions'),
+            'nssf'       => $payroll->payslips->sum(function ($slip) {
+                foreach ($slip->component_details ?? [] as $d) {
+                    if (($d['code'] ?? '') === 'NSSF_EMP') return $d['amount'] ?? 0;
+                }
+                return 0;
+            }),
         ];
         $company = [
             'name'     => \App\Models\Setting::get('company_name', 'Mastermind Consultants'),
@@ -245,6 +450,49 @@ class PayrollController extends Controller
         return Excel::download(new \App\Exports\PayrollRunExport($payroll), $filename);
     }
 
+    // ─── Manual Days Import ───────────────────────────────────────────
+
+    /** Download the template CSV for manual days upload */
+    public function manualDaysTemplate(PayrollRun $payroll)
+    {
+        $this->denyMd();
+        $employees = Employee::whereHas('clients', fn($q) => $q->where('clients.id', $payroll->client_id))
+            ->orWhere(fn($q) => !$payroll->client_id ? $q : $q->whereRaw('1=0'))
+            ->orderBy('last_name')->get();
+
+        $rows = [['emp_number', 'full_name', 'days_worked', 'notes']];
+        foreach ($employees as $emp) {
+            $rows[] = [$emp->emp_number, trim($emp->last_name . ' ' . $emp->first_name), 0, ''];
+        }
+
+        $filename = "manual_days_{$payroll->year}_{$payroll->month}.csv";
+        $handle   = fopen('php://temp', 'r+');
+        foreach ($rows as $row) fputcsv($handle, $row);
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+
+        return response($csv, 200, [
+            'Content-Type'        => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    /** Upload CSV/Excel with manual days worked per employee */
+    public function importManualDays(Request $request, PayrollRun $payroll)
+    {
+        $this->denyMd();
+        $request->validate(['file' => 'required|file|mimes:csv,xlsx,xls']);
+
+        // Delete existing manual days for this run first
+        PayrollManualDays::where('payroll_run_id', $payroll->id)->delete();
+
+        Excel::import(new PayrollManualDaysImport($payroll->id), $request->file('file'));
+
+        $count = PayrollManualDays::where('payroll_run_id', $payroll->id)->count();
+        return back()->with('success', "Manual days imported for {$count} employees. Run 'Process' to recalculate.");
+    }
+
     // ─── KCB Bulk Payment Exports ─────────────────────────────────────
 
     private function requiresApproval(PayrollRun $payroll): bool
@@ -252,43 +500,40 @@ class PayrollController extends Controller
         return !in_array($payroll->status, ['md_approved', 'approved', 'paid']);
     }
 
+    public function bankExport(PayrollRun $payroll)
+    {
+        if (!in_array($payroll->status, ['processed', 'hr_approved', 'finance_approved', 'md_approved', 'approved', 'paid'])) {
+            return back()->with('error', 'Payroll must be processed before exporting bank schedule.');
+        }
+        $filename = 'bank_payment_' . $payroll->year . '_' . str_pad($payroll->month, 2, '0', STR_PAD_LEFT) . '.csv';
+        return Excel::download(new BankPaymentExport($payroll), $filename, \Maatwebsite\Excel\Excel::CSV);
+    }
+
     public function kcbEft(PayrollRun $payroll)
     {
-        abort_unless(auth()->user()->can('reports.export'), 403);
-        if ($this->requiresApproval($payroll)) {
-            return back()->with('error', 'Payroll must be MD-approved before downloading payment files.');
+        if (!in_array($payroll->status, ['processed', 'hr_approved', 'finance_approved', 'md_approved', 'approved', 'paid'])) {
+            return back()->with('error', 'Payroll must be processed before exporting.');
         }
-        $month = str_pad($payroll->month, 2, '0', STR_PAD_LEFT);
-        return Excel::download(new KcbEftExport($payroll), "KCB-EFT-{$payroll->year}-{$month}.xlsx");
+        $slug = $payroll->year . '_' . str_pad($payroll->month, 2, '0', STR_PAD_LEFT);
+        return Excel::download(new KcbEftExport($payroll), "KCB_EFT_{$slug}.xlsx");
     }
 
     public function kcbMtn(PayrollRun $payroll)
     {
-        abort_unless(auth()->user()->can('reports.export'), 403);
-        if ($this->requiresApproval($payroll)) {
-            return back()->with('error', 'Payroll must be MD-approved before downloading payment files.');
+        if (!in_array($payroll->status, ['processed', 'hr_approved', 'finance_approved', 'md_approved', 'approved', 'paid'])) {
+            return back()->with('error', 'Payroll must be processed before exporting.');
         }
-        $month = str_pad($payroll->month, 2, '0', STR_PAD_LEFT);
-        return Excel::download(new KcbMtnExport($payroll), "KCB-MTN-{$payroll->year}-{$month}.xlsx");
+        $slug = $payroll->year . '_' . str_pad($payroll->month, 2, '0', STR_PAD_LEFT);
+        return Excel::download(new KcbMtnExport($payroll), "KCB_MTN_{$slug}.xlsx");
     }
 
     public function kcbAirtel(PayrollRun $payroll)
     {
-        abort_unless(auth()->user()->can('reports.export'), 403);
-        if ($this->requiresApproval($payroll)) {
-            return back()->with('error', 'Payroll must be MD-approved before downloading payment files.');
+        if (!in_array($payroll->status, ['processed', 'hr_approved', 'finance_approved', 'md_approved', 'approved', 'paid'])) {
+            return back()->with('error', 'Payroll must be processed before exporting.');
         }
-        $month = str_pad($payroll->month, 2, '0', STR_PAD_LEFT);
-        return Excel::download(new KcbAirtelExport($payroll), "KCB-AIRTEL-{$payroll->year}-{$month}.xlsx");
-    }
-
-    public function bankExport(PayrollRun $payroll)
-    {
-        if (!in_array($payroll->status, ['approved', 'paid', 'md_approved'])) {
-            return back()->with('error', 'Payroll must be approved before exporting bank file.');
-        }
-        $filename = 'bank_payment_' . $payroll->year . '_' . str_pad($payroll->month, 2, '0', STR_PAD_LEFT) . '.csv';
-        return Excel::download(new BankPaymentExport($payroll), $filename, \Maatwebsite\Excel\Excel::CSV);
+        $slug = $payroll->year . '_' . str_pad($payroll->month, 2, '0', STR_PAD_LEFT);
+        return Excel::download(new KcbAirtelExport($payroll), "KCB_Airtel_{$slug}.xlsx");
     }
 
     public function payslips(PayrollRun $payroll)
@@ -301,22 +546,79 @@ class PayrollController extends Controller
     public function payslipPdf(PayrollRun $payroll, Employee $employee)
     {
         $payslip     = Payslip::where('payroll_run_id', $payroll->id)->where('employee_id', $employee->id)->firstOrFail();
-        $payslip->load('employee.department', 'employee.designation');
+        $payslip->load('employee.department', 'employee.designation', 'employee.user');
+        $payroll->load('client');
         $payroll_run = $payroll;
         $company     = [
-            'name'     => \App\Models\Setting::get('company_name', 'Mastermind Consultants'),
+            'name'     => \App\Models\Setting::get('company_name', 'Mastermind Consult Ltd'),
             'email'    => \App\Models\Setting::get('company_email', ''),
-            'phone'    => \App\Models\Setting::get('company_phone', ''),
+            'phone'    => \App\Models\Setting::get('company_phone', '+256 393 215 289'),
             'currency' => \App\Models\Setting::get('currency_symbol', 'UGX'),
         ];
-        $pdf = Pdf::loadView('payroll.payslip-pdf', compact('payslip', 'payroll_run', 'company'))->setPaper('a4');
+        $logoPath = public_path('images/logo.png');
+        $logo     = file_exists($logoPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($logoPath)) : null;
+
+        $avatar = null;
+        $avatarPath = $payslip->employee->user?->avatar;
+        if ($avatarPath) {
+            $fullPath = storage_path('app/public/' . $avatarPath);
+            if (file_exists($fullPath)) {
+                $mime   = mime_content_type($fullPath);
+                $avatar = 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($fullPath));
+            }
+        }
+
+        $pdf = Pdf::loadView('payroll.payslip-pdf', compact('payslip', 'payroll_run', 'company', 'logo', 'avatar'))->setPaper('a4');
         return $pdf->download("payslip-{$employee->emp_number}-{$payroll->month}-{$payroll->year}.pdf");
+    }
+
+    /** Email a single payslip PDF to the employee */
+    public function emailPayslip(PayrollRun $payroll, Employee $employee)
+    {
+        abort_unless(auth()->user()->hasAnyRole(['super-admin','hr-admin','payroll-officer','account-manager']), 403);
+
+        $payslip = Payslip::where('payroll_run_id', $payroll->id)
+            ->where('employee_id', $employee->id)->firstOrFail();
+        $payslip->load('employee.department', 'employee.designation', 'employee.user');
+
+        $email = $payslip->employee->user?->email;
+        if (!$email) {
+            return back()->with('error', "Employee {$employee->full_name} has no email address.");
+        }
+
+        Mail::to($email)->send(new PayslipMail($payslip, $payroll));
+
+        return back()->with('success', "Payslip emailed to {$payslip->employee->full_name} ({$email}).");
+    }
+
+    /** Bulk email all payslips for a payroll run */
+    public function emailAllPayslips(PayrollRun $payroll)
+    {
+        abort_unless(auth()->user()->hasAnyRole(['super-admin','hr-admin','payroll-officer','account-manager']), 403);
+
+        $payslips = $payroll->payslips()->with(['employee.user','employee.department','employee.designation'])->get();
+
+        $sent = 0; $skipped = 0;
+        foreach ($payslips as $payslip) {
+            $email = $payslip->employee->user?->email;
+            // Skip missing, invalid, or auto-generated placeholder emails
+            if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) { $skipped++; continue; }
+            try {
+                Mail::to($email)->send(new PayslipMail($payslip, $payroll));
+                $sent++;
+            } catch (\Exception $e) {
+                $skipped++;
+            }
+        }
+
+        return back()->with('success', "Payslips emailed: {$sent} sent, {$skipped} skipped (no email).");
     }
 
     // ─── Salary management ───────────────────────────────────────────
 
     public function salaryIndex(Request $request)
     {
+        $this->denyMd();
         $salaries  = EmployeeSalary::with('employee.department')->paginate(25);
         $employees = Employee::where('status', 'active')->with('user')->get();
         return view('payroll.salary.index', compact('salaries', 'employees'));
@@ -324,6 +626,7 @@ class PayrollController extends Controller
 
     public function salaryCreate()
     {
+        $this->denyMd();
         $employees  = Employee::where('status', 'active')->with('user')->get();
         $components = SalaryComponent::all();
         $grades     = SalaryGrade::all();
@@ -332,10 +635,11 @@ class PayrollController extends Controller
 
     public function salaryStore(Request $request)
     {
+        $this->denyMd();
         $request->validate(['employee_id' => 'required', 'basic_salary' => 'required|numeric', 'effective_from' => 'required|date']);
         EmployeeSalary::updateOrCreate(
             ['employee_id' => $request->employee_id, 'is_current' => true],
-            ['basic_salary' => $request->basic_salary, 'components' => $request->components ?? [], 'effective_from' => $request->effective_from, 'is_current' => true]
+            ['basic_salary' => $request->basic_salary, 'salary_type' => $request->salary_type ?? 'monthly', 'components' => $request->components ?? [], 'effective_from' => $request->effective_from, 'is_current' => true]
         );
         return redirect()->route('salary.index')->with('success', 'Salary assigned.');
     }
@@ -348,13 +652,15 @@ class PayrollController extends Controller
 
     public function salaryEdit(EmployeeSalary $salary)
     {
+        $this->denyMd();
         $components = SalaryComponent::all();
         return view('payroll.salary.edit', compact('salary', 'components'));
     }
 
     public function salaryUpdate(Request $request, EmployeeSalary $salary)
     {
-        $salary->update($request->only('basic_salary', 'components', 'effective_from'));
+        $this->denyMd();
+        $salary->update($request->only('basic_salary', 'salary_type', 'components', 'effective_from'));
         return redirect()->route('salary.show', $salary)->with('success', 'Salary updated.');
     }
 
@@ -366,6 +672,7 @@ class PayrollController extends Controller
 
     public function gradesStore(Request $request)
     {
+        $this->denyMd();
         $request->validate(['grade' => 'required', 'basic_min' => 'required|numeric', 'basic_max' => 'required|numeric']);
         SalaryGrade::create($request->only('grade', 'basic_min', 'basic_max'));
         return back()->with('success', 'Grade created.');
@@ -379,6 +686,7 @@ class PayrollController extends Controller
 
     public function componentsStore(Request $request)
     {
+        $this->denyMd();
         $request->validate(['name' => 'required', 'type' => 'required']);
         SalaryComponent::create($request->only('name', 'type', 'is_taxable', 'is_fixed', 'amount', 'percentage'));
         return back()->with('success', 'Component created.');

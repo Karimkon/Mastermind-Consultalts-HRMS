@@ -518,6 +518,53 @@
                     </div>
                 </div>
 
+                {{-- Employment Exit Status --}}
+                @php
+                    $isTerminated     = $employee->status === 'terminated';
+                    $isContractExpiry = $employee->status === 'contract_expired';
+                    $isSuspended      = $employee->status === 'suspended';
+                    $isInactive       = $isTerminated || $isContractExpiry || $isSuspended;
+                    $exitTitle        = $isTerminated ? 'Terminated' : ($isContractExpiry ? 'Contract Expired' : ($isSuspended ? 'Suspended' : 'Active'));
+                    $exitColor        = $isTerminated ? 'text-red-600' : ($isContractExpiry ? 'text-orange-600' : ($isSuspended ? 'text-yellow-600' : 'text-slate-300'));
+                    $cardBg           = $isTerminated ? 'border-red-200 bg-red-50' : ($isContractExpiry ? 'border-orange-200 bg-orange-50' : ($isSuspended ? 'border-yellow-200 bg-yellow-50' : ''));
+                @endphp
+                <div class="card p-5 {{ $cardBg }}">
+                    <h3 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-user-times {{ $isInactive ? $exitColor : 'text-slate-300' }}"></i>
+                        <span class="{{ $isInactive ? $exitColor : 'text-slate-500' }}">{{ $exitTitle }}</span>
+                    </h3>
+                    @if($isInactive)
+                    <div class="grid grid-cols-2 gap-4">
+                        @if($employee->end_date)
+                        <div>
+                            <p class="text-xs text-slate-400 uppercase tracking-wider">End Date</p>
+                            <p class="text-sm font-semibold text-slate-800 mt-0.5">{{ $employee->end_date->format('d M Y') }}</p>
+                        </div>
+                        @endif
+                        @if($employee->contract_end_date && $isContractExpiry)
+                        <div>
+                            <p class="text-xs text-slate-400 uppercase tracking-wider">Contract Expired On</p>
+                            <p class="text-sm font-semibold text-orange-700 mt-0.5">{{ $employee->contract_end_date->format('d M Y') }}</p>
+                        </div>
+                        @endif
+                        @if($employee->termination_reason)
+                        <div class="col-span-2">
+                            <p class="text-xs text-slate-400 uppercase tracking-wider">Reason</p>
+                            <p class="text-sm text-slate-700 mt-0.5">{{ $employee->termination_reason }}</p>
+                        </div>
+                        @endif
+                    </div>
+                    <p class="text-xs text-slate-400 mt-3 italic">
+                        @if($isTerminated) Employee is terminated and excluded from all payroll runs.
+                        @elseif($isContractExpiry) Contract has expired. Data retained but excluded from payroll.
+                        @elseif($isSuspended) Employee is suspended and excluded from payroll.
+                        @endif
+                    </p>
+                    @else
+                    <p class="text-sm text-slate-400">Employee is active — not terminated or suspended.</p>
+                    @endif
+                </div>
+
                 {{-- Blacklist --}}
                 <div class="card p-5 {{ $employee->is_blacklisted ? 'border-red-200 bg-red-50' : '' }}">
                     <h3 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
@@ -575,6 +622,50 @@
                     <p class="text-sm text-slate-400">Not on hold.</p>
                     @endif
                 </div>
+
+                {{-- Retirement --}}
+                <div class="card p-5 {{ $employee->status === 'retired' ? 'border-slate-300 bg-slate-50' : '' }}">
+                    <h3 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-user-clock {{ $employee->status === 'retired' ? 'text-slate-500' : 'text-slate-300' }}"></i> Retirement
+                        @if($employee->status === 'retired')<span class="ml-2 text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-semibold">RETIRED</span>@endif
+                    </h3>
+                    @if($employee->status === 'retired')
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-xs text-slate-400 uppercase tracking-wider">Retirement Date</p>
+                            <p class="text-sm font-semibold text-slate-800 mt-0.5">{{ $employee->retirement_date?->format('d M Y') ?? '—' }}</p>
+                        </div>
+                        <div class="col-span-2">
+                            <p class="text-xs text-slate-400 uppercase tracking-wider">Notes</p>
+                            <p class="text-sm text-slate-700 mt-0.5">{{ $employee->retirement_reason ?? '—' }}</p>
+                        </div>
+                    </div>
+                    @else
+                    <p class="text-sm text-slate-400">Not retired.</p>
+                    @endif
+                </div>
+
+                {{-- Contract Expiry --}}
+                @if($employee->contract_end_date)
+                <div class="card p-5 {{ $employee->status === 'contract_expired' ? 'border-red-200 bg-red-50' : 'border-slate-200' }}">
+                    <h3 class="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                        <i class="fas fa-file-contract {{ $employee->status === 'contract_expired' ? 'text-red-500' : 'text-slate-400' }}"></i> Contract Expiry
+                        @if($employee->status === 'contract_expired')<span class="ml-2 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">EXPIRED</span>@endif
+                    </h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-xs text-slate-400 uppercase tracking-wider">Contract Expiry Date</p>
+                            @php $expired = $employee->contract_end_date->isPast(); $daysLeft = now()->diffInDays($employee->contract_end_date, false); @endphp
+                            <p class="text-sm font-semibold {{ $expired ? 'text-red-600' : 'text-slate-800' }} mt-0.5">
+                                {{ $employee->contract_end_date->format('d M Y') }}
+                                <span class="text-xs font-normal">
+                                    ({{ $expired ? abs((int)$daysLeft).' day(s) ago' : (int)$daysLeft.' day(s) remaining' }})
+                                </span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                @endif
             </div>
 
             {{-- LEAVE BALANCES --}}

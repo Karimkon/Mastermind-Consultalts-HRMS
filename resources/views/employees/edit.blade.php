@@ -54,9 +54,16 @@
     </div>
 
     {{-- ── Main form ───────────────────────────────────────────── --}}
-    <form method="POST" action="{{ route('employees.update', $employee) }}" enctype="multipart/form-data" class="flex-1 min-w-0">
+    <form method="POST" action="{{ route('employees.update', $employee) }}" enctype="multipart/form-data" class="flex-1 min-w-0" id="employee-edit-form">
         @csrf @method('PUT')
         <input type="hidden" name="_tab" :value="tab">
+        {{-- Sticky save bar at top --}}
+        <div class="sticky top-0 z-20 bg-white border border-slate-200 rounded-lg px-4 py-2 mb-4 flex items-center justify-between shadow-sm">
+            <span class="text-sm text-slate-500">Editing: <strong class="text-slate-700">{{ $employee->full_name }}</strong> ({{ $employee->emp_number }})</span>
+            <button type="submit" class="btn-primary text-sm py-1.5 px-4">
+                <i class="fas fa-save mr-1"></i> Save Changes
+            </button>
+        </div>
 
         {{-- ════════════════════════════════════════════════════════
              TAB 1 — BASIC INFO
@@ -100,6 +107,12 @@
                         <label class="form-label">Payroll No.</label>
                         <input type="text" name="payroll_number" class="form-input"
                                value="{{ old('payroll_number', $employee->payroll_number) }}">
+                    </div>
+                    <div class="lg:col-span-2">
+                        <label class="form-label">Login / Payroll Email <span class="text-xs text-slate-400 ml-1">(used for payslip emails)</span></label>
+                        <input type="email" name="login_email" class="form-input"
+                               placeholder="employee@example.com"
+                               value="{{ old('login_email', $employee->user?->email) }}">
                     </div>
                     <div>
                         <label class="form-label">Employment Type</label>
@@ -174,17 +187,23 @@
                         <div x-show="hasContract" x-cloak class="p-4 border-t border-slate-200 space-y-4">
 
                             {{-- Dates row --}}
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <div>
                                     <label class="form-label">Contract Start Date</label>
                                     <input type="date" name="contract_start_date" class="form-input"
                                            value="{{ old('contract_start_date', $employee->contract_start_date?->format('Y-m-d')) }}">
                                 </div>
                                 <div>
-                                    <label class="form-label">Contract End Date (Expiry) <span class="text-red-500">*</span></label>
+                                    <label class="form-label">Contract Expiry Date</label>
+                                    <input type="date" name="contract_end_date" class="form-input"
+                                           value="{{ old('contract_end_date', $employee->contract_end_date?->format('Y-m-d')) }}">
+                                    <p class="text-xs text-slate-400 mt-1">Auto-sets status to <em>Contract Expired</em> when reached. Employee excluded from payroll but data kept.</p>
+                                </div>
+                                <div>
+                                    <label class="form-label">Employment End Date</label>
                                     <input type="date" name="end_date" class="form-input"
                                            value="{{ old('end_date', $employee->end_date?->format('Y-m-d')) }}">
-                                    <p class="text-xs text-slate-400 mt-1">The system will send alerts 30 days and 15 days before this date.</p>
+                                    <p class="text-xs text-slate-400 mt-1">Auto-terminates employee when reached. Alerts sent 30 &amp; 15 days before.</p>
                                 </div>
                             </div>
 
@@ -254,7 +273,7 @@
                     </div>
                     <div>
                         <label class="form-label">Department <span class="text-red-500">*</span></label>
-                        <select name="department_id" class="form-input select2" required>
+                        <select name="department_id" class="form-input select2">
                             <option value="">— Select Department —</option>
                             @foreach($departments as $d)
                             <option value="{{ $d->id }}" @selected(old('department_id',$employee->department_id)==$d->id)>{{ $d->name }}</option>
@@ -268,7 +287,7 @@
                     </div>
                     <div>
                         <label class="form-label">Designation <span class="text-red-500">*</span></label>
-                        <select name="designation_id" class="form-input select2" required>
+                        <select name="designation_id" class="form-input select2">
                             <option value="">— Select Designation —</option>
                             @foreach($designations as $d)
                             <option value="{{ $d->id }}" @selected(old('designation_id',$employee->designation_id)==$d->id)>{{ $d->title }}</option>
@@ -507,21 +526,27 @@
                 <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
                     @php
                     $bools = [
-                        ['charge_nssf','Charge NSSF'],
-                        ['force_fixed_nssf','Force Fixed NSSF'],
-                        ['nssf_paid_by_employer','NSSF Paid by Employer'],
-                        ['do_not_charge_nssf_employee','Do Not Charge NSSF (Employee)'],
-                        ['charge_lst','Charge LST'],
-                        ['lst_paid_by_employer','LST Paid by Employer'],
-                        ['tax_paid_by_employer','Tax Paid by Employer'],
+                        ['charge_nssf','Charge NSSF', false],
+                        ['charge_paye','Charge PAYE (Income Tax)', true],
+                        ['force_fixed_nssf','Force Fixed NSSF', false],
+                        ['nssf_paid_by_employer','NSSF Paid by Employer', false],
+                        ['do_not_charge_nssf_employee','Do Not Charge NSSF (Employee)', false],
+                        ['charge_lst','Charge LST', false],
+                        ['lst_paid_by_employer','LST Paid by Employer', false],
+                        ['tax_paid_by_employer','Tax (PAYE) Paid by Employer', false],
                     ];
                     @endphp
-                    @foreach($bools as [$field, $label])
-                    <div class="flex items-center gap-3">
+                    @foreach($bools as [$field, $label, $defaultChecked])
+                    <div class="flex items-center gap-3 {{ $field === 'charge_paye' ? 'p-2 bg-blue-50 border border-blue-200 rounded-lg' : '' }}">
                         <input type="hidden" name="{{ $field }}" value="0">
                         <input type="checkbox" name="{{ $field }}" value="1" id="{{ $field }}" class="w-4 h-4 text-blue-600"
-                               @if(old($field, $employee->$field)) checked @endif>
-                        <label for="{{ $field }}" class="text-sm text-slate-700">{{ $label }}</label>
+                               @if(old($field, $employee->$field ?? $defaultChecked)) checked @endif>
+                        <label for="{{ $field }}" class="text-sm {{ $field === 'charge_paye' ? 'text-blue-800 font-semibold' : 'text-slate-700' }}">
+                            {{ $label }}
+                            @if($field === 'charge_paye')
+                            <span class="text-xs font-normal text-blue-500 ml-1">(checked by default — uncheck to exempt employee)</span>
+                            @endif
+                        </label>
                     </div>
                     @endforeach
 
@@ -569,31 +594,37 @@
         <div x-show="tab==='salary'" x-cloak class="space-y-5">
 
             {{-- Banking --}}
-            <div class="card p-6">
+            <div class="card p-6" x-data="{ payMode: '{{ old('payment_mode', $employee->payment_mode ?? 'bank') }}' }">
                 <h3 class="section-title"><i class="fas fa-university text-green-500"></i> Banking Details</h3>
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
                     <div>
                         <label class="form-label">Payment Mode</label>
-                        <select name="payment_mode" class="form-input">
-                            @foreach(['bank'=>'Bank','cash'=>'Cash','cheque'=>'Cheque','mobile_money'=>'Mobile Money'] as $v=>$l)
+                        <select name="payment_mode" class="form-input" x-model="payMode">
+                            @foreach(['bank'=>'Bank Transfer','mtn'=>'MTN Mobile Money','airtel'=>'Airtel Mobile Money','cash'=>'Cash'] as $v=>$l)
                             <option value="{{ $v }}" @selected(old('payment_mode',$employee->payment_mode ?? 'bank')===$v)>{{ $l }}</option>
                             @endforeach
                         </select>
                     </div>
-                    <div>
+                    <div x-show="payMode === 'bank'" x-cloak>
                         <label class="form-label">Bank Name</label>
                         <input type="text" name="bank_name" class="form-input"
                                value="{{ old('bank_name', $employee->bank_name) }}">
                     </div>
-                    <div>
+                    <div x-show="payMode === 'bank'" x-cloak>
                         <label class="form-label">Account Number</label>
                         <input type="text" name="bank_account" class="form-input"
                                value="{{ old('bank_account', $employee->bank_account) }}">
                     </div>
-                    <div>
+                    <div x-show="payMode === 'bank'" x-cloak>
                         <label class="form-label">Branch</label>
                         <input type="text" name="bank_branch" class="form-input"
                                value="{{ old('bank_branch', $employee->bank_branch) }}">
+                    </div>
+                    <div x-show="['mtn','airtel'].includes(payMode)" x-cloak>
+                        <label class="form-label">Mobile Money Number</label>
+                        <input type="text" name="mobile_money_number" class="form-input" placeholder="e.g. 0776123456"
+                               value="{{ old('mobile_money_number', $employee->mobile_money_number) }}">
+                        <p class="text-xs text-gray-400 mt-1">Uganda number — auto-formatted to 256XXXXXXXXX on export</p>
                     </div>
                     <div>
                         <label class="form-label">Tax Number (PAYE)</label>
@@ -791,24 +822,51 @@
             {{-- Employment Status --}}
             <div class="card p-6">
                 <h3 class="section-title"><i class="fas fa-toggle-on text-blue-500"></i> Employment Status</h3>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-                    <div>
-                        <label class="form-label">Status</label>
-                        <select name="status" class="form-input">
-                            @foreach(['active'=>'Active','on_leave'=>'On Leave','suspended'=>'Suspended','terminated'=>'Terminated'] as $v=>$l)
-                            <option value="{{ $v }}" @selected(old('status',$employee->status)===$v)>{{ $l }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                <p class="text-xs text-slate-400 mt-1 mb-4">Click a status below to change this employee's employment status. Terminated, Suspended, Retired and Contract Expired employees are automatically excluded from payroll.</p>
+
+                {{-- Hidden real status input --}}
+                <input type="hidden" name="status" id="statusInput" value="{{ old('status', $employee->status) }}">
+
+                {{-- Visual status selector --}}
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-5" id="statusCards">
+                    @foreach([
+                        'active'           => ['Active',           'fa-check-circle',   'border-green-400 bg-green-50 text-green-700',  'border-slate-200 bg-white text-slate-500 hover:bg-green-50 hover:border-green-300'],
+                        'on_leave'         => ['On Leave',         'fa-umbrella-beach', 'border-yellow-400 bg-yellow-50 text-yellow-700','border-slate-200 bg-white text-slate-500 hover:bg-yellow-50 hover:border-yellow-300'],
+                        'suspended'        => ['Suspended',        'fa-pause-circle',   'border-orange-400 bg-orange-50 text-orange-700','border-slate-200 bg-white text-slate-500 hover:bg-orange-50 hover:border-orange-300'],
+                        'terminated'       => ['Terminated',       'fa-user-times',     'border-red-500 bg-red-50 text-red-700',         'border-slate-200 bg-white text-slate-500 hover:bg-red-50 hover:border-red-300'],
+                        'retired'          => ['Retired',          'fa-user-clock',     'border-slate-400 bg-slate-100 text-slate-700',  'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'],
+                        'contract_expired' => ['Contract Expired', 'fa-file-times',     'border-red-400 bg-red-50 text-red-600',         'border-slate-200 bg-white text-slate-500 hover:bg-red-50 hover:border-red-300'],
+                    ] as $val => [$label, $icon, $activeClass, $inactiveClass])
+                    @php $isCurrent = old('status', $employee->status) === $val; @endphp
+                    <button type="button"
+                            onclick="setStatus('{{ $val }}')"
+                            data-status="{{ $val }}"
+                            class="status-card flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 text-center transition-all cursor-pointer
+                                   {{ $isCurrent ? $activeClass : $inactiveClass }}">
+                        <i class="fas {{ $icon }} text-xl"></i>
+                        <span class="text-xs font-semibold leading-tight">{{ $label }}</span>
+                        @if($isCurrent)
+                        <span class="text-xs px-1.5 py-0.5 rounded-full bg-white bg-opacity-70 font-bold">Selected</span>
+                        @endif
+                    </button>
+                    @endforeach
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label class="form-label">Hire Date</label>
                         <input type="date" name="hire_date" class="form-input"
                                value="{{ old('hire_date', $employee->hire_date?->format('Y-m-d')) }}">
                     </div>
                     <div>
-                        <label class="form-label">End Date</label>
+                        <label class="form-label">End Date <span class="text-slate-400 font-normal">(auto-terminates on this date)</span></label>
                         <input type="date" name="end_date" class="form-input"
                                value="{{ old('end_date', $employee->end_date?->format('Y-m-d')) }}">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="form-label">Termination / Suspension Reason</label>
+                        <textarea name="termination_reason" rows="2" class="form-input"
+                                  placeholder="e.g. Gross misconduct — fighting on premises. Dismissed per disciplinary hearing 01 Jun 2026.">{{ old('termination_reason', $employee->termination_reason) }}</textarea>
                     </div>
                 </div>
             </div>
@@ -865,6 +923,24 @@
                 </div>
             </div>
 
+            {{-- Retirement --}}
+            <div class="card p-6">
+                <h3 class="section-title"><i class="fas fa-user-clock text-slate-400"></i> Retirement</h3>
+                <p class="text-xs text-slate-400 mt-1 mb-4">Set status to <strong>Retired</strong> above to flag this employee as retired. Fill in the details below.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Retirement Date</label>
+                        <input type="date" name="retirement_date" class="form-input"
+                               value="{{ old('retirement_date', $employee->retirement_date?->format('Y-m-d')) }}">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="form-label">Retirement Reason / Notes</label>
+                        <textarea name="retirement_reason" rows="3" class="form-input"
+                                  placeholder="e.g. Reached mandatory retirement age. Served 25 years.">{{ old('retirement_reason', $employee->retirement_reason) }}</textarea>
+                    </div>
+                </div>
+            </div>
+
             <div class="flex justify-end gap-3">
                 <a href="{{ route('employees.show', $employee) }}" class="btn-secondary">Cancel</a>
                 <button type="submit" class="btn-primary"><i class="fas fa-save mr-1"></i> Save Changes</button>
@@ -879,6 +955,47 @@
 .section-title { @apply text-sm font-semibold text-slate-600 uppercase tracking-wider flex items-center gap-2; }
 [x-cloak] { display: none !important; }
 </style>
+@endpush
+
+@push('scripts')
+<script>
+const statusActiveClasses = {
+    'active':           'border-green-400 bg-green-50 text-green-700',
+    'on_leave':         'border-yellow-400 bg-yellow-50 text-yellow-700',
+    'suspended':        'border-orange-400 bg-orange-50 text-orange-700',
+    'terminated':       'border-red-500 bg-red-50 text-red-700',
+    'retired':          'border-slate-400 bg-slate-100 text-slate-700',
+    'contract_expired': 'border-red-400 bg-red-50 text-red-600',
+};
+const statusInactiveClass = 'border-slate-200 bg-white text-slate-500';
+
+function setStatus(val) {
+    document.getElementById('statusInput').value = val;
+    document.querySelectorAll('.status-card').forEach(card => {
+        const cv = card.dataset.status;
+        // Remove all active/inactive classes
+        card.className = card.className
+            .replace(/border-\S+|bg-\S+|text-\S+/g, '').trim();
+        // Re-apply base classes
+        card.classList.add('status-card','flex','flex-col','items-center','gap-1.5','p-3',
+            'rounded-xl','border-2','text-center','transition-all','cursor-pointer');
+        if (cv === val) {
+            statusActiveClasses[cv].split(' ').forEach(c => card.classList.add(c));
+            // Add Selected badge if not present
+            if (!card.querySelector('.selected-badge')) {
+                const badge = document.createElement('span');
+                badge.className = 'selected-badge text-xs px-1.5 py-0.5 rounded-full bg-white bg-opacity-70 font-bold';
+                badge.textContent = 'Selected';
+                card.appendChild(badge);
+            }
+        } else {
+            statusInactiveClass.split(' ').forEach(c => card.classList.add(c));
+            const badge = card.querySelector('.selected-badge');
+            if (badge) badge.remove();
+        }
+    });
+}
+</script>
 @endpush
 
 @endsection
