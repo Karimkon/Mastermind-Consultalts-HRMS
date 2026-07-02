@@ -2,7 +2,7 @@
 @section("title", $client->company_name . ' — Settings')
 @section("content")
 
-<x-page-header :title="$client->company_name . ' — Contract Settings'" subtitle="Configure payment schedule and work-site geo-fence">
+<x-page-header :title="$client->company_name . ' — Contract Settings'" subtitle="Configure payment schedule, payroll formula and work-site geo-fence">
     <a href="{{ route('account-manager.dashboard') }}" class="btn-secondary text-sm">
         <i class="fas fa-arrow-left mr-1"></i> Back
     </a>
@@ -60,6 +60,45 @@
                 <input type="number" name="geo_fence_radius" value="{{ old('geo_fence_radius', $client->geo_fence_radius ?? 100) }}"
                        class="form-input w-40" min="10" max="5000">
                 <p class="text-xs text-slate-400 mt-1">Employees must be within this distance to clock in/out.</p>
+            </div>
+
+            <hr class="border-slate-100 my-2">
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Payroll Formula Settings</p>
+
+            <div>
+                <label class="form-label">Payroll Type</label>
+                <select name="payroll_type" class="form-input">
+                    <option value="daily"   {{ ($client->payroll_type ?? 'daily') === 'daily'   ? 'selected' : '' }}>Daily (Casual)</option>
+                    <option value="hourly"  {{ ($client->payroll_type ?? '') === 'hourly'  ? 'selected' : '' }}>Hourly (Casual)</option>
+                    <option value="monthly" {{ ($client->payroll_type ?? '') === 'monthly' ? 'selected' : '' }}>Monthly (Contract)</option>
+                    <option value="mixed"   {{ ($client->payroll_type ?? '') === 'mixed'   ? 'selected' : '' }}>Mixed (Casual + Contract)</option>
+                </select>
+            </div>
+
+            <div class="flex items-center gap-3 mt-2">
+                <input type="checkbox" name="gross_up_paye" id="grossUp" value="1"
+                       class="w-4 h-4 rounded" {{ $client->gross_up_paye ? 'checked' : '' }}>
+                <label for="grossUp" class="text-sm text-slate-700">
+                    <span class="font-semibold">Gross-Up PAYE &amp; NSSF</span>
+                    <span class="block text-xs text-slate-400">Employee receives daily-rate × days as take-home; PAYE/NSSF added on top</span>
+                </label>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mt-2">
+                <div>
+                    <label class="form-label">GPA/WMC Rate (%)</label>
+                    <input type="number" step="0.01" name="gpa_wmc_rate"
+                           value="{{ old('gpa_wmc_rate', $client->gpa_wmc_rate ?? 0) }}"
+                           class="form-input" placeholder="e.g. 2.0">
+                    <p class="text-xs text-slate-400 mt-1">Group Personal Accident insurance (employer cost only)</p>
+                </div>
+                <div>
+                    <label class="form-label">Client Billing Multiplier</label>
+                    <input type="number" step="0.01" name="billing_rate_multiplier"
+                           value="{{ old('billing_rate_multiplier', $client->billing_rate_multiplier ?? 1.0) }}"
+                           class="form-input" placeholder="e.g. 1.25">
+                    <p class="text-xs text-slate-400 mt-1">Rate charged to client vs employee rate (e.g. 1.25 = 25% markup)</p>
+                </div>
             </div>
 
             <button type="submit" class="btn-primary">

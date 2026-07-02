@@ -304,6 +304,9 @@
         <a href="{{ route('admin.documentation.pdf') }}" target="_blank" class="sidebar-link">
             <i class="fas fa-file-pdf w-4 text-center"></i><span x-show="sidebarOpen">System Docs</span>
         </a>
+        <a href="{{ route('admin.public-holidays.index') }}" class="sidebar-link {{ request()->routeIs('admin.public-holidays.*') ? 'active' : '' }}">
+            <i class="fas fa-calendar-alt w-4 text-center"></i><span x-show="sidebarOpen">Public Holidays</span>
+        </a>
         <a href="{{ route('admin.settings.index') }}" class="sidebar-link {{ request()->routeIs('admin.settings.*') ? 'active' : '' }}">
             <i class="fas fa-cog w-4 text-center"></i><span x-show="sidebarOpen">Settings</span>
         </a>

@@ -5,6 +5,7 @@ use Illuminate\Database\Eloquent\Model;
 class PayrollRun extends Model {
     protected $fillable = [
         'title','month','year','status','client_id',
+        'employment_type','hours_based','billing_total','billing_rate_override',
         'processed_by','processed_at','approved_by','approved_at',
         'hr_approved_by','hr_approved_at',
         'finance_approved_by','finance_approved_at',

@@ -299,6 +299,67 @@
 </div>
 @endif
 
+{{-- ── Calendar & Pro-Rata Panel ─────────────────────────────────────── --}}
+@php
+    $calService  = app(\App\Services\CalendarService::class);
+    $calSummary  = $calService->monthSummary($payroll->year, $payroll->month);
+    $monthLabel  = date('F Y', mktime(0,0,0,$payroll->month,1,$payroll->year));
+@endphp
+<div class="card p-5 mb-5">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+            <i class="fas fa-calendar-alt text-indigo-500"></i>
+            {{ $monthLabel }} — Calendar &amp; Pro-Rata Info
+        </h3>
+        <span class="text-xs text-slate-400">Formula: Annual ÷ 365 × days worked</span>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
+        <div class="text-center">
+            <p class="text-2xl font-bold text-slate-800">{{ $calSummary['calendar_days'] }}</p>
+            <p class="text-xs text-slate-500 mt-0.5">Calendar Days</p>
+        </div>
+        <div class="text-center">
+            <p class="text-2xl font-bold text-slate-600">{{ $calSummary['working_days'] }}</p>
+            <p class="text-xs text-slate-500 mt-0.5">Weekdays (Mon–Fri)</p>
+        </div>
+        <div class="text-center">
+            <p class="text-2xl font-bold text-emerald-600">{{ $calSummary['paid_holidays'] }}</p>
+            <p class="text-xs text-slate-500 mt-0.5">Paid Public Holidays</p>
+        </div>
+        <div class="text-center">
+            <p class="text-2xl font-bold text-indigo-600">365</p>
+            <p class="text-xs text-slate-500 mt-0.5">Annual Divisor</p>
+        </div>
+        <div class="text-center bg-indigo-50 rounded-xl p-2">
+            <p class="text-xs text-indigo-500 font-semibold uppercase mb-1">Example (100k/month)</p>
+            <p class="text-sm font-bold text-indigo-800">
+                {{ number_format(round(1200000 / 365 * $calSummary['calendar_days'], 0)) }} UGX
+            </p>
+            <p class="text-xs text-indigo-400">full {{ $calSummary['calendar_days'] }} days</p>
+        </div>
+    </div>
+    @if($calSummary['holidays']->isNotEmpty())
+    <div class="border-t border-slate-100 pt-3">
+        <p class="text-xs font-medium text-slate-500 mb-2">Public Holidays this month (paid by default):</p>
+        <div class="flex flex-wrap gap-2">
+            @foreach($calSummary['holidays'] as $h)
+            <span class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full
+                {{ $h->type === 'national' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700' }}">
+                <i class="fas {{ $h->type === 'national' ? 'fa-flag' : 'fa-moon' }} text-xs"></i>
+                {{ \Carbon\Carbon::parse($h->date)->format('j M') }} – {{ $h->name }}
+                @if(!$h->is_paid) <span class="text-red-500">(unpaid)</span> @endif
+            </span>
+            @endforeach
+        </div>
+    </div>
+    @else
+    <div class="border-t border-slate-100 pt-3 text-xs text-slate-400 flex items-center gap-2">
+        <i class="fas fa-calendar-check text-green-400"></i>
+        No public holidays in {{ $monthLabel }}. All attendance days count as worked.
+    </div>
+    @endif
+</div>
+
 {{-- Stats --}}
 <div class="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
     <div class="card p-4 text-center">

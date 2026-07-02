@@ -295,10 +295,16 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::get("/employees/export-excel", [AccountManagerController::class, "exportEmployeesExcel"])->name("employees.export-excel");
         Route::post("/employees/import", [AccountManagerController::class, "importEmployees"])->name("employees.import");
         Route::get("/employees/import-template", [AccountManagerController::class, "importTemplate"])->name("employees.import-template");
+        Route::get("/employees/full-import-template", [AccountManagerController::class, "fullImportTemplate"])->name("employees.full-import-template");
+        Route::post("/employees/full-import", [AccountManagerController::class, "fullImportEmployees"])->name("employees.full-import");
+        Route::post("/payroll/create-run", [AccountManagerController::class, "storePayrollRun"])->name("payroll.create-run");
         Route::get("/employees/{employee}", [AccountManagerController::class, "showEmployee"])->name("employees.show");
         Route::put("/employees/{employee}", [AccountManagerController::class, "updateEmployee"])->name("employees.update");
         Route::get("/payroll", [AccountManagerController::class, "payroll"])->name("payroll");
         Route::get("/payroll/{run}", [AccountManagerController::class, "payrollShow"])->name("payroll.show");
+        Route::post("/payroll/{run}/process", [AccountManagerController::class, "processPayroll"])->name("payroll.process");
+        Route::get("/payroll/{run}/manual-days-template", [AccountManagerController::class, "manualDaysTemplate"])->name("payroll.manual-days-template");
+        Route::post("/payroll/{run}/import-manual-days", [AccountManagerController::class, "importManualDays"])->name("payroll.import-manual-days");
         Route::post("/payroll/{run}/mark-paid", [AccountManagerController::class, "payrollMarkPaid"])->name("payroll.mark-paid");
         Route::get("/leaves", [AccountManagerController::class, "leaves"])->name("leaves");
         Route::post("/leaves/{leave}/approve", [AccountManagerController::class, "approveLeave"])->name("leaves.approve");
@@ -393,6 +399,14 @@ Route::middleware(['auth','mfa'])->group(function () {
             Route::delete('/{client}/unassign-employee/{employee}', [AdminClientController::class, 'unassignEmployee'])->name('unassign-employee');
             Route::post('/{client}/assign-job', [AdminClientController::class, 'assignJob'])->name('assign-job');
             Route::delete('/{client}/unassign-job/{job}', [AdminClientController::class, 'unassignJob'])->name('unassign-job');
+            // Export & Import
+            Route::get('/export', [AdminClientController::class, 'exportClients'])->name('export');
+            Route::post('/import', [AdminClientController::class, 'importClients'])->name('import');
         });
+
+        // Public Holidays
+        Route::get('public-holidays', [AdminClientController::class, 'publicHolidays'])->name('public-holidays.index');
+        Route::post('public-holidays', [AdminClientController::class, 'storePublicHoliday'])->name('public-holidays.store');
+        Route::delete('public-holidays/{holiday}', [AdminClientController::class, 'destroyPublicHoliday'])->name('public-holidays.destroy');
     });
 });

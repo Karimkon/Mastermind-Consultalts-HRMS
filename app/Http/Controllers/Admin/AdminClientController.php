@@ -2,9 +2,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\{Client, Employee, EmployeeClientTransfer, JobPosting, User};
+use App\Models\{Client, Employee, EmployeeClientTransfer, JobPosting, PublicHoliday, User};
+use App\Exports\ClientsExport;
+use App\Imports\ClientsImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Maatwebsite\Excel\Facades\Excel;
 
 class AdminClientController extends Controller
 {
@@ -184,6 +187,63 @@ class AdminClientController extends Controller
         $unassigned = Client::whereNull('account_manager_id')->orderBy('company_name')->get();
 
         return view('admin.account-managers.index', compact('managers', 'allClients', 'unassigned'));
+    }
+
+    // ── Client Export ─────────────────────────────────────────────────
+    public function exportClients()
+    {
+        return Excel::download(new ClientsExport, 'clients_' . date('Y_m_d') . '.xlsx');
+    }
+
+    // ── Client Import ─────────────────────────────────────────────────
+    public function importClients(Request $request)
+    {
+        $request->validate(['file' => 'required|file|mimes:xlsx,xls,csv']);
+        Excel::import(new ClientsImport, $request->file('file'));
+        return back()->with('success', 'Clients imported successfully.');
+    }
+
+    // ── Public Holidays Management ────────────────────────────────────
+    public function publicHolidays(Request $request)
+    {
+        $year     = (int)($request->year ?? date('Y'));
+        $holidays = PublicHoliday::where('year', $year)
+            ->orderBy('date')
+            ->get();
+
+        $years = range(2024, 2035);
+        return view('admin.public-holidays.index', compact('holidays', 'year', 'years'));
+    }
+
+    public function storePublicHoliday(Request $request)
+    {
+        $request->validate([
+            'date'    => 'required|date',
+            'name'    => 'required|string|max:255',
+            'type'    => 'required|in:national,religious',
+            'is_paid' => 'boolean',
+        ]);
+
+        $date = \Carbon\Carbon::parse($request->date);
+
+        PublicHoliday::updateOrCreate(
+            ['date' => $date->toDateString(), 'country' => 'UG'],
+            [
+                'name'    => $request->name,
+                'type'    => $request->type,
+                'year'    => $date->year,
+                'is_paid' => $request->boolean('is_paid', true),
+                'country' => 'UG',
+            ]
+        );
+
+        return back()->with('success', "Holiday '{$request->name}' saved.");
+    }
+
+    public function destroyPublicHoliday(PublicHoliday $holiday)
+    {
+        $holiday->delete();
+        return back()->with('success', 'Holiday deleted.');
     }
 
     public function assignAccountManager(Request $request)
