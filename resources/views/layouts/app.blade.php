@@ -150,11 +150,17 @@
         <a href="{{ route('account-manager.salary-payments') }}" class="sidebar-link {{ request()->routeIs('account-manager.salary-payments*') ? 'active' : '' }}">
             <i class="fas fa-money-bill-wave w-4 text-center"></i><span x-show="sidebarOpen">Salary Payments</span>
         </a>
+        <a href="{{ route('office-attendance.index') }}" class="sidebar-link {{ request()->routeIs('office-attendance.*') ? 'active' : '' }}">
+            <i class="fas fa-building-user w-4 text-center"></i><span x-show="sidebarOpen">Office Attendance</span>
+        </a>
         <a href="{{ route('am-visits.index') }}" class="sidebar-link {{ request()->routeIs('am-visits.*') ? 'active' : '' }}">
             <i class="fas fa-map-marker-alt w-4 text-center"></i><span x-show="sidebarOpen">Site Visits</span>
         </a>
-        <a href="{{ route('bsc.team-appraisal') }}" class="sidebar-link {{ request()->routeIs('bsc.*') ? 'active' : '' }}">
-            <i class="fas fa-chart-bar w-4 text-center"></i><span x-show="sidebarOpen">BSC Appraisals</span>
+        <a href="{{ route('holiday-pay.index') }}" class="sidebar-link {{ request()->routeIs('holiday-pay.*') ? 'active' : '' }}">
+            <i class="fas fa-calendar-star w-4 text-center"></i><span x-show="sidebarOpen">Holiday Pay</span>
+        </a>
+        <a href="{{ route('appraisals.index') }}" class="sidebar-link {{ request()->routeIs('appraisals.*') ? 'active' : '' }}">
+            <i class="fas fa-chart-bar w-4 text-center"></i><span x-show="sidebarOpen">Appraisals</span>
         </a>
         @endrole
 
@@ -173,7 +179,7 @@
         <a href="{{ route('training.index') }}" class="sidebar-link {{ request()->routeIs('training.*') ? 'active' : '' }}">
             <i class="fas fa-graduation-cap w-4 text-center"></i><span x-show="sidebarOpen">Training</span>
         </a>
-        <a href="{{ route('bsc.my-appraisal') }}" class="sidebar-link {{ request()->routeIs('bsc.my-appraisal') ? 'active' : '' }}">
+        <a href="{{ route('appraisals.index') }}" class="sidebar-link {{ request()->routeIs('appraisals.*') ? 'active' : '' }}">
             <i class="fas fa-balance-scale w-4 text-center"></i><span x-show="sidebarOpen">My Appraisal</span>
         </a>
         <a href="{{ route('meetings.calendar') }}" class="sidebar-link {{ request()->routeIs('meetings.*') ? 'active' : '' }}">
@@ -222,6 +228,20 @@
 
         {{-- ===== MANAGER / HR ADMIN / SUPER ADMIN: full menu ===== --}}
         @role('super-admin|hr-admin|manager')
+        <p class="sidebar-group" x-show="sidebarOpen">Website</p>
+        <a href="{{ route('admin.blog.index') }}" class="sidebar-link {{ request()->routeIs('admin.blog.index') || request()->routeIs('admin.blog.create') || request()->routeIs('admin.blog.edit') ? 'active' : '' }}">
+            <i class="fas fa-newspaper w-4 text-center"></i><span x-show="sidebarOpen">Blog Posts</span>
+        </a>
+        <a href="{{ route('admin.blog.categories.index') }}" class="sidebar-link {{ request()->routeIs('admin.blog.categories.*') ? 'active' : '' }}">
+            <i class="fas fa-folder-tree w-4 text-center"></i><span x-show="sidebarOpen">Blog Topics</span>
+        </a>
+        <a href="{{ route('admin.blog.media') }}" class="sidebar-link {{ request()->routeIs('admin.blog.media') ? 'active' : '' }}">
+            <i class="fas fa-images w-4 text-center"></i><span x-show="sidebarOpen">Blog Media</span>
+        </a>
+        <a href="{{ route('admin.blog.tokens') }}" class="sidebar-link {{ request()->routeIs('admin.blog.tokens') ? 'active' : '' }}">
+            <i class="fas fa-robot w-4 text-center"></i><span x-show="sidebarOpen">AI Publishing Keys</span>
+        </a>
+
         <p class="sidebar-group" x-show="sidebarOpen">Human Resources</p>
         <a href="{{ route('employees.index') }}" class="sidebar-link {{ request()->routeIs('employees.*') ? 'active' : '' }}">
             <i class="fas fa-users w-4 text-center"></i><span x-show="sidebarOpen">Employee Central</span>
@@ -229,6 +249,22 @@
         <a href="{{ route('attendance.index') }}" class="sidebar-link {{ request()->routeIs('attendance.*') ? 'active' : '' }}">
             <i class="fas fa-clock w-4 text-center"></i><span x-show="sidebarOpen">Attendance</span>
         </a>
+        <a href="{{ route('office-attendance.index') }}" class="sidebar-link {{ request()->routeIs('office-attendance.*') ? 'active' : '' }}">
+            <i class="fas fa-building-user w-4 text-center"></i><span x-show="sidebarOpen">Office Attendance</span>
+        </a>
+        @role('super-admin|hr-admin|manager')
+        <a href="{{ route('overtime.index') }}" class="sidebar-link {{ request()->routeIs('overtime.*') ? 'active' : '' }}">
+            <i class="fas fa-hourglass-half w-4 text-center"></i><span x-show="sidebarOpen">Overtime Approval</span>
+        </a>
+        <a href="{{ route('holiday-pay.index') }}" class="sidebar-link {{ request()->routeIs('holiday-pay.*') ? 'active' : '' }}">
+            <i class="fas fa-calendar-star w-4 text-center"></i><span x-show="sidebarOpen">Holiday Pay</span>
+        </a>
+        @endrole
+        @role('super-admin|hr-admin')
+        <a href="{{ route('admin.appraisal-templates.index') }}" class="sidebar-link {{ request()->routeIs('admin.appraisal-templates.*') ? 'active' : '' }}">
+            <i class="fas fa-sliders w-4 text-center"></i><span x-show="sidebarOpen">Appraisal Weighting</span>
+        </a>
+        @endrole
         <a href="{{ route('leaves.index') }}" class="sidebar-link {{ request()->routeIs('leaves.*') ? 'active' : '' }}">
             <i class="fas fa-calendar-minus w-4 text-center"></i><span x-show="sidebarOpen">Leave</span>
         </a>
@@ -259,7 +295,7 @@
         <a href="{{ route('training.index') }}" class="sidebar-link {{ request()->routeIs('training.*') ? 'active' : '' }}">
             <i class="fas fa-graduation-cap w-4 text-center"></i><span x-show="sidebarOpen">Training</span>
         </a>
-        <a href="{{ route('bsc.index') }}" class="sidebar-link {{ request()->routeIs('bsc.*') ? 'active' : '' }}">
+        <a href="{{ route('appraisals.index') }}" class="sidebar-link {{ request()->routeIs('appraisals.*') ? 'active' : '' }}">
             <i class="fas fa-balance-scale w-4 text-center"></i><span x-show="sidebarOpen">Balanced Scorecard</span>
         </a>
         @role('super-admin|hr-admin')

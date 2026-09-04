@@ -31,3 +31,9 @@ Schedule::command('hrms:auto-terminate-employees')->dailyAt('00:15');
 
 // Recurring meeting instances — generate daily at 01:00
 Schedule::command('hrms:generate-recurring-meetings')->dailyAt('01:00');
+
+// Publish blog posts whose scheduled time has arrived
+Schedule::command('blog:publish-scheduled')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();

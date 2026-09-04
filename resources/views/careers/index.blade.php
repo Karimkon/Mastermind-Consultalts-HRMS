@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Careers — Mastermind Consultants</title>
+    <title>Careers — Mastermind Consult Ltd</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
@@ -19,11 +19,14 @@
                 <i class="fas fa-users text-white text-sm"></i>
             </div>
             <div>
-                <p class="font-bold text-slate-800 text-sm">Mastermind Consultants</p>
+                <p class="font-bold text-slate-800 text-sm">Mastermind Consult Ltd</p>
                 <p class="text-xs text-slate-500">Careers Portal</p>
             </div>
         </div>
-        <a href="{{ route('login') }}" class="text-sm text-blue-600 font-medium hover:underline">Employee Login →</a>
+        <div class="flex items-center gap-5">
+            <a href="{{ route('blog.index') }}" class="text-sm text-slate-600 hover:text-blue-600">Insights</a>
+            <a href="{{ route('login') }}" class="text-sm text-blue-600 font-medium hover:underline">Employee Login →</a>
+        </div>
     </div>
 </header>
 
@@ -123,7 +126,7 @@
 </main>
 
 <footer class="bg-white border-t border-slate-200 py-6 text-center text-sm text-slate-400">
-    &copy; {{ date('Y') }} Mastermind Consultants. All rights reserved.
+    &copy; {{ date('Y') }} Mastermind Consult Ltd. All rights reserved.
 </footer>
 </body>
 </html>

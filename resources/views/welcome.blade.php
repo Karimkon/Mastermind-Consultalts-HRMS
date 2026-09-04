@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mastermind Consults – Your Strategic HR Solution Partner</title>
+<title>Mastermind Consult Ltd – Your Strategic HR Solution Partner</title>
 <meta name="description" content="Transforming workplaces across Uganda & East Africa. Executive recruitment, staffing, HR systems and more.">
 <link rel="icon" href="{{ asset('images/logo.png') }}" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -253,12 +253,14 @@ button{cursor:pointer;font-family:inherit}
 <nav class="navbar" id="nav">
   <div class="nw">
     <a href="{{ route('home') }}" class="brand">
-      <img src="{{ asset('images/logo.png') }}" alt="Mastermind Consults">
+      <img src="{{ asset('images/logo.png') }}" alt="Mastermind Consult Ltd">
     </a>
     <div class="nl">
       <a href="{{ route('home') }}" class="cur">Home</a>
       <a href="#jobs">Jobs</a>
       <a href="#services">Services</a>
+    <a href="{{ route('blog.index') }}">Insights</a>
+      <a href="{{ route('blog.index') }}">Insights</a>
       <a href="#about">About</a>
       <a href="#clients">Clients</a>
       <a href="#contact">Contact</a>
@@ -288,7 +290,7 @@ button{cursor:pointer;font-family:inherit}
 $heroSlides = (isset($heroSlides) && count($heroSlides)) ? $heroSlides : [
   ['eyebrow'=>'Expert HR Consultancy','title'=>'Transforming the <em>Work Place</em>','subtitle'=>'Your Strategic Human Resource Solution Partner. We help organisations optimise performance by meeting their most critical HR needs across Uganda and East Africa.','btn1_label'=>'View Open Jobs','btn1_url'=>'#jobs','btn2_label'=>'Our Services','btn2_url'=>'#services','gradient'=>'linear-gradient(110deg,#1C1C1E 0%,#2d2420 60%,#3d2d10 100%)','image'=>null],
   ['eyebrow'=>'Recruitment Specialists','title'=>'Your Partner in <em>Talent Acquisition</em>','subtitle'=>'From executive search to staffing solutions — connecting the right people with the right organisations. Over 500 successful placements across East Africa.','btn1_label'=>'Post a Job','btn1_url'=>'#contact','btn2_label'=>'Learn More','btn2_url'=>'#about','gradient'=>'linear-gradient(110deg,#1a2040 0%,#1C1C1E 60%,#2d2420 100%)','image'=>null],
-  ['eyebrow'=>'Trusted by 20+ Companies','title'=>'Empowering <em>HR Excellence</em> in East Africa','subtitle'=>'Delivering consistent, affordable and innovative HR services. Join over 20 leading organisations that trust Mastermind Consults for their human resource needs.','btn1_label'=>'Get In Touch','btn1_url'=>'#contact','btn2_label'=>'Our Clients','btn2_url'=>'#clients','gradient'=>'linear-gradient(110deg,#1C1C1E 0%,#1e1a10 60%,#3d2d10 100%)','image'=>null],
+  ['eyebrow'=>'Trusted by 20+ Companies','title'=>'Empowering <em>HR Excellence</em> in East Africa','subtitle'=>'Delivering consistent, affordable and innovative HR services. Join over 20 leading organisations that trust Mastermind Consult Ltd for their human resource needs.','btn1_label'=>'Get In Touch','btn1_url'=>'#contact','btn2_label'=>'Our Clients','btn2_url'=>'#clients','gradient'=>'linear-gradient(110deg,#1C1C1E 0%,#1e1a10 60%,#3d2d10 100%)','image'=>null],
 ];
 @endphp
 <div class="hero" id="hero">
@@ -302,7 +304,7 @@ $heroSlides = (isset($heroSlides) && count($heroSlides)) ? $heroSlides : [
     <div class="slide-ct">
       <div class="container">
         <div class="slide-txt">
-          <div class="s-eye"><i class="fas fa-star-of-life"></i>&nbsp;{{ $sl['eyebrow'] ?? 'Mastermind Consults' }}</div>
+          <div class="s-eye"><i class="fas fa-star-of-life"></i>&nbsp;{{ $sl['eyebrow'] ?? 'Mastermind Consult Ltd' }}</div>
           <h1 class="s-title">{!! $sl['title'] ?? '' !!}</h1>
           <p class="s-sub">{{ $sl['subtitle'] ?? '' }}</p>
           <div class="s-btns">
@@ -505,7 +507,7 @@ $clientsD = array_merge($clients, $clients);
     <div class="sh reveal">
       <div class="sh-tag"><i class="fas fa-building"></i>&nbsp;Trusted By</div>
       <h2 class="sh-h">Our <em>Valued Clients</em></h2>
-      <p class="sh-p">Over 20 leading organisations across Uganda and East Africa trust Mastermind Consults for their HR needs.</p>
+      <p class="sh-p">Over 20 leading organisations across Uganda and East Africa trust Mastermind Consult Ltd for their HR needs.</p>
       <div class="sh-ln"></div>
     </div>
   </div>
@@ -537,7 +539,7 @@ $clientsD = array_merge($clients, $clients);
         <div class="dc"></div><div class="dc2"></div>
         <i class="fas fa-building big"></i>
         <h3>I'm an Employer</h3>
-        <p>In a fast-changing business climate, Mastermind Consults is dedicated to helping your business effectively manage human capital — because people are the largest driver of organisational performance.</p>
+        <p>In a fast-changing business climate, Mastermind Consult Ltd is dedicated to helping your business effectively manage human capital — because people are the largest driver of organisational performance.</p>
         <a href="#contact" class="btn-ct">Contact Us Today</a>
       </div>
       <div class="cta-c cnd reveal">
@@ -556,7 +558,7 @@ $clientsD = array_merge($clients, $clients);
   <div class="container">
     <div class="ab-grid">
       <div class="ab-img reveal">
-        <img src="{{ asset('images/logo.png') }}" alt="About Mastermind Consults" style="object-fit:contain;padding:50px">
+        <img src="{{ asset('images/logo.png') }}" alt="About Mastermind Consult Ltd" style="object-fit:contain;padding:50px">
         <div class="ab-float">
           <div class="ab-f-ico"><i class="fas fa-award"></i></div>
           <div class="ab-f-txt">
@@ -568,7 +570,7 @@ $clientsD = array_merge($clients, $clients);
       <div class="reveal">
         <div class="ab-tag"><i class="fas fa-info-circle"></i>&nbsp;About Us</div>
         <h2 class="ab-h">Your Strategic <em>HR Solution</em> Partner</h2>
-        <p class="ab-p">Mastermind Consults Ltd is a dynamic HR consulting firm headquartered in Uganda. We combine traditional HR expertise with innovative approaches to deliver consistent, affordable and impactful human resource services across East Africa.</p>
+        <p class="ab-p">Mastermind Consult Ltd is a dynamic HR consulting firm headquartered in Uganda. We combine traditional HR expertise with innovative approaches to deliver consistent, affordable and impactful human resource services across East Africa.</p>
         <div class="ab-q">
           <p>"To be the Preferred Human Resources Consulting Firm in East Africa — delivering innovative, affordable and consistent HR services that transform workplaces and elevate organisational performance."</p>
         </div>
@@ -628,7 +630,7 @@ $clientsD = array_merge($clients, $clients);
   <div class="container">
     <div class="f-inner">
       <div class="f-brand">
-        <img src="{{ asset('images/logo.png') }}" alt="Mastermind Consults">
+        <img src="{{ asset('images/logo.png') }}" alt="Mastermind Consult Ltd">
         <p>Your Strategic Human Resource Solution Partner. Transforming workplaces across Uganda and East Africa.</p>
         <div class="f-socs">
           <a href="#" class="f-soc"><i class="fab fa-x-twitter"></i></a>
@@ -672,7 +674,7 @@ $clientsD = array_merge($clients, $clients);
       </div>
     </div>
     <div class="f-bot">
-      <span>&copy; {{ date('Y') }} Mastermind Consults Ltd. All rights reserved.</span>
+      <span>&copy; {{ date('Y') }} Mastermind Consult Ltd. All rights reserved.</span>
       <span><a href="{{ route('privacy') }}">Privacy Policy</a>&nbsp;·&nbsp;<a href="#contact">Contact Us</a></span>
     </div>
   </div>

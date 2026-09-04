@@ -1,2 +1,75 @@
+# Mastermind Consult Ltd
+# https://mastermind.autos
+
 User-agent: *
-Disallow:
+Allow: /
+Allow: /careers
+Allow: /blog
+
+# Staff-only areas — nothing here belongs in a search index
+Disallow: /dashboard
+Disallow: /admin/
+Disallow: /employees
+Disallow: /payroll
+Disallow: /leaves
+Disallow: /attendance
+Disallow: /office-attendance
+Disallow: /overtime
+Disallow: /holiday-pay
+Disallow: /appraisals
+Disallow: /bsc
+Disallow: /performance
+Disallow: /recruitment
+Disallow: /reports
+Disallow: /meetings
+Disallow: /training
+Disallow: /probation
+Disallow: /client/
+Disallow: /am-visits
+Disallow: /profile
+Disallow: /api/
+Disallow: /login
+Disallow: /password
+Disallow: /docs
+
+# Assets search engines need to render the public pages
+Allow: /images/
+Allow: /icons/
+Allow: /storage/
+Allow: /*.css$
+Allow: /*.js$
+Allow: /*.webp$
+Allow: /*.png$
+Allow: /*.jpg$
+
+# Answer engines — allowed, so Mastermind can be cited in AI answers
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+# SEO crawlers — allowed but slowed down
+User-agent: AhrefsBot
+Crawl-delay: 10
+
+User-agent: SemrushBot
+Crawl-delay: 10
+
+# Sitemaps
+Sitemap: https://mastermind.autos/sitemap.xml
+Sitemap: https://mastermind.autos/sitemap-pages.xml
+Sitemap: https://mastermind.autos/sitemap-jobs.xml
+Sitemap: https://mastermind.autos/sitemap-blog.xml

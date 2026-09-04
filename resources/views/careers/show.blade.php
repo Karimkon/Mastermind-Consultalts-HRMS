@@ -16,7 +16,10 @@
         <a href="{{ route('careers.index') }}" class="flex items-center gap-2 text-slate-600 hover:text-slate-800 text-sm font-medium">
             <i class="fas fa-arrow-left"></i> Back to Jobs
         </a>
-        <a href="{{ route('login') }}" class="text-sm text-blue-600 font-medium hover:underline">Employee Login →</a>
+        <div class="flex items-center gap-5">
+            <a href="{{ route('blog.index') }}" class="text-sm text-slate-600 hover:text-blue-600">Insights</a>
+            <a href="{{ route('login') }}" class="text-sm text-blue-600 font-medium hover:underline">Employee Login →</a>
+        </div>
     </div>
 </header>
 
@@ -215,7 +218,7 @@
 </main>
 
 <footer class="bg-white border-t border-slate-200 py-6 text-center text-sm text-slate-400 mt-10">
-    &copy; {{ date('Y') }} Mastermind Consultants. All rights reserved.
+    &copy; {{ date('Y') }} Mastermind Consult Ltd. All rights reserved.
 </footer>
 </body>
 </html>

@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\{
     DashboardApiController,
     EmployeeApiController,
     AttendanceApiController,
+    OfficeAttendanceApiController,
+    OvertimeApiController,
     LeaveApiController,
     PayrollApiController,
     RecruitmentApiController,
@@ -161,6 +163,23 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('reports/training',    [TrainingApiController::class, 'report']);
 
     // ============================================================
+    // OFFICE ATTENDANCE — head-office presence register.
+    // Keyed on the user, so account managers (who have no employee record) can
+    // use it. Never read by payroll.
+    // ============================================================
+    Route::get('office-attendance',            [OfficeAttendanceApiController::class, 'index']);
+    Route::get('office-attendance/today',      [OfficeAttendanceApiController::class, 'today']);
+    Route::post('office-attendance/clock-in',  [OfficeAttendanceApiController::class, 'clockIn']);
+    Route::post('office-attendance/clock-out', [OfficeAttendanceApiController::class, 'clockOut']);
+
+    // ============================================================
+    // OVERTIME APPROVAL — payroll pays only what is approved here.
+    // ============================================================
+    Route::get('overtime',                [OvertimeApiController::class, 'index']);
+    Route::post('overtime/{log}/approve', [OvertimeApiController::class, 'approve']);
+    Route::post('overtime/{log}/reject',  [OvertimeApiController::class, 'reject']);
+
+    // ============================================================
     // AM SITE VISITS
     // ============================================================
     Route::get('am-visits',              [AmVisitApiController::class, 'index']);
@@ -247,4 +266,34 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('recruitment/{candidate}/approve',        [ClientPortalApiController::class, 'approveCandidate']);
         Route::post('recruitment/{candidate}/reject',         [ClientPortalApiController::class, 'rejectCandidate']);
     });
+});
+
+
+/*
+|--------------------------------------------------------------------------
+| Blog publishing API (used by the AI writer)
+|--------------------------------------------------------------------------
+| Authenticated with a key from Admin -> Blog -> AI publishing keys:
+|   Authorization: Bearer bmb_xxxxxxxx
+| Every published post becomes a real, indexable page at /blog/{slug}.
+*/
+Route::prefix('blog')->name('api.blog.')->middleware('throttle:60,1')->group(function () {
+    Route::get('/posts', [App\Http\Controllers\Api\BlogPublishController::class, 'index'])->name('index');
+    Route::post('/posts', [App\Http\Controllers\Api\BlogPublishController::class, 'store'])->name('store');
+    Route::get('/posts/{post}', [App\Http\Controllers\Api\BlogPublishController::class, 'show'])->name('show');
+    Route::match(['put', 'patch'], '/posts/{post}', [App\Http\Controllers\Api\BlogPublishController::class, 'update'])->name('update');
+    Route::delete('/posts/{post}', [App\Http\Controllers\Api\BlogPublishController::class, 'destroy'])->name('destroy');
+    Route::post('/media', [App\Http\Controllers\Api\BlogPublishController::class, 'uploadMedia'])->name('media');
+    Route::get('/categories', [App\Http\Controllers\Api\BlogPublishController::class, 'categories'])->name('categories');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Blog feed for the mobile apps (public, read-only)
+|--------------------------------------------------------------------------
+*/
+Route::prefix('blog')->name('api.blog.feed.')->group(function () {
+    Route::get('/articles', [App\Http\Controllers\Api\BlogFeedController::class, 'index'])->name('index');
+    Route::get('/topics', [App\Http\Controllers\Api\BlogFeedController::class, 'categories'])->name('topics');
+    Route::get('/articles/{slug}', [App\Http\Controllers\Api\BlogFeedController::class, 'show'])->name('show');
 });
