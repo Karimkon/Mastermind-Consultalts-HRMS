@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\{
     SelfServiceApiController,
     AmVisitApiController,
     BscApiController,
+    AppraisalApiController,
     ProbationApiController,
     AccountManagerApiController,
 };
@@ -211,7 +212,25 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('admin/payroll/{payroll}/unlock',      [AdminApiController::class, 'unlockPayroll']);
 
     // ============================================================
-    // BSC APPRAISALS
+    // APPRAISALS (per-employee cards)
+    // ============================================================
+    // The scheme the BSC cycles below were replaced by. A card moves
+    // draft -> with_appraiser -> with_manager -> with_employee -> completed,
+    // and every guard here is the web controller's, not a reinterpretation of it.
+    // Setting KPIs is absent on purpose: weights must total 100 across a table of
+    // targets, which is deskwork.
+    Route::get('appraisals',                         [AppraisalApiController::class, 'index']);
+    Route::get('appraisals/mine',                    [AppraisalApiController::class, 'mine']);
+    Route::get('appraisals/{appraisal}',             [AppraisalApiController::class, 'show']);
+    Route::post('appraisals/{appraisal}/score',      [AppraisalApiController::class, 'score']);
+    Route::post('appraisals/{appraisal}/return',     [AppraisalApiController::class, 'returnToManager']);
+    Route::post('appraisals/{appraisal}/confirm',    [AppraisalApiController::class, 'confirm']);
+    Route::post('appraisals/{appraisal}/send-back',  [AppraisalApiController::class, 'sendBack']);
+    Route::post('appraisals/{appraisal}/self',       [AppraisalApiController::class, 'selfAppraise']);
+
+    // ============================================================
+    // BSC APPRAISALS (superseded by the above; kept until the old cycles are
+    // archived, since both sets of tables still exist)
     // ============================================================
     Route::get('bsc/cycles',                         [BscApiController::class, 'cycles']);
     Route::get('bsc/cycles/{cycle}',                 [BscApiController::class, 'showCycle']);
