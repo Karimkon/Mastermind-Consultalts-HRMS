@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\{
     HolidayPayApiController,
     DevelopmentApiController,
     ConfigurationApiController,
+    PublicHolidayApiController,
     ProbationApiController,
     AccountManagerApiController,
 };
@@ -213,6 +214,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Admin — Payroll unlock
     Route::post('admin/payroll/{payroll}/unlock',      [AdminApiController::class, 'unlockPayroll']);
+
+    // ============================================================
+    // PUBLIC HOLIDAY CALENDAR
+    // ============================================================
+    // Feeds pay in two directions: monthly staff have holidays counted toward
+    // their worked days, casual staff earn double for an approved one they
+    // worked. Deleting is guarded because holiday_pay_approvals and holiday_work
+    // both cascade — removing a used holiday erases the decision and the record
+    // of who worked it.
+    Route::get('public-holidays',                        [PublicHolidayApiController::class, 'index']);
+    Route::post('public-holidays',                       [PublicHolidayApiController::class, 'store']);
+    Route::post('public-holidays/seed',                  [PublicHolidayApiController::class, 'seedYear']);
+    Route::delete('public-holidays/{holiday}',           [PublicHolidayApiController::class, 'destroy']);
 
     // ============================================================
     // CONFIGURATION — shifts, salary grades, salary components

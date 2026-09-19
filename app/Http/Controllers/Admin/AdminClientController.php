@@ -245,7 +245,27 @@ class AdminClientController extends Controller
 
     public function destroyPublicHoliday(PublicHoliday $holiday)
     {
+        // `holiday_pay_approvals` and `holiday_work` both cascade on delete, so
+        // removing a holiday that has been used takes the pay decision and the
+        // record of who worked it with it — silently. A payslip that paid somebody
+        // double for that day then refers to a holiday nobody can find, and the
+        // approval that authorised it is gone.
+        //
+        // Once either exists the holiday is part of what somebody was paid, so it
+        // stops being deletable. An unused holiday added by mistake still is.
+        $approvals = \App\Models\HolidayPayApproval::where('public_holiday_id', $holiday->id)->count();
+        $worked = \App\Models\HolidayWork::where('public_holiday_id', $holiday->id)->count();
+
+        if ($approvals || $worked) {
+            return back()->with('error', sprintf(
+                '%s cannot be deleted: it carries %d pay decision(s) and %d attendance record(s). '
+                .'Deleting it would erase them and leave the payslips that used it unexplainable.',
+                $holiday->name, $approvals, $worked,
+            ));
+        }
+
         $holiday->delete();
+
         return back()->with('success', 'Holiday deleted.');
     }
 
