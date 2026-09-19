@@ -47,17 +47,28 @@
                 </div>
             </div>
 
+            {{-- Pin the premises from the office instead of travelling there.
+                 The lat/lng boxes above stay editable for anyone who already has
+                 exact coordinates, and "Use my current location" still works for
+                 somebody who happens to be standing on site. --}}
+            <x-map-picker
+                lat-input="siteLat"
+                lng-input="siteLng"
+                radius-input="geoRadius"
+                label="Find the work site on the map"
+            />
+
             <div>
                 <button type="button" onclick="detectLocation()"
                         class="btn-secondary text-sm mb-1">
                     <i class="fas fa-crosshairs mr-1"></i> Use My Current Location
                 </button>
-                <p class="text-xs text-slate-400">Click to auto-fill lat/lng from your browser's GPS (be at the work site first).</p>
+                <p class="text-xs text-slate-400">Fills lat/lng from your browser's GPS — only useful if you are at the work site.</p>
             </div>
 
             <div>
                 <label class="form-label">Geo-Fence Radius (metres)</label>
-                <input type="number" name="geo_fence_radius" value="{{ old('geo_fence_radius', $client->geo_fence_radius ?? 100) }}"
+                <input type="number" name="geo_fence_radius" id="geoRadius" value="{{ old('geo_fence_radius', $client->geo_fence_radius ?? 100) }}"
                        class="form-input w-40" min="10" max="5000">
                 <p class="text-xs text-slate-400 mt-1">Employees must be within this distance to clock in/out.</p>
             </div>
@@ -138,6 +149,105 @@
                 <dd class="font-medium text-slate-800">{{ $client->geo_fence_radius ?? 100 }} metres</dd>
             </div>
         </dl>
+
+{{-- Several clients are more than one place. Roofings runs Lubowa and
+     Industrial Area about ten kilometres apart, and one coordinate could only
+     ever cover one of them. --}}
+<div class="card p-5 mt-6">
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <h3 class="font-semibold text-slate-800">Work sites</h3>
+            <p class="text-xs text-slate-500 mt-0.5">
+                Staff may clock in at any active site. A clock-in is measured against the nearest one.
+            </p>
+        </div>
+        <button type="button" onclick="document.getElementById('addSite').classList.toggle('hidden')"
+                class="btn-secondary text-sm whitespace-nowrap">
+            <i class="fas fa-plus mr-1"></i> Add site
+        </button>
+    </div>
+
+    @php($sites = $client->sites()->orderByDesc('is_active')->orderBy('name')->get())
+
+    @if($sites->isEmpty())
+        <div class="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600">
+            No separate sites yet.
+            @if($client->work_site_lat && $client->work_site_lng)
+                The single work site above is being used. Add sites here if this client
+                operates from more than one place.
+            @else
+                Staff can clock in from anywhere and the record will say the location
+                was never verified.
+            @endif
+        </div>
+    @else
+        <ul class="mt-4 divide-y divide-slate-100">
+            @foreach($sites as $site)
+                <li class="py-3 flex items-center justify-between gap-4 {{ $site->is_active ? '' : 'opacity-50' }}">
+                    <div class="min-w-0">
+                        <p class="font-medium text-slate-800 truncate">
+                            {{ $site->name }}
+                            @unless($site->is_active)
+                                <span class="ml-1 text-xs font-normal text-slate-500">(retired)</span>
+                            @endunless
+                        </p>
+                        <p class="text-xs text-slate-500">
+                            {{ $site->address ?: number_format($site->lat, 5) . ', ' . number_format($site->lng, 5) }}
+                            · within {{ $site->geo_fence_radius }}m
+                        </p>
+                    </div>
+                    <form method="POST" action="{{ route('account-manager.client.sites.retire', [$client, $site]) }}">
+                        @csrf
+                        <button class="text-sm {{ $site->is_active ? 'text-red-600 hover:text-red-700' : 'text-emerald-600 hover:text-emerald-700' }}">
+                            {{ $site->is_active ? 'Retire' : 'Restore' }}
+                        </button>
+                    </form>
+                </li>
+            @endforeach
+        </ul>
+    @endif
+
+    <form id="addSite" method="POST" action="{{ route('account-manager.client.sites.store', $client) }}"
+          class="hidden mt-5 pt-5 border-t border-slate-100 space-y-4">
+        @csrf
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="form-label">Site name</label>
+                <input type="text" name="name" class="form-input" placeholder="e.g. Lubowa" required>
+            </div>
+            <div>
+                <label class="form-label">Radius (metres)</label>
+                <input type="number" name="geo_fence_radius" id="newSiteRadius" value="100"
+                       class="form-input" min="25" max="5000" required>
+            </div>
+        </div>
+
+        <div>
+            <label class="form-label">Address</label>
+            <input type="text" name="address" class="form-input" placeholder="optional">
+        </div>
+
+        <x-map-picker
+            lat-input="newSiteLat"
+            lng-input="newSiteLng"
+            radius-input="newSiteRadius"
+            label="Find this site on the map"
+        />
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="form-label">Latitude</label>
+                <input type="text" name="lat" id="newSiteLat" class="form-input" required>
+            </div>
+            <div>
+                <label class="form-label">Longitude</label>
+                <input type="text" name="lng" id="newSiteLng" class="form-input" required>
+            </div>
+        </div>
+
+        <button class="btn-primary text-sm">Add this site</button>
+    </form>
+</div>
 
         @if($client->work_site_lat && $client->work_site_lng)
         <div class="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">

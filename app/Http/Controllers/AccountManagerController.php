@@ -590,6 +590,60 @@ class AccountManagerController extends Controller
         return view('account-manager.client-settings', compact('client'));
     }
 
+    /**
+     * Add a premises to a client.
+     *
+     * A client can be several places. Roofings runs Lubowa and Industrial Area
+     * about ten kilometres apart, and the single work_site_lat/lng pair could
+     * only ever describe one of them -- so whichever were set, the other
+     * workforce would be refused at their own gate.
+     */
+    public function storeClientSite(Request $request, Client $client)
+    {
+        $this->authoriseClientSettings($client);
+
+        $data = $request->validate([
+            'name'             => 'required|string|max:100',
+            'address'          => 'nullable|string|max:255',
+            'lat'              => 'required|numeric|between:-90,90',
+            'lng'              => 'required|numeric|between:-180,180',
+            // Twenty-five metres is already close to a phone's own GPS error, so
+            // anything tighter would refuse people genuinely standing there.
+            'geo_fence_radius' => 'required|integer|min:25|max:5000',
+        ]);
+
+        $client->sites()->create($data + ['is_active' => true]);
+
+        return back()->with('success', $data['name'] . ' added. Staff can now clock in there.');
+    }
+
+    /**
+     * Retire a site, or bring it back. Never delete one.
+     *
+     * A site that has been clocked into is part of the history of somebody's
+     * attendance, and removing it would leave those records pointing at nothing.
+     */
+    public function retireClientSite(Client $client, \App\Models\ClientSite $site)
+    {
+        $this->authoriseClientSettings($client);
+        abort_unless($site->client_id === $client->id, 404);
+
+        $site->update(['is_active' => ! $site->is_active]);
+
+        return back()->with('success', $site->name . ($site->is_active
+            ? ' is active again.'
+            : ' retired. Staff can no longer clock in there.'));
+    }
+
+    private function authoriseClientSettings(Client $client): void
+    {
+        abort_unless(
+            auth()->user()->hasAnyRole(['super-admin', 'hr-admin']) ||
+            $client->account_manager_id === auth()->id(),
+            403,
+        );
+    }
+
     public function updateClientSettings(Request $request, Client $client)
     {
         abort_unless(

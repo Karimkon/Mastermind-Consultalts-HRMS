@@ -361,6 +361,11 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::get("/documents/{document}/download", [SelfServiceController::class, "downloadDocument"])->name("documents.download");
         Route::get("/clients/{client}/settings", [AccountManagerController::class, "clientSettings"])->name("client.settings");
         Route::put("/clients/{client}/settings", [AccountManagerController::class, "updateClientSettings"])->name("client.settings.update");
+        // A client can be several premises; see ClientSite. Sites are retired,
+        // never deleted, because one that has been clocked into is part of
+        // somebody's attendance history.
+        Route::post("/clients/{client}/sites", [AccountManagerController::class, "storeClientSite"])->name("client.sites.store");
+        Route::post("/clients/{client}/sites/{site}/retire", [AccountManagerController::class, "retireClientSite"])->name("client.sites.retire");
         // Salary Payments
         Route::get("/salary-payments", [AccountManagerController::class, "salaryPayments"])->name("salary-payments");
         Route::get("/salary-payments/create", [AccountManagerController::class, "createSalaryPayment"])->name("salary-payments.create");

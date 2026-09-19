@@ -173,46 +173,61 @@ class AttendanceApiController extends Controller
      */
     private function assessLocation(?Client $client, $lat, $lng): array
     {
-        $hasFence = $client && $client->work_site_lat && $client->work_site_lng;
         $hasFix = $lat !== null && $lng !== null && $lat !== '' && $lng !== '';
 
         if (! $hasFix) {
             return [null, AttendanceLog::LOCATION_NO_FIX];
         }
 
-        if (! $hasFence) {
+        // Nearest of however many premises this client has. A client with one
+        // site behaves exactly as before; a client with two stops measuring
+        // Industrial Area staff against Lubowa.
+        $nearest = $client?->nearestSite((float) $lat, (float) $lng);
+
+        if ($nearest === null) {
             // A fix was given and there is nothing to measure it against. The
             // coordinates are still stored; the status says they prove nothing.
             return [null, AttendanceLog::LOCATION_UNFENCED];
         }
 
-        $distance = $this->distanceMetres(
-            (float) $lat, (float) $lng,
-            (float) $client->work_site_lat, (float) $client->work_site_lng,
-        );
-
-        $radius = (int) ($client->geo_fence_radius ?? 100);
+        [$site, $distance] = $nearest;
 
         return [
             round($distance, 2),
-            $distance <= $radius ? AttendanceLog::LOCATION_VERIFIED : AttendanceLog::LOCATION_OUTSIDE,
+            $distance <= $site->geo_fence_radius
+                ? AttendanceLog::LOCATION_VERIFIED
+                : AttendanceLog::LOCATION_OUTSIDE,
         ];
     }
 
     private function employeeGeoCheck(?Client $client, $lat, $lng): ?string
     {
-        if (!$client || !$client->work_site_lat || !$client->work_site_lng) return null;
+        // Nothing configured: the clock-in is allowed and the row records that it
+        // could not be checked. Blocking here would stop attendance for every
+        // client that has no coordinates yet, which is most of them.
+        if (! $client || ! $client->hasGeoFence()) {
+            return null;
+        }
 
         if ($lat === null || $lng === null) {
             return 'Your location is required to clock in/out. Please enable GPS.';
         }
 
-        $distance = $this->distanceMetres((float)$lat, (float)$lng, (float)$client->work_site_lat, (float)$client->work_site_lng);
-        $radius   = (int)($client->geo_fence_radius ?? 100);
+        [$site, $distance] = $client->nearestSite((float) $lat, (float) $lng);
 
-        if ($distance > $radius) {
-            return "You are " . round($distance) . "m from the work site ({$client->company_name}). Must be within {$radius}m.";
+        if ($distance > $site->geo_fence_radius) {
+            // Names the site, not just the client. "You are 9km from Lubowa" is
+            // actionable where "9km from Roofings Uganda Limited" is baffling to
+            // somebody standing at Industrial Area.
+            return sprintf(
+                'You are %dm from %s (%s). Must be within %dm.',
+                round($distance),
+                $site->name,
+                $client->company_name,
+                $site->geo_fence_radius,
+            );
         }
+
         return null;
     }
 
