@@ -4,7 +4,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class PerformanceReview extends Model
 {
-    protected $fillable = ['employee_id', 'reviewer_id', 'cycle_id', 'type', 'ratings', 'comments', 'total_score'];
+    // `type` removed: `performance_reviews` has no such column anywhere, and a
+    // fillable that names a missing column is discarded without error on save.
+    protected $fillable = ['employee_id', 'reviewer_id', 'cycle_id', 'ratings', 'comments', 'total_score'];
     protected $casts    = ['ratings' => 'array'];
     public function employee() { return $this->belongsTo(Employee::class); }
     public function reviewer() { return $this->belongsTo(Employee::class, 'reviewer_id'); }

@@ -13,6 +13,36 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable, HasApiTokens, HasRoles;
 
+    /**
+     * This application's own notifications, not Laravel's.
+     *
+     * `Notifiable` brings a `notifications()` relationship that expects the
+     * framework's polymorphic table — a uuid primary key, `notifiable_type`,
+     * `notifiable_id`. This project has its own `notifications` table keyed on a
+     * plain `user_id`, with title, body and action_url, and its own model and
+     * controller reading it.
+     *
+     * The two never agreed, so `$user->notifications` threw
+     * "no such column: notifications.notifiable_type" every time anything touched
+     * it. Nothing had, because every screen goes through the app's own model — but
+     * the relationship was there to be used and would have failed the first time
+     * somebody did.
+     *
+     * Overridden rather than removed: `Notifiable` also supplies the mail routing
+     * that password resets use, so the trait stays and only the relationship that
+     * disagrees with the schema is replaced.
+     */
+    public function notifications(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\Notification::class)->latest();
+    }
+
+    /** Unread only — what a bell icon is actually asking for. */
+    public function unreadNotifications(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->notifications()->whereNull('read_at');
+    }
+
     protected $fillable = ['name', 'email', 'password', 'avatar', 'status', 'mfa_secret', 'mfa_enabled', 'mfa_confirmed_at'];
     protected $hidden   = ['password', 'remember_token', 'mfa_secret'];
     protected $appends  = ['avatar_url'];
