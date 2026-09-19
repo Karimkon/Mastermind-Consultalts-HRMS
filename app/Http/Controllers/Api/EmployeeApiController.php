@@ -49,14 +49,55 @@ class EmployeeApiController extends Controller
         return response()->json(['data' => $this->format($employee->load('user','department','designation'))], 201);
     }
 
-    public function show(Employee $employee)
+    /**
+     * Who may read one employee's record.
+     *
+     * There was no check here at all: any signed-in user could fetch any
+     * employee by id and get the detailed record back — 906 people's contact
+     * details, employment terms and status, readable by anybody with a login.
+     *
+     * The rule is the one the rest of the system already uses. HR and management
+     * see everybody; an account manager sees the staff on the clients they
+     * actually manage; everybody else sees themselves and nobody else.
+     */
+    private function mayAccess(Request $request, Employee $employee): bool
     {
+        $user = $request->user();
+
+        if ($user->hasAnyRole(['super-admin', 'hr-admin', 'md', 'payroll-officer'])) {
+            return true;
+        }
+
+        if ($user->hasRole('account-manager')) {
+            return \App\Models\Client::where('account_manager_id', $user->id)
+                ->whereHas('employees', fn ($q) => $q->where('employees.id', $employee->id))
+                ->exists();
+        }
+
+        return $user->employee?->id === $employee->id;
+    }
+
+    public function show(Request $request, Employee $employee)
+    {
+        abort_unless($this->mayAccess($request, $employee), 403, 'That employee is not yours to view.');
+
         $employee->load(['user','department','designation','manager.user']);
+
         return response()->json(['data' => $this->format($employee, true)]);
     }
 
     public function update(Request $request, Employee $employee)
     {
+        abort_unless($this->mayAccess($request, $employee), 403, 'That employee is not yours to edit.');
+
+        // Reading your own record is reasonable; rewriting it is not. Status in
+        // particular decides whether somebody is on the payroll at all.
+        abort_if(
+            ! $request->user()->hasAnyRole(['super-admin', 'hr-admin', 'md', 'account-manager']),
+            403,
+            'Only HR or your account manager can change an employee record.',
+        );
+
         $request->validate([
             'first_name' => 'required|string|max:100',
             'last_name'  => 'required|string|max:100',
