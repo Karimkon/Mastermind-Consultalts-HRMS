@@ -10,10 +10,27 @@
 @endphp
 
 <x-page-header title="{{ $template->name }}" subtitle="Perspective weighting and starting KPIs">
+    {{-- Reading last cycle's template is exactly when you decide to base the
+         next one on it, so the copy is offered here and not only on the list. --}}
+    <form method="POST" action="{{ route('admin.appraisal-templates.duplicate', $template) }}" class="inline">
+        @csrf
+        <button class="btn-secondary" title="Copy this template and its {{ $template->kpis->count() }} KPI(s)">
+            <i class="fas fa-copy mr-1"></i> Duplicate
+        </button>
+    </form>
     <a href="{{ route('admin.appraisal-templates.index') }}" class="btn-secondary">
         <i class="fas fa-arrow-left mr-1"></i> Back
     </a>
 </x-page-header>
+
+@if(! $template->is_active)
+    {{-- A fresh copy lands here switched off. Without saying so, the first sign
+         is a supervisor reporting the template missing from the picker. --}}
+    <div class="mb-4 flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+        <i class="fas fa-eye-slash"></i>
+        This template is inactive, so supervisors cannot apply it yet. Tick <strong>Active</strong> below and save when it is ready.
+    </div>
+@endif
 
 @foreach(['success' => ['green','check-circle'], 'error' => ['red','circle-exclamation']] as $key => [$c,$icon])
     @if(session($key))

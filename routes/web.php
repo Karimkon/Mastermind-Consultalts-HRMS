@@ -448,6 +448,7 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::post('appraisal-templates',                       [AppraisalTemplateController::class, 'store'])->name('appraisal-templates.store');
         Route::get('appraisal-templates/{template}/edit',        [AppraisalTemplateController::class, 'edit'])->name('appraisal-templates.edit');
         Route::put('appraisal-templates/{template}',             [AppraisalTemplateController::class, 'update'])->name('appraisal-templates.update');
+        Route::post('appraisal-templates/{template}/duplicate',  [AppraisalTemplateController::class, 'duplicate'])->name('appraisal-templates.duplicate');
         Route::delete('appraisal-templates/{template}',          [AppraisalTemplateController::class, 'destroy'])->name('appraisal-templates.destroy');
         Route::post('appraisal-templates/{template}/kpis',       [AppraisalTemplateController::class, 'storeKpi'])->name('appraisal-templates.kpis.store');
         Route::put('appraisal-templates/{template}/kpis/{kpi}',   [AppraisalTemplateController::class, 'updateKpi'])->name('appraisal-templates.kpis.update');

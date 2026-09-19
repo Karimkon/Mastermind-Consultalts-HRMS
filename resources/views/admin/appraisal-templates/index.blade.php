@@ -53,6 +53,18 @@
             </td>
             <td class="px-4 py-3 text-right whitespace-nowrap">
                 <a href="{{ route('admin.appraisal-templates.edit', $t) }}" class="text-blue-600 hover:underline text-xs">Edit</a>
+
+                {{-- Next cycle usually wants this shape with a few targets moved.
+                     Editing the original in place would rewrite the template that
+                     finished appraisals were measured against. --}}
+                <form method="POST" action="{{ route('admin.appraisal-templates.duplicate', $t) }}" class="inline ml-2">
+                    @csrf
+                    <button class="text-slate-500 hover:text-slate-800 text-xs"
+                            title="Copy this template and its {{ $t->kpis_count }} KPI(s) to edit for the next round">
+                        Duplicate
+                    </button>
+                </form>
+
                 <form method="POST" action="{{ route('admin.appraisal-templates.destroy', $t) }}" class="inline ml-2"
                       onsubmit="return confirm('Delete this template? Existing appraisals keep their KPIs.')">
                     @csrf @method('DELETE')

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\{AppraisalTemplate, AppraisalTemplateKpi, Appraisal};
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Admin control over how appraisals are weighted.
@@ -60,6 +61,86 @@ class AppraisalTemplateController extends Controller
 
         $template->update($data);
         return back()->with('success', 'Template updated.');
+    }
+
+    /**
+     * Copy a template with its KPIs.
+     *
+     * A scorecard is nineteen KRAs with measures, targets and weights that took
+     * real thought to balance to 100%. Next cycle almost always wants the same
+     * shape with a few targets moved, and until now the only way to get there
+     * was to retype the lot or edit last cycle's in place — which silently
+     * rewrites the template every completed appraisal was measured against.
+     *
+     * The copy arrives inactive. Two identical active templates in the picker is
+     * how a supervisor applies the half-edited one, and the entire reason to
+     * duplicate is that the copy is about to change.
+     */
+    public function duplicate(AppraisalTemplate $template)
+    {
+        $this->authorise();
+
+        // One transaction: a template that copied without its KPIs is worse than
+        // no copy at all, because it looks finished and is empty.
+        $copy = DB::transaction(function () use ($template) {
+            $copy = AppraisalTemplate::create([
+                'name'                    => $this->copyName($template->name),
+                'description'             => $template->description,
+                'job_title'               => $template->job_title,
+                'financial_weight'        => $template->financial_weight,
+                'customer_weight'         => $template->customer_weight,
+                'internal_process_weight' => $template->internal_process_weight,
+                'learning_growth_weight'  => $template->learning_growth_weight,
+                'is_active'               => false,
+                'created_by'              => auth()->id(),
+            ]);
+
+            // sort_order is carried across rather than reassigned: the copy should
+            // read in the order somebody arranged, not in id order.
+            foreach ($template->kpis as $kpi) {
+                $copy->kpis()->create([
+                    'perspective'         => $kpi->perspective,
+                    'kra_name'            => $kpi->kra_name,
+                    'performance_measure' => $kpi->performance_measure,
+                    'target'              => $kpi->target,
+                    'weightage'           => $kpi->weightage,
+                    'evidence_note'       => $kpi->evidence_note,
+                    'sort_order'          => $kpi->sort_order,
+                ]);
+            }
+
+            return $copy;
+        });
+
+        $count = $copy->kpis()->count();
+
+        return redirect()->route('admin.appraisal-templates.edit', $copy)->with('success',
+            "Copied “{$template->name}” with {$count} KPI(s). "
+            . 'It is switched off until you activate it, so nobody applies it while you are still editing.');
+    }
+
+    /**
+     * A name nobody will confuse with the original.
+     *
+     * Copying a copy gives “(copy 2)” rather than “(copy) (copy)”, and the
+     * result is trimmed to fit a varchar(255).
+     */
+    private function copyName(string $name): string
+    {
+        // ?? $name: preg_replace returns null on failure, and a null here would
+        // name every copy the same thing.
+        $base = preg_replace('/ \(copy(?: \d+)?\)$/u', '', $name) ?? $name;
+
+        for ($i = 1; $i <= 99; $i++) {
+            $suffix = $i === 1 ? ' (copy)' : " (copy {$i})";
+            $candidate = mb_substr($base, 0, 255 - mb_strlen($suffix)) . $suffix;
+
+            if (! AppraisalTemplate::where('name', $candidate)->exists()) {
+                return $candidate;
+            }
+        }
+
+        return mb_substr($base, 0, 240) . ' (copy ' . now()->format('YmdHis') . ')';
     }
 
     public function destroy(AppraisalTemplate $template)
