@@ -107,11 +107,36 @@ class AppraisalController extends Controller
         ]);
     }
 
-    /** Staff who can be asked to score a card. */
-    private function appraiserChoices()
+    /**
+     * Staff who can be asked to score a card.
+     *
+     * Role-holders, plus the employee's own line manager.
+     *
+     * The manager belongs on this list whether or not they hold a system role.
+     * `employees.manager_id` already records who a person reports to, and a card
+     * that cannot be sent to their actual manager is the org chart being
+     * overruled by a permissions table — which is how an MD who has never been
+     * given a role becomes unpickable as the appraiser of the person who reports
+     * to him. They are put at the top, because they are the expected answer.
+     */
+    private function appraiserChoices(?Employee $employee = null)
     {
-        return User::role(['account-manager', 'manager', 'hr-admin', 'super-admin', 'md', 'client'])
+        $choices = User::role(['account-manager', 'manager', 'hr-admin', 'super-admin', 'md', 'client'])
             ->orderBy('name')->get();
+
+        $manager = $employee?->manager?->user;
+
+        if ($manager && ! $choices->contains('id', $manager->id)) {
+            $choices->prepend($manager);
+        }
+
+        return $choices;
+    }
+
+    /** Who the org chart says should score this card, if anyone. */
+    private function lineManagerFor(Appraisal $appraisal): ?User
+    {
+        return $appraisal->employee?->manager?->user;
     }
 
     public function store(Request $request)
@@ -188,7 +213,10 @@ class AppraisalController extends Controller
 
         return view('appraisals.edit', [
             'appraisal'  => $appraisal,
-            'appraisers' => $this->appraiserChoices(),
+            'appraisers' => $this->appraiserChoices($appraisal->employee),
+            // Offered, not forced: the supervisor can still pick somebody else,
+            // but they should not have to hunt for the obvious answer.
+            'suggested'  => $this->lineManagerFor($appraisal),
             'isAdmin'    => $isAdmin,
         ]);
     }
@@ -337,7 +365,7 @@ class AppraisalController extends Controller
             // at the far end of the card.
             'canSelfAssess' => $appraisal->status === 'self_assessment'
                             && auth()->id() === $appraisal->employee?->user_id,
-            'returnees'  => $this->appraiserChoices(),
+            'returnees'  => $this->appraiserChoices($appraisal->employee),
         ]);
     }
 

@@ -189,10 +189,15 @@
     <form method="POST" action="{{ route('appraisals.send', $appraisal) }}"
           class="grid grid-cols-1 md:grid-cols-3 gap-3">
         @csrf
+        {{-- Defaults to whoever the employee reports to. Nothing is locked: the
+             supervisor can pick anyone on the list. --}}
+        @php($preselect = $appraisal->appraiser_id ?? $suggested?->id)
         <select name="appraiser_id" class="form-select select2" required>
             <option value="">Choose the appraiser…</option>
             @foreach($appraisers as $u)
-                <option value="{{ $u->id }}" @selected($appraisal->appraiser_id == $u->id)>{{ $u->name }}</option>
+                <option value="{{ $u->id }}" @selected($preselect == $u->id)>
+                    {{ $u->name }}@if($suggested && $suggested->id === $u->id) — line manager @endif
+                </option>
             @endforeach
         </select>
         <input type="text" name="comment" class="form-input" placeholder="Note for the appraiser (optional)">
