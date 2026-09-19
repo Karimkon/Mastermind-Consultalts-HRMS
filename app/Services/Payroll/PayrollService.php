@@ -7,12 +7,31 @@ use Carbon\CarbonPeriod;
 
 class PayrollService
 {
+    /**
+     * URA's resident monthly PAYE bands: [threshold, ceiling, rate, base].
+     *
+     * The thresholds are the round figures URA publishes — 235,000, 335,000,
+     * 410,000 — and not one shilling above them. The band is entered when pay is
+     * strictly greater than the threshold, and the rate applies to the excess
+     * *over* it, which is what "30% of the excess over 410,000" means.
+     *
+     * They were written here as 235001, 335001 and 410001, which measured each
+     * excess from one shilling too high and under-charged every band by that
+     * shilling times its rate. The effect on any one payslip is under a shilling
+     * and rounds away in most cases, so nothing ever looked wrong — but a tax
+     * calculation that is knowingly a shilling out is not one to leave in place,
+     * and the fix costs nothing.
+     *
+     * The top band is the two published rules combined: 30% continues above ten
+     * million and a further 10% is added, so 2,902,000 (the tax at exactly ten
+     * million) plus 40% of everything beyond it.
+     */
     private array $taxBrackets = [
-        [0,        235000,     0.00, 0],
-        [235001,   335000,     0.10, 0],
-        [335001,   410000,     0.20, 10000],
-        [410001,   10000000,   0.30, 25000],
-        [10000001, PHP_INT_MAX, 0.40, 2902000],
+        [0,        235000,      0.00, 0],
+        [235000,   335000,      0.10, 0],
+        [335000,   410000,      0.20, 10000],
+        [410000,   10000000,    0.30, 25000],
+        [10000000, PHP_INT_MAX, 0.40, 2902000],
     ];
 
     public function processRun(PayrollRun $run): int
