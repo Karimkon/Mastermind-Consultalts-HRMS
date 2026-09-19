@@ -23,6 +23,8 @@ use App\Http\Controllers\Api\{
     AmVisitApiController,
     BscApiController,
     AppraisalApiController,
+    HolidayPayApiController,
+    DevelopmentApiController,
     ProbationApiController,
     AccountManagerApiController,
 };
@@ -210,6 +212,25 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Admin — Payroll unlock
     Route::post('admin/payroll/{payroll}/unlock',      [AdminApiController::class, 'unlockPayroll']);
+
+    // ============================================================
+    // HOLIDAY PAY
+    // ============================================================
+    // Two decisions by two people: HR says whether a holiday is paid, the account
+    // manager says who actually worked it. Payroll pays double only where both
+    // are true. Only casual rates appear in the roster — a monthly salary already
+    // covers the day.
+    Route::get('holiday-pay',                            [HolidayPayApiController::class, 'index']);
+    Route::post('holiday-pay/{holiday}/decide',          [HolidayPayApiController::class, 'decide']);
+    Route::get('holiday-pay/{holiday}/roster',           [HolidayPayApiController::class, 'roster']);
+    Route::post('holiday-pay/{holiday}/work',            [HolidayPayApiController::class, 'storeWork']);
+
+    // ============================================================
+    // ONBOARDING & PIPs
+    // ============================================================
+    Route::get('onboarding',                             [DevelopmentApiController::class, 'onboarding']);
+    Route::post('onboarding/{task}/complete',            [DevelopmentApiController::class, 'completeOnboardingTask']);
+    Route::get('pips',                                   [DevelopmentApiController::class, 'pips']);
 
     // ============================================================
     // APPRAISALS (per-employee cards)
