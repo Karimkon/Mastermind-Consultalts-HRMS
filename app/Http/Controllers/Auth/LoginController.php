@@ -28,6 +28,20 @@ class LoginController extends Controller
             RateLimiter::clear($key);
             $user = Auth::user();
 
+            // A retired account must actually be unable to sign in. The API has
+            // always checked this; the website never did, so `status` was a label
+            // on a row rather than a gate, and deactivating somebody changed
+            // nothing about what they could still do here.
+            if (! $user->isActive()) {
+                Auth::logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+
+                return back()->withErrors([
+                    'email' => 'This account is no longer active. Speak to your administrator.',
+                ])->withInput($request->only('email'));
+            }
+
             // MFA gate
             if ($user->mfa_enabled) {
                 Auth::logout();
