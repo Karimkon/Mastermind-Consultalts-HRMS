@@ -94,12 +94,42 @@ class AccountManagerController extends Controller
                    ->orWhere('last_name',  'like', "%{$request->search}%")
                    ->orWhere('emp_number', 'like', "%{$request->search}%");
             }))
-            ->when($request->status, fn($q) => $q->where('status', $request->status))
-            ->paginate(25);
+            ->when($request->status, fn($q) => $q->where('status', $request->status));
+
+        // How many to show. Paging 439 people twenty-five at a time is eighteen
+        // clicks to reach the end of one client, which is why this was asked for.
+        //
+        // "All" is a real option rather than a very large number: on the biggest
+        // client that is 439 rows, and somebody who asks for all of them usually
+        // wants to search the page or print it.
+        $perPage = $this->employeesPerPage($request, (clone $employees)->count());
+
+        $employees = $employees->paginate($perPage);
 
         $activeClient = $clientId ? $clients->firstWhere('id', $clientId) : null;
 
         return view('account-manager.employees', compact('employees', 'clients', 'activeClient', 'clientId'));
+    }
+
+    /**
+     * The page size to use, from ?per_page, bounded to what is on offer.
+     *
+     * Anything unrecognised falls back to 25 rather than being trusted: a page
+     * size arrives in a query string, and `?per_page=100000` on a table this size
+     * is a way to make the server do a lot of work on request.
+     */
+    private function employeesPerPage(Request $request, int $total): int
+    {
+        $requested = $request->query('per_page');
+
+        if ($requested === 'all') {
+            // Never zero — the paginator rejects it — and never unbounded.
+            return max(1, min($total, 2000));
+        }
+
+        $allowed = [25, 50, 100, 200];
+
+        return in_array((int) $requested, $allowed, true) ? (int) $requested : 25;
     }
 
     public function showEmployee(Employee $employee)

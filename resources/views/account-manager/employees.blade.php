@@ -262,6 +262,39 @@
         @endforelse
     </tbody>
 </x-data-table>
-<div class="mt-4">{{ $employees->withQueryString()->links() }}</div>
+{{-- Page size beside the pager, because that is where somebody is standing when
+     they realise 439 people is eighteen pages. --}}
+<div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex items-center gap-2 text-sm text-slate-600">
+        <span>Show</span>
+        <form method="GET" action="{{ route('account-manager.employees') }}" class="inline">
+            {{-- Carry the current filters, or changing the page size silently
+                 drops the client and status somebody has chosen. --}}
+            @foreach(request()->except(['per_page', 'page']) as $key => $value)
+                <input type="hidden" name="{{ $key }}" value="{{ $value }}">
+            @endforeach
+
+            <select name="per_page" onchange="this.form.submit()"
+                    class="rounded-lg border-slate-300 py-1.5 pl-3 pr-8 text-sm focus:border-brand focus:ring-brand">
+                @foreach([25, 50, 100, 200] as $size)
+                    <option value="{{ $size }}" @selected(request('per_page', 25) == $size)>{{ $size }}</option>
+                @endforeach
+                <option value="all" @selected(request('per_page') === 'all')>All ({{ $employees->total() }})</option>
+            </select>
+        </form>
+        <span>per page</span>
+
+        <span class="ml-2 text-slate-400">
+            Showing {{ $employees->firstItem() ?? 0 }}–{{ $employees->lastItem() ?? 0 }}
+            of {{ number_format($employees->total()) }}
+        </span>
+    </div>
+
+    {{-- The pager disappears when everything is on one page, rather than showing
+         a lone disabled "1". --}}
+    @if($employees->hasPages())
+        <div>{{ $employees->withQueryString()->links() }}</div>
+    @endif
+</div>
 @endsection
 

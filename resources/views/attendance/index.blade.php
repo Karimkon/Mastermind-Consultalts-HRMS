@@ -109,7 +109,12 @@
                 @if($loc === \App\Models\AttendanceLog::LOCATION_VERIFIED)
                     <span class="inline-flex items-center gap-1 text-emerald-700">
                         <i class="fas fa-location-dot text-xs"></i>
-                        On site@if($log->distance_metres !== null) · {{ round($log->distance_metres) }}m @endif
+                        {{-- No inline @if here. Blade does not treat a directive as
+                             one when it follows a word character -- "site@if" reads
+                             as text, like an email address -- but the trailing
+                             @endif still parses, so it closed the outer @if and
+                             orphaned the @elseif below. --}}
+                        On site{{ $log->distance_metres !== null ? ' · '.round($log->distance_metres).'m' : '' }}
                     </span>
                 @elseif($loc === \App\Models\AttendanceLog::LOCATION_OUTSIDE)
                     <span class="inline-flex items-center gap-1 text-red-700 font-medium">
