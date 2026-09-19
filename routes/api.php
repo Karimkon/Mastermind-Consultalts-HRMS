@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\{
     AppraisalApiController,
     HolidayPayApiController,
     DevelopmentApiController,
+    ConfigurationApiController,
     ProbationApiController,
     AccountManagerApiController,
 };
@@ -212,6 +213,22 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Admin — Payroll unlock
     Route::post('admin/payroll/{payroll}/unlock',      [AdminApiController::class, 'unlockPayroll']);
+
+    // ============================================================
+    // CONFIGURATION — shifts, salary grades, salary components
+    // ============================================================
+    // Reading is open to anybody signed in: a supervisor should be able to check
+    // a grace period without asking. Writing is HR's and payroll's, and the MD is
+    // deliberately absent — whoever signs payroll off should not set its inputs.
+    // Nothing is deletable; a component that has been used explains an old
+    // payslip, so deactivating is the honest equivalent.
+    Route::get('shifts',                                 [ConfigurationApiController::class, 'shifts']);
+    Route::post('shifts',                                [ConfigurationApiController::class, 'storeShift']);
+    Route::get('salary-grades',                          [ConfigurationApiController::class, 'grades']);
+    Route::post('salary-grades',                         [ConfigurationApiController::class, 'storeGrade']);
+    Route::get('salary-components',                      [ConfigurationApiController::class, 'components']);
+    Route::post('salary-components',                     [ConfigurationApiController::class, 'storeComponent']);
+    Route::post('salary-components/{component}/active',  [ConfigurationApiController::class, 'setComponentActive']);
 
     // ============================================================
     // HOLIDAY PAY

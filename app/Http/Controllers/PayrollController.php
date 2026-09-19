@@ -757,8 +757,15 @@ class PayrollController extends Controller
     public function gradesStore(Request $request)
     {
         $this->denyMd();
-        $request->validate(['grade' => 'required', 'basic_min' => 'required|numeric', 'basic_max' => 'required|numeric']);
-        SalaryGrade::create($request->only('grade', 'basic_min', 'basic_max'));
+        $request->validate([
+            'grade'     => 'required|string|max:20',
+            'label'     => 'nullable|string|max:255',
+            'basic_min' => 'required|numeric|min:0',
+            // A band whose ceiling sits below its floor cannot hold anybody.
+            'basic_max' => 'required|numeric|gte:basic_min',
+        ]);
+
+        SalaryGrade::create($request->only('grade', 'label', 'basic_min', 'basic_max') + ['label' => '']);
         return back()->with('success', 'Grade created.');
     }
 
@@ -771,8 +778,36 @@ class PayrollController extends Controller
     public function componentsStore(Request $request)
     {
         $this->denyMd();
-        $request->validate(['name' => 'required', 'type' => 'required']);
-        SalaryComponent::create($request->only('name', 'type', 'is_taxable', 'is_fixed', 'amount', 'percentage'));
+
+        // `code` was missing from both the validation and the create. The form has
+        // always posted one, `salary_components.code` is NOT NULL with no default,
+        // and $request->only() silently dropped it — so every attempt to add a
+        // component died on the insert.
+        //
+        // It is not cosmetic. PayrollService recognises the statutory components by
+        // code and by nothing else: `NSSF_EMP` is the employee's 5%, `NSSF_CO` the
+        // employer's 10%. A component without one is just another allowance.
+        $data = $request->validate([
+            'name' => 'required|string|max:100',
+            'code' => 'required|string|max:30|unique:salary_components,code',
+            'type' => 'required|in:allowance,deduction',
+            'is_taxable' => 'nullable|boolean',
+            'is_fixed' => 'nullable|boolean',
+            'amount' => 'nullable|numeric|min:0',
+            'percentage' => 'nullable|numeric|min:0|max:100',
+        ]);
+
+        SalaryComponent::create([
+            'name' => $data['name'],
+            'code' => mb_strtoupper($data['code']),
+            'type' => $data['type'],
+            'is_taxable' => $request->boolean('is_taxable'),
+            'is_fixed' => $request->boolean('is_fixed'),
+            'amount' => $data['amount'] ?? 0,
+            'percentage' => $data['percentage'] ?? 0,
+            'is_active' => true,
+        ]);
+
         return back()->with('success', 'Component created.');
     }
 }
