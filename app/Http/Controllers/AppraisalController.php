@@ -295,18 +295,24 @@ class AppraisalController extends Controller
                 "The weights add up to {$total}%, not 100%. Adjust them before sending.");
         }
 
+        // The appraiser is named now but does not receive the card yet. It goes
+        // to the employee first, so nobody is rated before they have had the
+        // chance to say what they actually achieved.
         $appraisal->update([
             'appraiser_id' => $data['appraiser_id'],
-            'status'       => 'with_appraiser',
+            'status'       => 'self_assessment',
         ]);
-        $appraisal->log('sent_to_appraiser', 'with_appraiser', $data['comment'] ?? null);
+        $appraisal->log('sent_for_self_assessment', 'self_assessment', $data['comment'] ?? null);
 
-        $this->notify($data['appraiser_id'], 'Appraisal to complete',
-            "{$appraisal->initiator?->name} has asked you to appraise {$appraisal->employee?->full_name} — {$appraisal->title}.",
+        $this->notify($appraisal->employee?->user_id, 'Your appraisal is open',
+            "{$appraisal->initiator?->name} has started your appraisal — {$appraisal->title}. "
+            ."Record what you achieved against each target before it goes for scoring.",
             $appraisal);
 
         return redirect()->route('appraisals.show', $appraisal)
-            ->with('success', 'Sent to ' . User::find($data['appraiser_id'])?->name . ' for scoring.');
+            ->with('success', $appraisal->employee?->full_name
+                . ' has been asked to complete their self-assessment. It goes to '
+                . (User::find($data['appraiser_id'])?->name ?? 'the appraiser') . ' afterwards.');
     }
 
     // ── Viewing / scoring ────────────────────────────────────────────────
@@ -325,6 +331,11 @@ class AppraisalController extends Controller
             'canConfirm' => $appraisal->status === 'with_manager'
                             && auth()->id() === ($appraisal->return_to_id ?? $appraisal->initiated_by),
             'canSelf'    => $appraisal->status === 'with_employee'
+                            && auth()->id() === $appraisal->employee?->user_id,
+            // The employee's first touch: reporting what they achieved, before
+            // anybody rates them. Distinct from canSelf, which is the signature
+            // at the far end of the card.
+            'canSelfAssess' => $appraisal->status === 'self_assessment'
                             && auth()->id() === $appraisal->employee?->user_id,
             'returnees'  => $this->appraiserChoices(),
         ]);
@@ -424,6 +435,81 @@ class AppraisalController extends Controller
     }
 
     /** Employee's own comments, which close the card. */
+    /**
+     * The employee's own account, before anybody rates them.
+     *
+     * They report what they actually achieved against each target and rate
+     * themselves. `self_rating` is stored separately from `rating`: two people
+     * rate the same KPI and will not always agree, and that disagreement is the
+     * conversation the appraisal exists to have.
+     *
+     * `actual_achieved` is shared, because it is a fact about the period rather
+     * than an opinion — the employee states it and the appraiser corrects it if
+     * it is wrong.
+     *
+     * Saves are partial on purpose. A card of nineteen KRAs is not filled in one
+     * sitting, and losing half of it to a validation error would be worse than an
+     * incomplete card.
+     */
+    public function saveSelfAssessment(Request $request, Appraisal $appraisal)
+    {
+        abort_unless($appraisal->status === 'self_assessment'
+            && auth()->id() === $appraisal->employee?->user_id,
+            403, 'This appraisal is not with you.');
+
+        $rows = $request->validate([
+            'kpi'                    => 'required|array',
+            'kpi.*.actual_achieved'  => 'nullable|string|max:50',
+            'kpi.*.self_rating'      => 'nullable|integer|min:1|max:5',
+            'kpi.*.self_note'        => 'nullable|string|max:1000',
+        ])['kpi'];
+
+        foreach ($appraisal->kpis as $kpi) {
+            if (!isset($rows[$kpi->id])) continue;
+
+            $kpi->fill([
+                'actual_achieved' => $rows[$kpi->id]['actual_achieved'] ?? null,
+                'self_rating'     => $rows[$kpi->id]['self_rating'] ?? null,
+                'self_note'       => $rows[$kpi->id]['self_note'] ?? null,
+            ])->save();
+        }
+
+        return back()->with('success', 'Saved. You can come back to this before submitting.');
+    }
+
+    /**
+     * Hand the card on to the appraiser.
+     *
+     * Every KPI must carry a self-rating first. A card that reaches the appraiser
+     * half-answered invites them to fill the gaps themselves, which is precisely
+     * what putting the employee first was meant to prevent.
+     */
+    public function submitSelfAssessment(Request $request, Appraisal $appraisal)
+    {
+        abort_unless($appraisal->status === 'self_assessment'
+            && auth()->id() === $appraisal->employee?->user_id,
+            403, 'This appraisal is not with you.');
+
+        $unrated = $appraisal->kpis()->whereNull('self_rating')->count();
+
+        if ($unrated > 0) {
+            return back()->with('error',
+                "{$unrated} KPI(s) still have no self-rating. Complete them all before submitting.");
+        }
+
+        $appraisal->update([
+            'status'           => 'with_appraiser',
+            'self_assessed_at' => now(),
+        ]);
+        $appraisal->log('self_assessment_submitted', 'with_appraiser', null);
+
+        $this->notify($appraisal->appraiser_id, 'Appraisal ready for scoring',
+            "{$appraisal->employee?->full_name} has completed their self-assessment for {$appraisal->title}.",
+            $appraisal);
+
+        return back()->with('success', 'Submitted. Your appraiser will score it next.');
+    }
+
     public function selfAppraise(Request $request, Appraisal $appraisal)
     {
         abort_unless($appraisal->status === 'with_employee'

@@ -119,6 +119,10 @@ Route::middleware(['auth','mfa'])->group(function () {
 
     Route::post('appraisals/{appraisal}/kpis',              [AppraisalController::class, 'storeKpi'])->name('appraisals.kpis.store');
     Route::put('appraisals/{appraisal}/kpis/{kpi}',         [AppraisalController::class, 'updateKpi'])->name('appraisals.kpis.update');
+    // The employee's own account, before anybody rates them. Saving is
+    // separate from submitting so a long card can be filled in over days.
+    Route::post('appraisals/{appraisal}/self-assessment',   [AppraisalController::class, 'saveSelfAssessment'])->name('appraisals.self-assessment.save');
+    Route::post('appraisals/{appraisal}/self-assessment/submit', [AppraisalController::class, 'submitSelfAssessment'])->name('appraisals.self-assessment.submit');
     Route::delete('appraisals/{appraisal}/kpis/{kpi}',      [AppraisalController::class, 'destroyKpi'])->name('appraisals.kpis.destroy');
 
     Route::post('appraisals/{appraisal}/send',      [AppraisalController::class, 'send'])->name('appraisals.send');

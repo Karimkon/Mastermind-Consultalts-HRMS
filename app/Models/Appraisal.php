@@ -17,6 +17,7 @@ class Appraisal extends Model
         'review_from', 'review_to', 'initiated_by', 'appraiser_id', 'return_to_id',
         'status', 'overall_index', 'overall_percent', 'overall_band',
         'employee_comment', 'manager_comment', 'employee_signed_at', 'manager_signed_at',
+        'self_assessed_at',
     ];
 
     protected $casts = [
@@ -25,6 +26,7 @@ class Appraisal extends Model
         'overall_index'      => 'float',
         'overall_percent'    => 'float',
         'employee_signed_at' => 'datetime',
+        'self_assessed_at'   => 'datetime',
         'manager_signed_at'  => 'datetime',
     ];
 
@@ -137,11 +139,13 @@ class Appraisal extends Model
     public function statusLabel(): string
     {
         return match ($this->status) {
-            'draft'         => 'Setting KPIs',
-            'with_appraiser'=> 'With appraiser',
-            'with_manager'  => 'Awaiting manager confirmation',
-            'with_employee' => 'Awaiting employee self-appraisal',
-            'completed'     => 'Completed',
+            'draft'           => 'Setting KPIs',
+            // The employee is asked what they achieved before anybody rates them.
+            'self_assessment' => 'Awaiting employee self-assessment',
+            'with_appraiser'  => 'With appraiser',
+            'with_manager'    => 'Awaiting manager confirmation',
+            'with_employee'   => 'Awaiting employee sign-off',
+            'completed'       => 'Completed',
             default         => ucfirst($this->status),
         };
     }
@@ -149,11 +153,12 @@ class Appraisal extends Model
     public function statusBadge(): string
     {
         return match ($this->status) {
-            'draft'          => 'gray',
-            'with_appraiser' => 'blue',
-            'with_manager'   => 'purple',
-            'with_employee'  => 'yellow',
-            'completed'      => 'green',
+            'draft'           => 'gray',
+            'self_assessment' => 'yellow',
+            'with_appraiser'  => 'blue',
+            'with_manager'    => 'purple',
+            'with_employee'   => 'yellow',
+            'completed'       => 'green',
             default          => 'gray',
         };
     }

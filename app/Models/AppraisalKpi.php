@@ -12,6 +12,11 @@ class AppraisalKpi extends Model
     protected $fillable = [
         'appraisal_id', 'perspective', 'kra_name', 'performance_measure',
         'target', 'actual_achieved', 'target_percent', 'rating',
+        // The employee's own view, kept apart from the appraiser's `rating`.
+        // Two people rate the same KPI and will not always agree; that
+        // disagreement is the conversation, and one shared column would destroy
+        // whichever was written second.
+        'self_rating', 'self_note',
         'weightage', 'weighted_index', 'evidence_note', 'sort_order',
     ];
 

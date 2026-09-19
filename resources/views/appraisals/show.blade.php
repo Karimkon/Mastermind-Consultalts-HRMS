@@ -55,7 +55,12 @@
 </div>
 
 {{-- ── The scorecard ── --}}
-<form method="POST" action="{{ route('appraisals.score', $appraisal) }}">
+{{-- One table, two authors. The appraiser scores here; before them, the employee
+     fills the same rows in with what they actually achieved. The form posts to
+     whichever step the card is at. --}}
+<form method="POST" action="{{ $canSelfAssess
+        ? route('appraisals.self-assessment.save', $appraisal)
+        : route('appraisals.score', $appraisal) }}">
 @csrf
 <div class="card overflow-x-auto mb-5">
     <table class="w-full text-sm" style="min-width:1100px">
@@ -66,6 +71,9 @@
                 <th class="px-3 py-2 text-center w-24">Target</th>
                 <th class="px-3 py-2 text-center w-28">Actual Achieved</th>
                 <th class="px-3 py-2 text-center w-28">% Target Achieved</th>
+                {{-- Shown from the moment the employee submits, so the appraiser
+                     scores with their account in view rather than after it. --}}
+                <th class="px-3 py-2 text-center w-32">Self-rating</th>
                 <th class="px-3 py-2 text-center w-40">Rating (1–5)</th>
                 <th class="px-3 py-2 text-center w-24">Weighting</th>
                 <th class="px-3 py-2 text-center w-28">Weighted Index</th>
@@ -75,7 +83,7 @@
         <tbody>
         @foreach($grouped as $key => $group)
             <tr class="bg-yellow-200">
-                <td colspan="9" class="px-3 py-2 font-bold text-slate-900">
+                <td colspan="10" class="px-3 py-2 font-bold text-slate-900">
                     {{ $loop->iteration }}. {{ strtoupper($group['label']) }} — {{ rtrim(rtrim(number_format($group['weight'], 2), '0'), '.') }}%
                 </td>
             </tr>
@@ -85,11 +93,45 @@
                 <td class="px-3 py-2 align-top text-slate-600 text-xs">{{ $kpi->performance_measure }}</td>
                 <td class="px-3 py-2 align-top text-center text-slate-700">{{ $kpi->target ?? '—' }}</td>
                 <td class="px-3 py-2 align-top text-center">
-                    @if($canScore)
+                    {{-- Written by the employee first and editable by the appraiser
+                         afterwards: it is a fact about the period, not an opinion,
+                         so it is corrected rather than duplicated. --}}
+                    @if($canScore || $canSelfAssess)
                         <input type="text" name="kpi[{{ $kpi->id }}][actual_achieved]"
                                value="{{ $kpi->actual_achieved }}" class="form-input text-center py-1 text-sm">
                     @else
                         {{ $kpi->actual_achieved ?? '—' }}
+                    @endif
+                </td>
+
+                <td class="px-3 py-2 align-top text-center">
+                    @if($canSelfAssess)
+                        <div class="flex justify-center gap-1">
+                            @for($r = 1; $r <= 5; $r++)
+                                <label class="cursor-pointer">
+                                    <input type="radio" class="sr-only peer"
+                                           name="kpi[{{ $kpi->id }}][self_rating]" value="{{ $r }}"
+                                           @checked((int) $kpi->self_rating === $r)>
+                                    <span class="inline-flex h-7 w-7 items-center justify-center rounded border
+                                                 border-slate-300 text-xs text-slate-600
+                                                 peer-checked:bg-blue-600 peer-checked:text-white
+                                                 peer-checked:border-blue-600">{{ $r }}</span>
+                                </label>
+                            @endfor
+                        </div>
+                    @elseif($kpi->self_rating)
+                        {{-- Flagged when the two disagree by more than one point.
+                             That gap is the conversation the appraisal exists to
+                             have, so it should be visible rather than buried. --}}
+                        @php($gap = $kpi->rating ? abs((int) $kpi->self_rating - (int) $kpi->rating) : 0)
+                        <span class="inline-flex items-center gap-1 {{ $gap > 1 ? 'text-amber-600 font-semibold' : 'text-slate-600' }}">
+                            {{ $kpi->self_rating }}
+                            @if($gap > 1)
+                                <i class="fas fa-triangle-exclamation text-xs" title="Differs from the appraiser by {{ $gap }} points"></i>
+                            @endif
+                        </span>
+                    @else
+                        <span class="text-slate-300">—</span>
                     @endif
                 </td>
                 <td class="px-3 py-2 align-top text-center text-slate-700">
@@ -145,10 +187,10 @@
                 </td>
             </tr>
             @empty
-            <tr><td colspan="9" class="px-3 py-3 text-center text-xs text-slate-400">No KPIs under this perspective.</td></tr>
+            <tr><td colspan="10" class="px-3 py-3 text-center text-xs text-slate-400">No KPIs under this perspective.</td></tr>
             @endforelse
             <tr class="bg-slate-100 font-semibold text-slate-800">
-                <td class="px-3 py-2" colspan="6">Total Rating</td>
+                <td class="px-3 py-2" colspan="7">Total Rating</td>
                 <td class="px-3 py-2 text-center text-red-600">{{ rtrim(rtrim(number_format($group['weight'], 2), '0'), '.') }}%</td>
                 <td class="px-3 py-2 text-center">{{ number_format($group['index'], 2) }}</td>
                 <td></td>
@@ -157,7 +199,7 @@
 
             {{-- Overall --}}
             <tr class="bg-green-200 font-bold text-slate-900">
-                <td class="px-3 py-3" colspan="5">OVERALL PERFORMANCE RATING</td>
+                <td class="px-3 py-3" colspan="6">OVERALL PERFORMANCE RATING</td>
                 <td class="px-3 py-3 text-right">OVERALL RATING</td>
                 <td class="px-3 py-3 text-center">{{ rtrim(rtrim(number_format($appraisal->totalWeight(), 2), '0'), '.') }}%</td>
                 <td class="px-3 py-3 text-center text-lg">{{ number_format($appraisal->overall_index ?? 0, 2) }}</td>
@@ -165,6 +207,20 @@
             </tr>
         </tbody>
     </table>
+
+    @if($canSelfAssess)
+        <div class="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
+            <button class="btn-secondary text-sm">
+                <i class="fas fa-floppy-disk mr-1"></i> Save progress
+            </button>
+
+            {{-- A separate form so saving and submitting cannot be confused. The
+                 card is long; people come back to it. --}}
+            <span class="text-xs text-slate-500">
+                Save as often as you like — nothing leaves your hands until you submit.
+            </span>
+        </div>
+    @endif
 </div>
 
 @if($canScore)
@@ -176,6 +232,36 @@
 </div>
 @endif
 </form>
+
+@if($canSelfAssess)
+    <div class="card p-5 mb-5 border-l-4 border-blue-500">
+        <h3 class="font-semibold text-slate-800">Finished?</h3>
+        <p class="text-sm text-slate-600 mt-1">
+            Submitting sends this to
+            <strong>{{ $appraisal->appraiser?->name ?? 'your appraiser' }}</strong> for scoring.
+            You will see it again at the end to read the final ratings and sign it off.
+        </p>
+
+        @php($unrated = $appraisal->kpis->whereNull('self_rating')->count())
+
+        @if($unrated)
+            {{-- Said before they press, rather than as an error afterwards. --}}
+            <p class="text-sm text-amber-700 mt-3">
+                <i class="fas fa-triangle-exclamation mr-1"></i>
+                {{ $unrated }} of {{ $appraisal->kpis->count() }} still need a self-rating.
+            </p>
+        @endif
+
+        <form method="POST" action="{{ route('appraisals.self-assessment.submit', $appraisal) }}"
+              class="mt-4"
+              onsubmit="return confirm('Send this to your appraiser? You will not be able to change it afterwards.')">
+            @csrf
+            <button class="btn-primary" @disabled($unrated > 0)>
+                <i class="fas fa-paper-plane mr-1"></i> Submit for scoring
+            </button>
+        </form>
+    </div>
+@endif
 
 {{-- ── Rating scale + overall band ── --}}
 <div class="card p-4 mb-5">
