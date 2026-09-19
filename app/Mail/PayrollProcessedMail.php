@@ -17,7 +17,15 @@ class PayrollProcessedMail extends Mailable
     public function envelope(): Envelope
     {
         $run = $this->payslip->payrollRun;
-        return new Envelope(subject: 'Your Payslip is Ready — ' . ($run?->title ?? 'Payroll'));
+
+        // Replies reach payroll; the From stays the authenticated SMTP account.
+        return new Envelope(
+            subject: 'Your Payslip is Ready — ' . ($run?->title ?? 'Payroll'),
+            replyTo: [new \Illuminate\Mail\Mailables\Address(
+                \App\Models\Setting::get('company_email', 'payroll@mastermindconsults.co.ug'),
+                'Mastermind Consult Ltd Payroll'
+            )],
+        );
     }
 
     public function content(): Content

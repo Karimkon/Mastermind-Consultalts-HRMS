@@ -1,7 +1,7 @@
 <?php
 namespace App\Services\Payroll;
 
-use App\Models\{Employee, PayrollRun, Payslip, EmployeeSalary, SalaryComponent, AttendanceLog, LeaveRequest, PayrollManualDays, PublicHoliday};
+use App\Models\{Employee, PayrollRun, Payslip, EmployeeSalary, SalaryComponent, AttendanceLog, LeaveRequest, PayrollManualDays, PublicHoliday, HolidayPayApproval, HolidayWork};
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 
@@ -68,13 +68,15 @@ class PayrollService
         $manualDays = PayrollManualDays::where('payroll_run_id', $run->id)
             ->where('employee_id', $employee->id)->first();
 
+        $isCasualRate = in_array($salaryType, ['daily', 'hourly'], true);
+
         if ($manualDays) {
-            // Manual upload: days_worked already includes public holidays (HR knows the calendar)
+            // Manual upload: days_worked is what HR counted, including any public
+            // holiday the person actually worked (that day is a worked day).
             $workedDays = (int) $manualDays->days_worked;
             $absentDays = max(0, $totalCalendarDays - $workedDays);
             $holidayBonusDays = 0;
         } else {
-            // Attendance-log based: count present days, then add public holidays (paid by default)
             $presentDays = AttendanceLog::where('employee_id', $employee->id)
                 ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
                 ->where('status', 'present')->count();
@@ -83,18 +85,42 @@ class PayrollService
                 ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
                 ->where('status', 'absent')->count();
 
-            // Public holidays are paid regardless — add days for holidays not already in attendance
-            $holidayBonusDays = PublicHoliday::countInRange(
+            // Monthly staff keep the old treatment: public holidays count toward
+            // their days so the month comes out whole. Casual rates are handled
+            // by the approval-gated block below instead.
+            $holidayBonusDays = $isCasualRate ? 0 : PublicHoliday::countInRange(
                 $start->toDateString(), $end->toDateString()
             );
 
             $workedDays = $presentDays + $holidayBonusDays;
         }
 
+        // ── Public holiday pay (daily / hourly staff only) ───────────────
+        //
+        // One extra day-unit is added per *approved* holiday, which lands both
+        // rules on the same number:
+        //   approved + did not work  -> the day was never counted, +1 = 1x rate
+        //   approved + worked        -> the day is already counted, +1 = 2x rate
+        //   not approved + worked    -> already counted, +0 = 1x rate (flagged)
+        //   not approved + not worked-> never counted, +0 = nothing
+        //
+        // Monthly staff are deliberately excluded: their salary already covers
+        // the holiday, so working one adds nothing.
+        $holidayPay = ['extra_days' => 0, 'worked' => [], 'unapproved_worked' => []];
+        if ($isCasualRate) {
+            $holidayPay = $this->holidayPayAdjustment($employee, $run, $start, $end);
+            $workedDays += $holidayPay['extra_days'];
+        }
+
         // ── Overtime ────────────────────────────────────────────────
+        // Only hours HR or an admin has explicitly approved are paid. The raw
+        // overtime_hours written at clock-out is what the clock saw, not what
+        // was authorised — paying it directly meant overtime went out at 1.5x
+        // with nobody signing it off.
         $totalOvertimeHours = (float) AttendanceLog::where('employee_id', $employee->id)
             ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
-            ->sum('overtime_hours');
+            ->where('overtime_status', 'approved')
+            ->sum('approved_overtime_hours');
 
         // ── Basic salary computation ────────────────────────────────
         $basic         = 0;
@@ -158,19 +184,35 @@ class PayrollService
         $gpaMwcAmount = $gpaRate > 0 ? round($basic * $gpaRate / 100, 0) : 0;
 
         // ── Salary Components ───────────────────────────────────────
-        $allowances = 0;
-        $deductions = 0;
-        $details    = [];
+        $allowances   = 0;
+        $deductions   = 0;
+        $details      = [];
+        $employeeNssf = 0;
+        $employerNssf = 0;
 
         if ($salary && $salary->components) {
             foreach ($salary->components as $comp) {
                 $component = SalaryComponent::find($comp['component_id'] ?? null);
                 if (!$component || !$component->is_active) continue;
-                if ($component->code === 'NSSF_CO') continue;
 
                 $amount = $component->is_fixed
                     ? (float) ($comp['amount'] ?? $component->amount)
                     : round($basic * ((float)($comp['percentage'] ?? $component->percentage)) / 100, 0);
+
+                // The employer's 10% NSSF share is a company cost: it is shown on
+                // the payslip and remitted to NSSF, but it is neither added to the
+                // employee's gross nor deducted from their net pay.
+                if ($component->code === 'NSSF_CO') {
+                    $employerNssf = $amount;
+                    $details[] = [
+                        'name'    => $component->name,
+                        'code'    => 'NSSF_CO',
+                        'type'    => 'employer_cost',
+                        'amount'  => $amount,
+                        'taxable' => false,
+                    ];
+                    continue;
+                }
 
                 $details[] = [
                     'name'    => $component->name,
@@ -179,6 +221,8 @@ class PayrollService
                     'amount'  => $amount,
                     'taxable' => (bool)$component->is_taxable,
                 ];
+
+                if ($component->code === 'NSSF_EMP') $employeeNssf = $amount;
 
                 if ($component->type === 'allowance') $allowances += $amount;
                 else $deductions += $amount;
@@ -248,6 +292,40 @@ class PayrollService
 
         $net = max(0, round($gross - $deductions, 0));
 
+        // Employer NSSF (10%): if no NSSF_CO component is attached to this
+        // salary, derive it from the employee's 5% share — 10% is twice 5%.
+        if ($employerNssf == 0 && $employeeNssf > 0) {
+            $employerNssf = round($employeeNssf * 2, 0);
+            $details[] = [
+                'name'    => 'NSSF (Employer 10%)',
+                'code'    => 'NSSF_CO',
+                'type'    => 'employer_cost',
+                'amount'  => $employerNssf,
+                'taxable' => false,
+            ];
+        }
+
+        // Public holiday pay is already inside basic (it is paid in day-units),
+        // so this is recorded as a note rather than a component — it must not be
+        // added to gross a second time.
+        if ($holidayPay['extra_days'] > 0 || $holidayPay['worked']) {
+            $details[] = [
+                'name'    => 'Public holiday pay',
+                'code'    => 'HOLIDAY_INFO',
+                'type'    => 'note',
+                'amount'  => 0,
+                'taxable' => false,
+                'meta'    => [
+                    'extra_days'        => $holidayPay['extra_days'],
+                    'worked'            => $holidayPay['worked'],
+                    'unapproved_worked' => $holidayPay['unapproved_worked'],
+                ],
+            ];
+        }
+
+        // PAYE prints before NSSF on the payslip — see Payslip::orderComponents().
+        $details = Payslip::orderComponents($details);
+
         return Payslip::updateOrCreate(
             ['payroll_run_id' => $run->id, 'employee_id' => $employee->id],
             [
@@ -256,6 +334,8 @@ class PayrollService
                 'gross_salary'        => round($gross, 0),
                 'total_deductions'    => round($deductions, 0),
                 'tax_amount'          => round($paye, 0),
+                'employee_nssf'       => round($employeeNssf, 0),
+                'employer_nssf'       => round($employerNssf, 0),
                 'net_salary'          => $net,
                 'worked_days'         => $workedDays,
                 'absent_days'         => $absentDays,
@@ -308,6 +388,63 @@ class PayrollService
         }
         // Fallback: simple gross-up at 30% bracket
         return round(($net + 25000 - 410001 * 0.30) / (1 - 0.30 - 0.05), 0);
+    }
+
+    /**
+     * Public holiday pay for one casual employee over the payroll period.
+     *
+     * Returns:
+     *   extra_days        day-units to add on top of days worked
+     *   worked            holiday names this employee worked
+     *   unapproved_worked holiday names worked with no approval — paid at the
+     *                     normal rate, not double, and surfaced on the payslip
+     *                     so HR can see the decision was missed
+     *
+     * @return array{extra_days:int, worked:array<string>, unapproved_worked:array<string>}
+     */
+    private function holidayPayAdjustment(Employee $employee, PayrollRun $run, Carbon $start, Carbon $end): array
+    {
+        // Only holidays that fall while this person was actually employed.
+        $from = $employee->hire_date && $employee->hire_date->gt($start)
+            ? $employee->hire_date->copy() : $start;
+        $to   = $employee->end_date && $employee->end_date->lt($end)
+            ? $employee->end_date->copy() : $end;
+
+        if ($from->gt($to)) {
+            return ['extra_days' => 0, 'worked' => [], 'unapproved_worked' => []];
+        }
+
+        $holidays = PublicHoliday::where('country', 'UG')
+            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+            ->orderBy('date')->get();
+
+        if ($holidays->isEmpty()) {
+            return ['extra_days' => 0, 'worked' => [], 'unapproved_worked' => []];
+        }
+
+        $workedMap = HolidayWork::workedMap($holidays->pluck('id')->all());
+        $clientId  = $run->client_id;
+
+        $extra = 0; $worked = []; $unapproved = [];
+
+        foreach ($holidays as $holiday) {
+            $didWork  = in_array($employee->id, $workedMap[$holiday->id] ?? [], true);
+            $approved = HolidayPayApproval::isPayableFor($holiday->id, $clientId);
+
+            if ($approved) {
+                // +1 whether or not they worked: it either pays the holiday they
+                // sat out, or doubles the day they put in.
+                $extra++;
+            } elseif ($didWork) {
+                // Worked without a decision — paid once (already in days worked),
+                // never doubled, and recorded so HR can see it happened.
+                $unapproved[] = $holiday->name;
+            }
+
+            if ($didWork) $worked[] = $holiday->name;
+        }
+
+        return ['extra_days' => $extra, 'worked' => $worked, 'unapproved_worked' => $unapproved];
     }
 
     private function countWorkingDays(Carbon $from, Carbon $to): int

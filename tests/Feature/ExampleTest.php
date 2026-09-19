@@ -2,11 +2,16 @@
 
 namespace Tests\Feature;
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
+    // The home page reads job_postings. Until APP_URL was corrected in
+    // phpunit.xml every request 404'd before touching the database, so this
+    // stub passed without one; now that routes resolve, it needs a schema.
+    use RefreshDatabase;
+
     /**
      * A basic test example.
      */

@@ -343,12 +343,17 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="form-label">Payment Mode</label>
+                            @php $currentChannel = $employee->paymentChannel(); @endphp
                             <select name="payment_mode" class="form-input">
-                                <option value="">— Select —</option>
-                                @foreach(['bank_transfer'=>'Bank Transfer','mobile_money'=>'Mobile Money','cash'=>'Cash','cheque'=>'Cheque'] as $v => $l)
-                                <option value="{{ $v }}" {{ $employee->payment_mode === $v ? 'selected' : '' }}>{{ $l }}</option>
+                                @foreach(\App\Models\Employee::PAYMENT_CHANNELS as $v => $l)
+                                <option value="{{ $v }}" {{ $currentChannel === $v ? 'selected' : '' }}>{{ $l }}</option>
                                 @endforeach
                             </select>
+                            @if($employee->payoutIssue())
+                            <p class="mt-1.5 text-xs text-red-600">
+                                <i class="fas fa-triangle-exclamation mr-1"></i>{{ $employee->payoutIssue() }} — this employee will be left out of the payment file.
+                            </p>
+                            @endif
                         </div>
                         <div>
                             <label class="form-label">Mobile Money Number</label>

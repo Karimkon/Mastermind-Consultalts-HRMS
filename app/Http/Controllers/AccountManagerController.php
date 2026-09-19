@@ -2,8 +2,9 @@
 namespace App\Http\Controllers;
 
 use App\Exports\AmEmployeesExport;
-use App\Models\{Client, Department, Designation, Employee, EmployeeSalary, LeaveRequest, AttendanceLog, EmployeeDocument, PayrollRun, AmSalaryPayment};
+use App\Models\{Client, Department, Designation, Employee, EmployeeSalary, LeaveRequest, AttendanceLog, EmployeeDocument, PayrollRun, AmSalaryPayment, User};
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Maatwebsite\Excel\Facades\Excel;
 
 class AccountManagerController extends Controller
@@ -129,6 +130,7 @@ class AccountManagerController extends Controller
             'date_of_birth' => 'nullable|date',
             'hire_date'     => 'nullable|date',
             'contract_end_date' => 'nullable|date',
+            'payment_mode'  => 'nullable|in:bank,mtn,airtel,cash,cheque',
         ]);
 
         // Scalar fields
@@ -151,6 +153,19 @@ class AccountManagerController extends Controller
             'charge_lst'             => $request->boolean('charge_lst'),
             'tax_paid_by_employer'   => $request->boolean('tax_paid_by_employer'),
         ]);
+
+        // Only rewrite the payment mode when the form actually submitted one.
+        // normalisePaymentMode() falls back to 'bank' for an empty value, so
+        // writing it unconditionally would silently switch a mobile-money
+        // employee to bank on any save that did not include the field.
+        if ($request->filled('payment_mode')) {
+            $employee->update([
+                'payment_mode' => Employee::normalisePaymentMode(
+                    $request->input('payment_mode'),
+                    $request->input('mobile_money_number') ?: $request->input('phone')
+                ),
+            ]);
+        }
 
         // Salary update
         if ($request->filled('basic_salary')) {
@@ -235,7 +250,7 @@ class AccountManagerController extends Controller
                     $emp->emergency_contact_name ?? '', $emp->emergency_contact_phone ?? '',
                     $emp->next_of_kin_name ?? '', $emp->next_of_kin_relation ?? '',
                     $emp->next_of_kin_phone ?? '', $emp->next_of_kin_email ?? '',
-                    ucfirst(str_replace('_',' ',$emp->payment_mode ?? '')),
+                    $emp->paymentChannelLabel(),
                     $emp->bank_name ?? '', $emp->bank_account ?? '',
                     $emp->bank_branch ?? '', $emp->mobile_money_number ?? '',
                     $emp->salary?->basic_salary ?? '', ucfirst($emp->salary?->salary_type ?? ''),
@@ -779,17 +794,21 @@ class AccountManagerController extends Controller
         ];
         $callback = function () {
             $handle = fopen('php://output', 'w');
+            // Columns are matched by heading, so they may be reordered or omitted.
+            // Only first_name and last_name are required.
             fputcsv($handle, [
-                'emp_number','first_name','last_name','middle_name',
+                'emp_number','first_name','last_name','middle_name','email',
                 'employment_type','salary_type','rate',
                 'department','designation',
-                'hire_date','phone','national_id',
+                'hire_date','phone','national_id','nssf_number',
                 'payment_mode','bank_name','bank_account','mobile_money_number',
                 'charge_paye','charge_nssf','nssf_paid_by_employer',
             ]);
-            fputcsv($handle, ['EMP001','John','Doe','','casual','daily','16615','Kitchen','Cook','2026-01-15','+256700000001','CF10000001','bank_transfer','Stanbic Bank','0123456789','','Yes','Yes','No']);
-            fputcsv($handle, ['','Jane','Smith','Mary','casual','hourly','1600','Housekeeping','Cleaner','2026-02-01','+256700000002','','mobile_money','','','0770000002','Yes','Yes','No']);
-            fputcsv($handle, ['EMP100','Robert','Okello','','contract','monthly','1500000','Management','Supervisor','2025-06-01','+256700000003','CF20000001','bank_transfer','Centenary Bank','9876543210','','Yes','Yes','No']);
+            // payment_mode must be one of: bank | mtn | airtel | cash | cheque
+            fputcsv($handle, ['EMP001','John','Doe','','john.doe@example.com','casual','daily','16615','Kitchen','Cook','2026-01-15','+256700000001','CF10000001','1234567890','bank','Stanbic Bank','0123456789','','Yes','Yes','No']);
+            fputcsv($handle, ['','Jane','Smith','Mary','','casual','hourly','1600','Housekeeping','Cleaner','2026-02-01','+256770000002','','','mtn','','','0770000002','Yes','Yes','No']);
+            fputcsv($handle, ['','Peter','Amuriat','','','casual','daily','16615','Security','Guard','2026-02-01','+256750000004','','','airtel','','','0750000004','Yes','Yes','No']);
+            fputcsv($handle, ['EMP100','Robert','Okello','','r.okello@example.com','contract','monthly','1500000','Management','Supervisor','2025-06-01','+256700000003','CF20000001','9876543210','bank','Centenary Bank','9876543210','','Yes','Yes','No']);
             fclose($handle);
         };
         return response()->stream($callback, 200, $headers);
@@ -814,29 +833,85 @@ class AccountManagerController extends Controller
         $prefix = strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $client->company_name), 0, 3));
 
         $handle    = fopen($request->file('csv_file')->getRealPath(), 'r');
-        $headerRow = fgetcsv($handle); // skip header
+        $headerRow = fgetcsv($handle);
+
+        // Columns are matched by header name, not position, so a manager can drop
+        // in an extra column, reorder them, or send a sheet with only the fields
+        // they actually have without the rest of the row shifting out of place.
+        $columns = [];
+        foreach ($headerRow ?: [] as $i => $name) {
+            $key = strtolower(trim(preg_replace('/[^a-z0-9]+/i', '_', (string) $name), '_'));
+            if ($key !== '') $columns[$key] = $i;
+        }
+
+        // Accept the friendlier spellings managers actually type.
+        $aliases = [
+            'employee_number' => 'emp_number',  'staff_number' => 'emp_number',
+            'surname'         => 'last_name',   'given_name'   => 'first_name',
+            'mobile_money'    => 'mobile_money_number', 'momo' => 'mobile_money_number',
+            'account_number'  => 'bank_account','nssf'         => 'nssf_number',
+            'daily_rate'      => 'rate',        'salary'       => 'rate',
+            'email_address'   => 'email',       'telephone'    => 'phone',
+        ];
+        foreach ($aliases as $from => $to) {
+            if (isset($columns[$from]) && !isset($columns[$to])) $columns[$to] = $columns[$from];
+        }
+
+        $missing = array_diff(['first_name', 'last_name'], array_keys($columns));
+        if ($missing) {
+            fclose($handle);
+            return back()->with('error',
+                'The sheet is missing required column(s): ' . implode(', ', $missing)
+                . '. Download the template to see the expected headings.');
+        }
 
         $created = 0;
         $updated = 0;
         $skipped = 0;
         $errors  = [];
+        $rowNo   = 1;
 
         while (($row = fgetcsv($handle)) !== false) {
-            if (count($row) < 3) continue;
+            $rowNo++;
+            if (count(array_filter($row, fn ($v) => trim((string) $v) !== '')) === 0) continue;
 
-            [$empNumber, $firstName, $lastName, $middleName,
-             $employmentType, $salaryType, $rate,
-             $departmentName, $designationName,
-             $hireDate, $phone, $nationalId,
-             $paymentMode, $bankName, $bankAccount, $mobileMoneyNumber,
-             $chargePaye, $chargeNssf, $nssfByEmployer] = array_pad($row, 19, null);
+            $get = fn (string $col) => isset($columns[$col]) && isset($row[$columns[$col]])
+                ? trim((string) $row[$columns[$col]])
+                : null;
+
+            $empNumber      = $get('emp_number');
+            $firstName      = $get('first_name');
+            $lastName       = $get('last_name');
+            $middleName     = $get('middle_name');
+            $employmentType = $get('employment_type');
+            $salaryType     = $get('salary_type');
+            $rate           = $get('rate');
+            $departmentName = $get('department');
+            $designationName= $get('designation');
+            $hireDate       = $get('hire_date');
+            $phone          = $get('phone');
+            $nationalId     = $get('national_id');
+            $paymentMode    = $get('payment_mode');
+            $bankName       = $get('bank_name');
+            $bankAccount    = $get('bank_account');
+            $mobileMoneyNumber = $get('mobile_money_number');
+            $chargePaye     = $get('charge_paye');
+            $chargeNssf     = $get('charge_nssf');
+            $nssfByEmployer = $get('nssf_paid_by_employer');
+            $email          = $get('email');
+            $nssfNumber     = $get('nssf_number');
 
             $firstName = trim($firstName ?? '');
             $lastName  = trim($lastName  ?? '');
             if (!$firstName || !$lastName) {
                 $skipped++;
-                $errors[] = "Row skipped: missing first_name or last_name.";
+                $errors[] = "Row {$rowNo} skipped: missing first_name or last_name.";
                 continue;
+            }
+
+            if ($email && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $errors[] = "Row {$rowNo} ({$firstName} {$lastName}): '{$email}' is not a valid email — imported without a login.";
+                $email = null;
             }
 
             $empNumber = trim($empNumber ?? '');
@@ -871,34 +946,91 @@ class AccountManagerController extends Controller
                 try { $hireDateParsed = \Carbon\Carbon::parse(trim($hireDate))->format('Y-m-d'); } catch (\Exception $e) {}
             }
 
-            $pmVal = strtolower(trim($paymentMode ?? ''));
-            $data = [
-                'first_name'          => $firstName,
-                'last_name'           => $lastName,
-                'middle_name'         => trim($middleName ?? '') ?: null,
-                'employment_type'     => $empType,
-                'department_id'       => $departmentId,
-                'designation_id'      => $designationId,
-                'hire_date'           => $hireDateParsed,
-                'phone'               => trim($phone ?? '') ?: null,
-                'national_id'         => trim($nationalId ?? '') ?: null,
-                'payment_mode'        => in_array($pmVal, ['bank_transfer','mobile_money','cash','cheque']) ? $pmVal : null,
-                'bank_name'           => trim($bankName ?? '') ?: null,
-                'bank_account'        => trim($bankAccount ?? '') ?: null,
-                'mobile_money_number' => trim($mobileMoneyNumber ?? '') ?: null,
-                'charge_paye'         => strtolower(trim($chargePaye ?? '')) === 'yes',
-                'charge_nssf'         => strtolower(trim($chargeNssf ?? '')) === 'yes',
-                'nssf_paid_by_employer'=> strtolower(trim($nssfByEmployer ?? '')) === 'yes',
-                'status'              => 'active',
-            ];
+            // Find existing or create.
+            //
+            // The lookup is scoped to the client being imported for. Two companies
+            // on the same system legitimately use their own internal numbering, so
+            // a global match on emp_number would rewrite a different company's
+            // employee and silently drag them onto this client's roster.
+            $employee = null;
+            if ($empNumber) {
+                $employee = Employee::where('emp_number', $empNumber)
+                    ->whereHas('clients', fn ($q) => $q->where('clients.id', $clientId))
+                    ->first();
 
-            // Find existing or create
-            $employee = $empNumber ? Employee::where('emp_number', $empNumber)->first() : null;
+                if (!$employee && Employee::where('emp_number', $empNumber)->exists()) {
+                    $skipped++;
+                    $errors[] = "Row skipped: employee number {$empNumber} already belongs to another company. "
+                              . "Use a number unique to {$client->company_name}, or leave the column blank to auto-generate one.";
+                    continue;
+                }
+            }
 
             if ($employee) {
+                // UPDATE: only touch columns the sheet actually filled in. Blank
+                // cells must leave the stored value alone — otherwise an account
+                // manager re-importing the file just to add bank details would
+                // silently reset employment_type to casual and clear the
+                // PAYE/NSSF flags for everyone on the sheet.
+                $data = ['first_name' => $firstName, 'last_name' => $lastName];
+
+                $optional = [
+                    'middle_name'         => trim($middleName ?? ''),
+                    'phone'               => trim($phone ?? ''),
+                    'national_id'         => trim($nationalId ?? ''),
+                    'bank_name'           => trim($bankName ?? ''),
+                    'bank_account'        => trim($bankAccount ?? ''),
+                    'mobile_money_number' => trim($mobileMoneyNumber ?? ''),
+                    'nssf_number'         => trim($nssfNumber ?? ''),
+                ];
+                foreach ($optional as $col => $val) {
+                    if ($val !== '') $data[$col] = $val;
+                }
+
+                if (trim($employmentType ?? '') !== '') $data['employment_type'] = $empType;
+                if ($departmentId)                      $data['department_id']   = $departmentId;
+                if ($designationId)                     $data['designation_id']  = $designationId;
+                if ($hireDateParsed)                    $data['hire_date']       = $hireDateParsed;
+                if (trim($paymentMode ?? '') !== '') {
+                    $data['payment_mode'] = Employee::normalisePaymentMode(
+                        $paymentMode,
+                        trim($mobileMoneyNumber ?? '') ?: ($employee->mobile_money_number ?: trim($phone ?? ''))
+                    );
+                }
+                foreach (['charge_paye' => $chargePaye, 'charge_nssf' => $chargeNssf,
+                          'nssf_paid_by_employer' => $nssfByEmployer] as $col => $raw) {
+                    $flag = strtolower(trim($raw ?? ''));
+                    if ($flag !== '') $data[$col] = in_array($flag, ['yes', 'y', 'true', '1'], true);
+                }
+
                 $employee->update($data);
                 $updated++;
             } else {
+                // CREATE: defaults are fine, there is nothing to preserve.
+                $data = [
+                    'first_name'          => $firstName,
+                    'last_name'           => $lastName,
+                    'middle_name'         => trim($middleName ?? '') ?: null,
+                    'employment_type'     => $empType,
+                    'department_id'       => $departmentId,
+                    'designation_id'      => $designationId,
+                    'hire_date'           => $hireDateParsed,
+                    'phone'               => trim($phone ?? '') ?: null,
+                    'national_id'         => trim($nationalId ?? '') ?: null,
+                    'payment_mode'        => Employee::normalisePaymentMode(
+                        $paymentMode,
+                        trim($mobileMoneyNumber ?? '') ?: trim($phone ?? '')
+                    ),
+                    'bank_name'           => trim($bankName ?? '') ?: null,
+                    'bank_account'        => trim($bankAccount ?? '') ?: null,
+                    'mobile_money_number' => trim($mobileMoneyNumber ?? '') ?: null,
+                    'nssf_number'         => trim($nssfNumber ?? '') ?: null,
+                    'charge_paye'         => strtolower(trim($chargePaye ?? '')) === 'yes',
+                    'charge_nssf'         => strtolower(trim($chargeNssf ?? '')) === 'yes',
+                    'nssf_paid_by_employer'=> strtolower(trim($nssfByEmployer ?? '')) === 'yes',
+                    'status'              => 'active',
+                ];
+
                 // Auto-generate emp_number if blank
                 if (!$empNumber) {
                     $count = Employee::where('emp_number', 'like', "{$prefix}%")->count() + 1;
@@ -910,6 +1042,32 @@ class AccountManagerController extends Controller
                 $data['emp_number'] = $empNumber;
                 $employee = Employee::create($data);
                 $created++;
+            }
+
+            // Give the employee a login when an email was supplied. Without a user
+            // record there is no address to send a payslip to, so an employee
+            // imported without one silently drops out of every payslip email run.
+            if ($email && !$employee->user) {
+                $user = User::where('email', $email)->first();
+                if ($user && Employee::where('user_id', $user->id)->where('id', '!=', $employee->id)->exists()) {
+                    $errors[] = "Row {$rowNo} ({$firstName} {$lastName}): {$email} is already used by another employee — imported without a login.";
+                } else {
+                    if (!$user) {
+                        $user = User::create([
+                            'name'     => trim("{$firstName} {$lastName}"),
+                            'email'    => $email,
+                            'password' => Hash::make('Password@123'),
+                        ]);
+                    }
+                    if (!$user->hasRole('employee')) $user->assignRole('employee');
+                    $employee->update(['user_id' => $user->id]);
+                }
+            } elseif ($email && $employee->user && $employee->user->email !== $email) {
+                if (User::where('email', $email)->where('id', '!=', $employee->user->id)->exists()) {
+                    $errors[] = "Row {$rowNo} ({$firstName} {$lastName}): {$email} is already in use — email not changed.";
+                } else {
+                    $employee->user->update(['email' => $email]);
+                }
             }
 
             // Ensure employee is attached to this client
@@ -931,8 +1089,14 @@ class AccountManagerController extends Controller
         }
         fclose($handle);
 
-        $msg = "Import complete: {$created} new employees added, {$updated} updated" . ($skipped ? ", {$skipped} skipped" : '') . ".";
-        if ($errors) $msg .= ' Errors: ' . implode(' | ', array_slice($errors, 0, 3));
+        $msg = "Import into {$client->company_name}: {$created} new employee(s) added, {$updated} updated"
+             . ($skipped ? ", {$skipped} skipped" : '') . '.';
+
+        if ($errors) {
+            $shown = array_slice($errors, 0, 5);
+            $msg  .= ' Issues: ' . implode(' | ', $shown);
+            if (count($errors) > 5) $msg .= ' (+' . (count($errors) - 5) . ' more)';
+        }
 
         return back()->with($created + $updated > 0 ? 'success' : 'error', $msg);
     }

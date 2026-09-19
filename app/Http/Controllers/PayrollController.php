@@ -87,14 +87,55 @@ class PayrollController extends Controller
             'net'        => $payroll->payslips->sum('net_salary'),
             'tax'        => $payroll->payslips->sum('tax_amount'),
             'deductions' => $payroll->payslips->sum('total_deductions'),
-            'nssf'       => $payroll->payslips->sum(function ($slip) {
-                foreach ($slip->component_details ?? [] as $d) {
-                    if (($d['code'] ?? '') === 'NSSF_EMP') return $d['amount'] ?? 0;
-                }
-                return 0;
-            }),
+            'nssf'          => $payroll->payslips->sum(fn ($slip) => $slip->employeeNssf()),
+            'nssf_employer' => $payroll->payslips->sum(fn ($slip) => $slip->employerNssf()),
+            'nssf_total'    => $payroll->payslips->sum(fn ($slip) => $slip->totalNssf()),
+            'zero_net'      => $payroll->payslips->where('net_salary', '<=', 0)->count(),
+            'unpayable'     => $payroll->payslips
+                ->filter(fn ($slip) => (float) $slip->net_salary > 0
+                    && $slip->employee && $slip->employee->payoutIssue() !== null)
+                ->count(),
         ];
         return view('payroll.show', ['payroll' => $payroll, 'totals' => $totals]);
+    }
+
+    /**
+     * Pre-flight check before the bank files are downloaded.
+     * Finance needs to see who cannot be paid — and why — instead of getting a
+     * short file and discovering the gap at the bank.
+     */
+    public function paymentReadiness(PayrollRun $payroll)
+    {
+        $payroll->load(['payslips.employee', 'client']);
+
+        $rows = $payroll->payslips
+            ->filter(fn ($slip) => $slip->employee !== null)
+            ->map(fn ($slip) => [
+                'slip'      => $slip,
+                'employee'  => $slip->employee,
+                'channel'   => $slip->employee->paymentChannel(),
+                'issue'     => $slip->employee->payoutIssue(),
+                'zero_pay'  => (float) $slip->net_salary <= 0,
+            ])
+            ->sortBy(fn ($r) => [$r['issue'] === null ? 1 : 0, $r['employee']->full_name])
+            ->values();
+
+        $byChannel = $rows->groupBy('channel')->map(fn ($g) => [
+            'count'     => $g->count(),
+            'ready'     => $g->where('issue', null)->where('zero_pay', false)->count(),
+            'blocked'   => $g->filter(fn ($r) => $r['issue'] !== null)->count(),
+            'zero_pay'  => $g->where('zero_pay', true)->count(),
+            'amount'    => $g->filter(fn ($r) => $r['issue'] === null)->sum(fn ($r) => (float) $r['slip']->net_salary),
+        ]);
+
+        return view('payroll.payment-readiness', [
+            'payroll'    => $payroll,
+            'rows'       => $rows,
+            'byChannel'  => $byChannel,
+            // The debit account is the first column of every KCB file; the bank
+            // rejects the upload when it is blank.
+            'kcbAccount' => \App\Models\Setting::get('kcb_account_number', ''),
+        ]);
     }
 
     public function edit(PayrollRun $payroll)
@@ -386,17 +427,34 @@ class PayrollController extends Controller
             fn($slip) => $ns->payrollProcessed($slip)
         );
 
+        // Those notifications are queued; start draining now rather than waiting
+        // on cron, so employees hear about the payment promptly.
+        \App\Services\QueueRunner::kick();
+
         $withheld = $payroll->payslips()->where('payment_status','withheld')->count();
-        $msg = "{$paid} employees paid and notified.";
-        if ($withheld) $msg .= " {$withheld} withheld employees not notified.";
+        $msg = "{$paid} employees marked as paid. Payment notification emails are being sent now.";
+        if ($withheld) $msg .= " {$withheld} withheld employees were not paid or notified.";
         return back()->with('success', $msg);
     }
 
-    /** Lock payroll manually */
+    /**
+     * Lock payroll manually.
+     *
+     * Only permitted once the MD has approved. Every workflow button on the run is
+     * hidden while it is locked, so locking a run that is still mid-approval strands
+     * it: nobody but a Super Admin can move it again. MD approval locks the run
+     * automatically anyway, which is the only point at which freezing it is correct.
+     */
     public function lock(PayrollRun $payroll)
     {
         $this->denyMd();
         if ($payroll->isLocked()) return back()->with('error', 'Already locked.');
+
+        if (!in_array($payroll->status, ['md_approved', 'approved', 'paid'])) {
+            return back()->with('error',
+                'A payroll run can only be locked after MD approval — locking it now would block the remaining approvals. It locks itself automatically once the MD approves.');
+        }
+
         $payroll->update(['locked_at' => now(), 'locked_by' => auth()->id()]);
         return back()->with('success', 'Payroll run locked successfully.');
     }
@@ -422,16 +480,13 @@ class PayrollController extends Controller
             'gross'      => $payroll->payslips->sum('gross_salary'),
             'net'        => $payroll->payslips->sum('net_salary'),
             'tax'        => $payroll->payslips->sum('tax_amount'),
-            'deductions' => $payroll->payslips->sum('total_deductions'),
-            'nssf'       => $payroll->payslips->sum(function ($slip) {
-                foreach ($slip->component_details ?? [] as $d) {
-                    if (($d['code'] ?? '') === 'NSSF_EMP') return $d['amount'] ?? 0;
-                }
-                return 0;
-            }),
+            'deductions'    => $payroll->payslips->sum('total_deductions'),
+            'nssf'          => $payroll->payslips->sum(fn ($slip) => $slip->employeeNssf()),
+            'nssf_employer' => $payroll->payslips->sum(fn ($slip) => $slip->employerNssf()),
+            'nssf_total'    => $payroll->payslips->sum(fn ($slip) => $slip->totalNssf()),
         ];
         $company = [
-            'name'     => \App\Models\Setting::get('company_name', 'Mastermind Consultants'),
+            'name'     => \App\Models\Setting::get('company_name', 'Mastermind Consult Ltd'),
             'email'    => \App\Models\Setting::get('company_email', ''),
             'currency' => \App\Models\Setting::get('currency_symbol', 'UGX'),
         ];
@@ -439,15 +494,32 @@ class PayrollController extends Controller
         return $pdf->download("payroll-{$payroll->year}-{$payroll->month}-summary.pdf");
     }
 
-    /** Export full payroll Excel — available after MD approval */
+    /**
+     * Export full payroll Excel — employee details, PAYE and both NSSF shares.
+     *
+     * Available from the Finance review stage onward: Finance has to reconcile the
+     * figures in order to approve, so gating this on MD approval left them with
+     * only the KCB bank files, which carry no employee or NSSF data.
+     */
     public function exportExcel(PayrollRun $payroll)
     {
         abort_unless(auth()->user()->can('reports.export'), 403);
-        if (!in_array($payroll->status, ['md_approved','approved','paid'])) {
-            return back()->with('error', 'Payroll must be MD-approved before downloading.');
+        if (!in_array($payroll->status, ['hr_approved','finance_approved','md_approved','approved','paid'])) {
+            return back()->with('error', 'Payroll must be at least HR-approved before downloading.');
         }
         $filename = 'payroll-'.$payroll->year.'-'.str_pad($payroll->month,2,'0',STR_PAD_LEFT).'.xlsx';
         return Excel::download(new \App\Exports\PayrollRunExport($payroll), $filename);
+    }
+
+    /** Monthly NSSF contribution schedule (5% employee + 10% employer) for filing. */
+    public function exportNssf(PayrollRun $payroll)
+    {
+        abort_unless(auth()->user()->can('reports.export'), 403);
+        if (!in_array($payroll->status, ['processed','hr_approved','finance_approved','md_approved','approved','paid'])) {
+            return back()->with('error', 'Payroll must be processed before the NSSF schedule can be produced.');
+        }
+        $filename = 'nssf-schedule-'.$payroll->year.'-'.str_pad($payroll->month,2,'0',STR_PAD_LEFT).'.xlsx';
+        return Excel::download(new \App\Exports\NssfScheduleExport($payroll), $filename);
     }
 
     // ─── Manual Days Import ───────────────────────────────────────────
@@ -582,36 +654,48 @@ class PayrollController extends Controller
         $payslip->load('employee.department', 'employee.designation', 'employee.user');
 
         $email = $payslip->employee->user?->email;
-        if (!$email) {
-            return back()->with('error', "Employee {$employee->full_name} has no email address.");
+        if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return back()->with('error', "Employee {$employee->full_name} has no valid email address on file.");
         }
 
-        Mail::to($email)->send(new PayslipMail($payslip, $payroll));
+        // Sent inline so the sender sees a real success/failure, not a silent queue.
+        try {
+            Mail::to($email)->send(new PayslipMail($payslip, $payroll));
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', "Could not email {$payslip->employee->full_name}: {$e->getMessage()}");
+        }
 
         return back()->with('success', "Payslip emailed to {$payslip->employee->full_name} ({$email}).");
     }
 
-    /** Bulk email all payslips for a payroll run */
+    /**
+     * Bulk email all payslips for a payroll run.
+     *
+     * Queued rather than sent inline: a run of several hundred employees means as
+     * many PDF renders and SMTP round-trips, which would run past the request
+     * timeout and leave Finance unsure how many actually went out.
+     */
     public function emailAllPayslips(PayrollRun $payroll)
     {
         abort_unless(auth()->user()->hasAnyRole(['super-admin','hr-admin','payroll-officer','account-manager']), 403);
 
         $payslips = $payroll->payslips()->with(['employee.user','employee.department','employee.designation'])->get();
 
-        $sent = 0; $skipped = 0;
+        $queued = 0; $skipped = 0;
         foreach ($payslips as $payslip) {
-            $email = $payslip->employee->user?->email;
-            // Skip missing, invalid, or auto-generated placeholder emails
+            $email = $payslip->employee?->user?->email;
             if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) { $skipped++; continue; }
-            try {
-                Mail::to($email)->send(new PayslipMail($payslip, $payroll));
-                $sent++;
-            } catch (\Exception $e) {
-                $skipped++;
-            }
+            Mail::to($email)->queue(new PayslipMail($payslip, $payroll));
+            $queued++;
         }
 
-        return back()->with('success', "Payslips emailed: {$sent} sent, {$skipped} skipped (no email).");
+        if ($queued) \App\Services\QueueRunner::kick();
+
+        $msg = "{$queued} payslip(s) queued for emailing — they will go out over the next few minutes.";
+        if ($skipped) $msg .= " {$skipped} skipped (no valid email address on file).";
+
+        return back()->with('success', $msg);
     }
 
     // ─── Salary management ───────────────────────────────────────────

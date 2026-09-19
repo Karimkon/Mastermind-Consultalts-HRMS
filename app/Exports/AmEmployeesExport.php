@@ -110,7 +110,7 @@ class AmEmployeesExport implements FromCollection, WithHeadings, WithMapping, Wi
             $emp->next_of_kin_phone ?? '',
             $emp->next_of_kin_email ?? '',
             // Banking
-            ucfirst(str_replace('_', ' ', $emp->payment_mode ?? '')),
+            $emp->paymentChannelLabel(),
             $emp->bank_name ?? '',
             $emp->bank_account ?? '',
             $emp->bank_branch ?? '',

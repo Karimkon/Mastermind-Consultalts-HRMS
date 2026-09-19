@@ -11,6 +11,7 @@ class Client extends Model
         'phone', 'email',
         'industry', 'address', 'deployment_area', 'work_area', 'status', 'notes',
         'payment_day', 'work_site_address', 'work_site_lat', 'work_site_lng', 'geo_fence_radius',
+        'attendance_enabled',
         // Payroll formula settings
         'gross_up_paye', 'gpa_wmc_rate', 'billing_rate_multiplier', 'payroll_type',
     ];
@@ -20,6 +21,7 @@ class Client extends Model
         'work_site_lng'          => 'float',
         'payment_day'            => 'integer',
         'geo_fence_radius'       => 'integer',
+        'attendance_enabled'     => 'boolean',
         'gross_up_paye'          => 'boolean',
         'gpa_wmc_rate'           => 'float',
         'billing_rate_multiplier'=> 'float',

@@ -83,30 +83,95 @@ class AttendanceController extends Controller
     // =========================================================
     // INDEX
     // =========================================================
+    /**
+     * Clients the signed-in user is allowed to see attendance for.
+     * Null means "no restriction" (admins); a collection means restrict to those.
+     */
+    /**
+     * Roles that see attendance across every client. Finance is included
+     * because days worked drive the payroll figures they have to verify before
+     * approving — they already see every payslip and bank detail.
+     */
+    private const VIEW_ALL_ROLES = ['super-admin', 'hr-admin', 'manager', 'payroll-officer'];
+
+    private function visibleClientIds(): ?\Illuminate\Support\Collection
+    {
+        $user = auth()->user();
+
+        if ($user->hasAnyRole(self::VIEW_ALL_ROLES)) {
+            return null;
+        }
+
+        if ($user->hasRole('account-manager')) {
+            return Client::where('account_manager_id', $user->id)->pluck('id');
+        }
+
+        return collect();   // everyone else is scoped to their own record instead
+    }
+
     public function index(Request $request)
     {
         $user     = auth()->user();
         $employee = $user->employee;
-        $isAdmin  = $user->hasAnyRole(['super-admin', 'hr-admin', 'manager']);
+        $isAdmin  = $user->hasAnyRole(self::VIEW_ALL_ROLES);
+        $isAm     = $user->hasRole('account-manager') && !$isAdmin;
 
-        $query = AttendanceLog::with(['employee.department'])
-            ->when(!$isAdmin && $employee, fn($q) => $q->where('employee_id', $employee->id))
-            ->when($isAdmin && $request->employee_id, fn($q) => $q->where('employee_id', $request->employee_id))
-            ->when($isAdmin && $request->department_id, fn($q) => $q->whereHas('employee', fn($e) => $e->where('department_id', $request->department_id)))
+        // Account managers see every employee on the client sites they run, not
+        // just their own record — and never another manager's clients. Anyone
+        // else without an admin role is limited to their own attendance.
+        $amClientIds = $isAm ? $this->visibleClientIds() : null;
+        $canSeeAll   = $isAdmin || $isAm;
+
+        $query = AttendanceLog::with(['employee.department', 'client'])
+            ->when($isAm, fn($q) => $q->whereHas(
+                'employee.clients',
+                fn($c) => $c->whereIn('clients.id', $amClientIds ?: [0])
+            ))
+            ->when(!$canSeeAll, fn($q) => $employee
+                ? $q->where('employee_id', $employee->id)
+                : $q->whereRaw('1 = 0'))     // no employee record → show nothing, never everything
+            ->when($canSeeAll && $request->employee_id, fn($q) => $q->where('employee_id', $request->employee_id))
+            ->when($canSeeAll && $request->client_id, fn($q) => $q->whereHas(
+                'employee.clients',
+                fn($c) => $c->where('clients.id', $request->client_id)
+            ))
+            ->when($canSeeAll && $request->department_id, fn($q) => $q->whereHas(
+                'employee', fn($e) => $e->where('department_id', $request->department_id)
+            ))
+            ->when($canSeeAll && $request->section, fn($q) => $q->whereHas(
+                'employee', fn($e) => $e->where('work_location', $request->section)
+            ))
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->date, fn($q) => $q->whereDate('date', $request->date))
             ->when($request->date_from, fn($q) => $q->whereDate('date', '>=', $request->date_from))
             ->when($request->date_to, fn($q) => $q->whereDate('date', '<=', $request->date_to))
             ->orderByDesc('date');
 
-        $logs        = $query->paginate(30);
-        $departments = Department::orderBy('name')->get();
-        $present     = (clone $query)->where('status', 'present')->count();
-        $absent      = (clone $query)->where('status', 'absent')->count();
-        $late        = (clone $query)->where('status', 'late')->count();
-        $summary     = ['present' => $present, 'absent' => $absent, 'late' => $late, 'total' => $present + $absent + $late];
-        $myLog       = $employee ? AttendanceLog::where('employee_id', $employee->id)->whereDate('date', today())->first() : null;
-        $date        = $request->date ?? '';
+        $logs = $query->paginate(30)->withQueryString();
+
+        // Counts must reflect the same filters as the table, so they are taken
+        // from a clone of the filtered query rather than the whole table.
+        $present = (clone $query)->where('status', 'present')->count();
+        $absent  = (clone $query)->where('status', 'absent')->count();
+        $late    = (clone $query)->where('status', 'late')->count();
+        $summary = ['present' => $present, 'absent' => $absent, 'late' => $late, 'total' => $present + $absent + $late];
+
+        // Filter options are scoped too, so a manager cannot infer another
+        // client's structure from the dropdowns.
+        $clients = Client::when($isAm, fn($q) => $q->whereIn('id', $amClientIds ?: [0]))
+            ->orderBy('company_name')->get();
+
+        $departments = Department::when($isAm, fn($q) => $q->whereHas(
+                'employees.clients', fn($c) => $c->whereIn('clients.id', $amClientIds ?: [0])
+            ))->orderBy('name')->get();
+
+        $sections = Employee::query()
+            ->when($isAm, fn($q) => $q->whereHas('clients', fn($c) => $c->whereIn('clients.id', $amClientIds ?: [0])))
+            ->whereNotNull('work_location')->where('work_location', '<>', '')
+            ->distinct()->orderBy('work_location')->pluck('work_location');
+
+        $myLog = $employee ? AttendanceLog::where('employee_id', $employee->id)->whereDate('date', today())->first() : null;
+        $date  = $request->date ?? '';
 
         // Geo-fence enabled if global setting exists OR if employee is assigned to a client with coords
         $geoEnabled = false;
@@ -121,7 +186,10 @@ class AttendanceController extends Controller
                        && (bool) Setting::where('key', 'office_lng')->value('value');
         }
 
-        return view('attendance.index', compact('logs', 'departments', 'summary', 'myLog', 'date', 'geoEnabled'));
+        return view('attendance.index', compact(
+            'logs', 'departments', 'clients', 'sections',
+            'summary', 'myLog', 'date', 'geoEnabled', 'canSeeAll'
+        ));
     }
 
     // =========================================================
@@ -134,6 +202,15 @@ class AttendanceController extends Controller
             return $request->wantsJson()
                 ? response()->json(['error' => 'No employee profile.'], 403)
                 : back()->with('error', 'No employee profile.');
+        }
+
+        // A client may run its own register and switch this off entirely.
+        $client = Client::whereHas('employees', fn($q) => $q->where('employees.id', $employee->id))->first();
+        if ($client && !$client->attendance_enabled) {
+            $msg = $client->company_name . ' does not use clock-in through this system.';
+            return $request->wantsJson()
+                ? response()->json(['error' => $msg], 422)
+                : back()->with('error', $msg);
         }
 
         $log = AttendanceLog::firstOrCreate(['employee_id' => $employee->id, 'date' => today()]);
@@ -153,16 +230,12 @@ class AttendanceController extends Controller
                 : back()->with('error', $geoError);
         }
 
-        // Resolve client_id for this employee
-        $client   = Client::whereHas('employees', fn($q) => $q->where('employees.id', $employee->id))->first();
-        $clientId = $client?->id;
-
         $log->update([
             'clock_in'  => now(),
             'status'    => 'present',
             'lat'       => $lat,
             'lng'       => $lng,
-            'client_id' => $clientId,
+            'client_id' => $client?->id,      // resolved above for the enabled check
         ]);
 
         return $request->wantsJson()
@@ -223,41 +296,101 @@ class AttendanceController extends Controller
 
     // =========================================================
     // CRUD — admin forms
+    //
+    // These routes come from Route::resource, which exposes them to every
+    // signed-in role. Attendance decides how many days a casual worker is paid
+    // for, so marking, editing and deleting are restricted here to the roles
+    // that are accountable for it — an employee must not be able to edit their
+    // own (or anyone else's) attendance record.
     // =========================================================
+    private function authoriseManage(): void
+    {
+        abort_unless(
+            auth()->user()->hasAnyRole(['super-admin', 'hr-admin', 'manager', 'account-manager']),
+            403,
+            'You are not allowed to change attendance records.'
+        );
+    }
+
+    /** Account managers may only touch employees on the client sites they run. */
+    private function authoriseEmployee(?Employee $employee): void
+    {
+        $this->authoriseManage();
+        $clientIds = $this->visibleClientIds();
+        if ($clientIds === null) return;               // admin — unrestricted
+
+        abort_unless(
+            $employee && $employee->clients()->whereIn('clients.id', $clientIds)->exists(),
+            403,
+            'That employee is not on one of your client sites.'
+        );
+    }
+
+    private function manageableEmployees()
+    {
+        $clientIds = $this->visibleClientIds();
+
+        return Employee::with('user')->where('status', 'active')
+            ->when($clientIds !== null, fn($q) => $q->whereHas(
+                'clients', fn($c) => $c->whereIn('clients.id', $clientIds)
+            ))
+            ->orderBy('first_name')->get();
+    }
+
     public function create()
     {
-        return view('attendance.create', ['employees' => Employee::with('user')->where('status', 'active')->get()]);
+        $this->authoriseManage();
+        return view('attendance.create', ['employees' => $this->manageableEmployees()]);
     }
 
     public function store(Request $request)
     {
-        $request->validate(['employee_id' => 'required', 'date' => 'required|date', 'status' => 'required']);
+        $this->authoriseManage();
+        $request->validate([
+            'employee_id' => 'required|exists:employees,id',
+            'date'        => 'required|date',
+            'status'      => 'required|in:present,absent,late,half_day,leave',
+        ]);
+        $this->authoriseEmployee(Employee::find($request->employee_id));
+
         AttendanceLog::updateOrCreate(
             ['employee_id' => $request->employee_id, 'date' => $request->date],
             $request->only('clock_in', 'clock_out', 'status', 'overtime_hours')
+                + ['client_id' => Employee::find($request->employee_id)?->clients()->value('clients.id')]
         );
         return redirect()->route('attendance.index')->with('success', 'Attendance recorded.');
     }
 
     public function show(AttendanceLog $attendance)
     {
-        return view('attendance.show', ['attendance' => $attendance->load('employee')]);
+        $attendance->load('employee.department', 'client');
+
+        // An employee may open their own record; anyone else needs the rights.
+        if ($attendance->employee_id !== auth()->user()->employee?->id) {
+            $this->authoriseEmployee($attendance->employee);
+        }
+
+        return view('attendance.show', compact('attendance'));
     }
 
     public function edit(AttendanceLog $attendance)
     {
-        $employees = Employee::with('user')->where('status', 'active')->get();
+        $this->authoriseEmployee($attendance->employee);
+        $employees = $this->manageableEmployees();
         return view('attendance.edit', compact('attendance', 'employees'));
     }
 
     public function update(Request $request, AttendanceLog $attendance)
     {
+        $this->authoriseEmployee($attendance->employee);
+        $request->validate(['status' => 'nullable|in:present,absent,late,half_day,leave']);
         $attendance->update($request->only('clock_in', 'clock_out', 'status', 'overtime_hours'));
         return redirect()->route('attendance.index')->with('success', 'Attendance updated.');
     }
 
     public function destroy(AttendanceLog $attendance)
     {
+        $this->authoriseEmployee($attendance->employee);
         $attendance->delete();
         return back()->with('success', 'Deleted.');
     }

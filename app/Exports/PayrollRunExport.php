@@ -14,35 +14,42 @@ class PayrollRunExport implements FromCollection, WithHeadings, WithTitle, WithS
 
     public function collection()
     {
-        return $this->run->payslips()->with('employee.department')->get()->map(function ($slip) {
-            $nssf = 0;
-            foreach ($slip->component_details ?? [] as $d) {
-                if (($d['code'] ?? '') === 'NSSF_EMP') { $nssf = $d['amount'] ?? 0; break; }
-            }
-            return [
-                $slip->employee->emp_number ?? '',
-                $slip->employee->payroll_number ?? '',
-                $slip->employee->full_name,
-                $slip->employee->department?->name ?? '',
-                $slip->employee->designation?->title ?? '',
-                $slip->employee->bank_name ?? '',
-                $slip->employee->bank_account ?? '',
-                number_format($slip->basic_salary ?? 0, 2, '.', ''),
-                number_format($slip->gross_salary ?? 0, 2, '.', ''),
-                number_format($slip->total_deductions ?? 0, 2, '.', ''),
-                number_format($slip->tax_amount ?? 0, 2, '.', ''),
-                number_format($nssf, 2, '.', ''),
-                number_format($slip->net_salary ?? 0, 2, '.', ''),
-            ];
-        });
+        return $this->run->payslips()->with('employee.department', 'employee.designation')->get()
+            ->filter(fn ($slip) => $slip->employee !== null)
+            ->map(function ($slip) {
+                $emp = $slip->employee;
+                return [
+                    $emp->emp_number ?? '',
+                    $emp->payroll_number ?? '',
+                    $emp->full_name,
+                    $emp->department?->name ?? '',
+                    $emp->designation?->title ?? '',
+                    $emp->paymentChannelLabel(),
+                    $emp->bank_name ?? '',
+                    $emp->bank_account ?? '',
+                    $emp->payoutNumber(),
+                    number_format($slip->basic_salary ?? 0, 2, '.', ''),
+                    number_format($slip->gross_salary ?? 0, 2, '.', ''),
+                    number_format($slip->tax_amount ?? 0, 2, '.', ''),
+                    number_format($slip->employeeNssf(), 2, '.', ''),
+                    number_format($slip->total_deductions ?? 0, 2, '.', ''),
+                    number_format($slip->net_salary ?? 0, 2, '.', ''),
+                    number_format($slip->employerNssf(), 2, '.', ''),
+                    number_format($slip->totalNssf(), 2, '.', ''),
+                    $emp->payoutIssue() ?? 'Ready',
+                ];
+            })
+            ->values();
     }
 
     public function headings(): array
     {
         return [
             'Emp No', 'Payroll No', 'Full Name', 'Department', 'Designation',
-            'Bank Name', 'Account No',
-            'Basic Salary', 'Gross Salary', 'Total Deductions', 'Tax (PAYE)', 'NSSF (Emp 5%)', 'Net Pay (UGX)',
+            'Payment Mode', 'Bank Name', 'Account No', 'Mobile Money No',
+            'Basic Salary', 'Gross Salary', 'Tax (PAYE)', 'NSSF (Emp 5%)',
+            'Total Deductions', 'Net Pay (UGX)',
+            'NSSF (Employer 10%)', 'Total NSSF Remitted (15%)', 'Payment Status',
         ];
     }
 

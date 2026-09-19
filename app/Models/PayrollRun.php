@@ -53,6 +53,25 @@ class PayrollRun extends Model {
         };
     }
 
+    /**
+     * The payslips that belong in a bank/mobile-money payment instruction file.
+     *
+     * Withheld slips are excluded here rather than in each export: a slip that HR,
+     * Finance or the MD deliberately held back must never reach the bank, and
+     * repeating that filter per file is how one of them ends up missing it.
+     *
+     * @param  string|null  $channel  bank|mtn|airtel — omit for every channel.
+     */
+    public function payableSlips(?string $channel = null): \Illuminate\Support\Collection
+    {
+        return $this->payslips()->with('employee')->get()
+            ->filter(fn ($slip) => $slip->employee !== null)
+            ->filter(fn ($slip) => $slip->payment_status !== 'withheld')
+            ->filter(fn ($slip) => (float) $slip->net_salary > 0)
+            ->filter(fn ($slip) => $channel === null || $slip->employee->paymentChannel() === $channel)
+            ->values();
+    }
+
     public function getStatusBadgeAttribute(): string {
         if ($this->isLocked()) {
             return '<span class="badge-red"><i class="fas fa-lock mr-1"></i>Locked</span>';

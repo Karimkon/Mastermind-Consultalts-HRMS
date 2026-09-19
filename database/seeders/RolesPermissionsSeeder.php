@@ -132,7 +132,7 @@ class RolesPermissionsSeeder extends Seeder
 
         // Default settings
         $settings = [
-            ['key' => 'company_name',   'value' => 'Mastermind Consultants', 'group' => 'general', 'label' => 'Company Name'],
+            ['key' => 'company_name',   'value' => 'Mastermind Consult Ltd', 'group' => 'general', 'label' => 'Company Name'],
             ['key' => 'company_email',  'value' => 'hr@mastermind.co.za',    'group' => 'general', 'label' => 'HR Email'],
             ['key' => 'company_phone',  'value' => '+27 11 000 0000',         'group' => 'general', 'label' => 'Phone'],
             ['key' => 'currency',       'value' => 'ZAR',                     'group' => 'payroll', 'label' => 'Currency'],

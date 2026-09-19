@@ -4,7 +4,7 @@
 <body style="font-family:Arial,sans-serif;color:#1e293b;font-size:14px;line-height:1.6;background:#f8fafc;margin:0;padding:0;">
 <div style="max-width:560px;margin:40px auto;background:#fff;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;">
     <div style="background:#1e40af;padding:24px 32px;">
-        <h1 style="color:#fff;margin:0;font-size:20px;">Mastermind Consultants</h1>
+        <h1 style="color:#fff;margin:0;font-size:20px;">Mastermind Consult Ltd</h1>
         <p style="color:#93c5fd;margin:4px 0 0;font-size:13px;">Human Resource Management System</p>
     </div>
     <div style="padding:32px;">
@@ -34,11 +34,14 @@
             </table>
         </div>
         <p style="margin:0 0 8px;font-size:13px;color:#64748b;">The full breakdown is in the attached PDF payslip.</p>
-        <p style="margin:24px 0 0;font-size:13px;color:#64748b;">If you have any questions, please contact the HR department.</p>
-        <p style="margin:16px 0 0;">Regards,<br><strong>Mastermind Consultants — HR Team</strong></p>
+        <p style="margin:24px 0 0;font-size:13px;color:#64748b;">
+            If you have any questions about your pay, contact the payroll team at
+            <a href="mailto:payroll@mastermindconsults.co.ug" style="color:#1e40af;font-weight:600;">payroll@mastermindconsults.co.ug</a>.
+        </p>
+        <p style="margin:16px 0 0;">Regards,<br><strong>Mastermind Consult Ltd — Payroll Team</strong></p>
     </div>
     <div style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center;">
-        This is an automated email. Please do not reply directly to this message.
+        This is an automated email — replies go to payroll@mastermindconsults.co.ug
     </div>
 </div>
 </body>

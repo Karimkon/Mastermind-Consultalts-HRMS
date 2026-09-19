@@ -68,6 +68,14 @@ class EmployeeController extends Controller
                 'address'         => $request->address,
                 'bank_name'       => $request->bank_name,
                 'bank_account'    => $request->bank_account,
+                'bank_branch'     => $request->bank_branch,
+                // The create form collects these but they used to be dropped here,
+                // so every new employee silently defaulted to bank with no account.
+                'mobile_money_number' => $request->mobile_money_number,
+                'payment_mode'    => Employee::normalisePaymentMode(
+                    $request->payment_mode,
+                    $request->mobile_money_number ?: $request->phone
+                ),
                 'salary_grade'    => $request->salary_grade,
             ]);
 
@@ -128,7 +136,7 @@ class EmployeeController extends Controller
             'nssf_number','tin_number','ifms_supplier_no','pension_no',
             'fixed_nssf_amount','voluntary_nssf','special_tax_percentage',
             // Banking & Calculation
-            'bank_name','bank_account','bank_branch','tax_number','payment_mode',
+            'bank_name','bank_account','bank_branch','tax_number','payment_mode','mobile_money_number',
             'ot_calc_hours','absenteeism_calc_hours','ot1_calc_hours','ot2_calc_hours','min_daily_working_hours',
             // PF
             'pf_deduction_type','pf_calculate_on','pf_employee_rate','pf_employer_rate','pf_scheme',
@@ -153,6 +161,14 @@ class EmployeeController extends Controller
             'is_blacklisted','on_hold',
         ] as $bool) {
             $data[$bool] = $request->boolean($bool);
+        }
+
+        // Keep payment_mode canonical — the bank export files match on it exactly.
+        if (array_key_exists('payment_mode', $data)) {
+            $data['payment_mode'] = Employee::normalisePaymentMode(
+                $data['payment_mode'],
+                $data['mobile_money_number'] ?? $employee->mobile_money_number ?: ($data['phone'] ?? $employee->phone)
+            );
         }
 
         $previousStatus = $employee->status;

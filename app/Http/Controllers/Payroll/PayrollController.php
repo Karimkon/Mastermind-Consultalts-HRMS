@@ -80,7 +80,7 @@ class PayrollController extends Controller
     {
         $payslip = Payslip::where("payroll_run_id",$payroll_run->id)->where("employee_id",$employee->id)->firstOrFail();
         $payslip->load("employee.department","employee.designation");
-        $company = ["name" => \App\Models\Setting::get("company_name","Mastermind Consultants"), "currency" => \App\Models\Setting::get("currency_symbol","R")];
+        $company = ["name" => \App\Models\Setting::get("company_name","Mastermind Consult Ltd"), "currency" => \App\Models\Setting::get("currency_symbol","R")];
         $pdf     = Pdf::loadView("payroll.payslip-pdf", compact("payslip","payroll_run","company"))->setPaper("a4");
         return $pdf->download("payslip_{$employee->emp_number}_{$payroll_run->month}_{$payroll_run->year}.pdf");
     }

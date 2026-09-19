@@ -13,7 +13,7 @@
     <div class="w-full max-w-md px-4">
         <div class="text-center mb-8">
             <div class="inline-block mb-4">
-                <img src="/images/logo.png?v=2" alt="Mastermind Consultants"
+                <img src="/images/logo.png?v=2" alt="Mastermind Consult Ltd"
                      style="height:60px;width:auto;background:#fff;padding:8px 16px;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.3);">
             </div>
             <h1 class="text-2xl font-bold text-white">Mastermind HRMS</h1>

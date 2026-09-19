@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Privacy Policy — Mastermind Consultants HRMS</title>
+    <title>Privacy Policy — Mastermind Consult Ltd HRMS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>body { font-family: 'Inter', sans-serif; }</style>
@@ -18,7 +18,7 @@
                 <span class="text-white font-bold text-lg">M</span>
             </div>
             <div>
-                <p class="font-bold text-gray-900 text-sm leading-tight">Mastermind Consultants</p>
+                <p class="font-bold text-gray-900 text-sm leading-tight">Mastermind Consult Ltd</p>
                 <p class="text-xs text-gray-500">HRMS Mobile Application</p>
             </div>
         </div>
@@ -33,7 +33,7 @@
         <div class="mb-10">
             <h1 class="text-3xl font-bold text-gray-900 mb-3">Privacy Policy</h1>
             <p class="text-sm text-gray-500">
-                <strong>App:</strong> Mastermind Consultants HRMS &nbsp;|&nbsp;
+                <strong>App:</strong> Mastermind Consult Ltd HRMS &nbsp;|&nbsp;
                 <strong>Package:</strong> com.mastermind.consultants.hrms &nbsp;|&nbsp;
                 <strong>Effective:</strong> {{ date('d F Y') }} &nbsp;|&nbsp;
                 <strong>Last updated:</strong> {{ date('d F Y') }}
@@ -46,7 +46,7 @@
             <section>
                 <h2 class="text-xl font-semibold text-gray-900 mb-3">1. Introduction</h2>
                 <p>
-                    Mastermind Consultants ("we", "our", or "us") operates the <strong>Mastermind Consultants HRMS</strong>
+                    Mastermind Consult Ltd ("we", "our", or "us") operates the <strong>Mastermind Consult Ltd HRMS</strong>
                     mobile application (the "App"). This Privacy Policy explains how we collect, use, disclose,
                     and protect personal information when you use the App.
                 </p>
@@ -61,13 +61,13 @@
                 <h2 class="text-xl font-semibold text-gray-900 mb-3">2. Who Uses This App</h2>
                 <p>The App is an internal Human Resources Management System used exclusively by:</p>
                 <ul class="list-disc list-inside mt-2 space-y-1 text-gray-700">
-                    <li>Employees of Mastermind Consultants</li>
+                    <li>Employees of Mastermind Consult Ltd</li>
                     <li>HR Administrators and Managers</li>
                     <li>Recruiters and Payroll Officers</li>
                     <li>Client companies with assigned staff</li>
                 </ul>
                 <p class="mt-3">
-                    Access requires valid login credentials issued by Mastermind Consultants.
+                    Access requires valid login credentials issued by Mastermind Consult Ltd.
                     The App is <strong>not open to the general public</strong>.
                 </p>
             </section>
@@ -130,7 +130,7 @@
             {{-- 6. Data Storage and Security --}}
             <section>
                 <h2 class="text-xl font-semibold text-gray-900 mb-3">6. Data Storage &amp; Security</h2>
-                <p>All data is stored on secure servers hosted at <strong>mastermind.autos</strong> (managed by Mastermind Consultants).</p>
+                <p>All data is stored on secure servers hosted at <strong>mastermind.autos</strong> (managed by Mastermind Consult Ltd).</p>
                 <ul class="list-disc list-inside mt-3 space-y-1 text-gray-700">
                     <li>All data is transmitted over <strong>HTTPS (TLS encryption)</strong></li>
                     <li>Authentication tokens are stored in the device's secure storage (Android Keystore)</li>
@@ -152,7 +152,7 @@
                 <ul class="list-disc list-inside mt-2 space-y-1 text-gray-700">
                     <li><strong>Client companies:</strong> If you are placed at a client site, that client may have limited access to your attendance and leave records relevant to their contract</li>
                     <li><strong>Legal requirements:</strong> If required by law, court order, or government authority</li>
-                    <li><strong>Payroll processing:</strong> Salary and banking details are shared only with authorised payroll officers within Mastermind Consultants</li>
+                    <li><strong>Payroll processing:</strong> Salary and banking details are shared only with authorised payroll officers within Mastermind Consult Ltd</li>
                 </ul>
             </section>
 
@@ -160,7 +160,7 @@
             <section>
                 <h2 class="text-xl font-semibold text-gray-900 mb-3">8. Data Retention</h2>
                 <p>
-                    We retain your personal data for as long as your employment or engagement with Mastermind Consultants
+                    We retain your personal data for as long as your employment or engagement with Mastermind Consult Ltd
                     is active, and for a period of <strong>5 years</strong> thereafter, as required by applicable
                     labour and tax laws in Uganda. After this period, data is securely deleted.
                 </p>
@@ -188,14 +188,14 @@
                 <h2 class="text-xl font-semibold text-gray-900 mb-3">10. Children's Privacy</h2>
                 <p>
                     The App is intended for use by adults (18+) who are employees or authorised users of
-                    Mastermind Consultants. We do not knowingly collect personal data from children under 18.
+                    Mastermind Consult Ltd. We do not knowingly collect personal data from children under 18.
                 </p>
             </section>
 
             {{-- 11. Third-Party Services --}}
             <section>
                 <h2 class="text-xl font-semibold text-gray-900 mb-3">11. Third-Party Services</h2>
-                <p>The App does not integrate with third-party advertising networks or analytics SDKs. It communicates exclusively with the Mastermind Consultants backend API at <code>mastermind.autos</code>.</p>
+                <p>The App does not integrate with third-party advertising networks or analytics SDKs. It communicates exclusively with the Mastermind Consult Ltd backend API at <code>mastermind.autos</code>.</p>
             </section>
 
             {{-- 12. Changes to This Policy --}}
@@ -213,7 +213,7 @@
                 <h2 class="text-xl font-semibold text-gray-900 mb-3">13. Contact Us</h2>
                 <p>If you have questions or concerns about this Privacy Policy, please contact:</p>
                 <div class="mt-3 bg-blue-50 border border-blue-100 rounded-xl p-5 text-sm space-y-1">
-                    <p><strong>Mastermind Consultants</strong></p>
+                    <p><strong>Mastermind Consult Ltd</strong></p>
                     <p>Data Controller &amp; HR System Administrator</p>
                     <p>Email: <a href="mailto:privacy@mastermind.co.za" class="text-blue-600 hover:underline">privacy@mastermind.co.za</a></p>
                     <p>Website: <a href="https://mastermind.autos" class="text-blue-600 hover:underline">https://mastermind.autos</a></p>
@@ -223,7 +223,7 @@
         </div>
 
         <div class="mt-10 pt-6 border-t border-gray-100 text-center text-xs text-gray-400">
-            &copy; {{ date('Y') }} Mastermind Consultants. All rights reserved. &nbsp;|&nbsp;
+            &copy; {{ date('Y') }} Mastermind Consult Ltd. All rights reserved. &nbsp;|&nbsp;
             <a href="{{ route('careers.index') }}" class="hover:underline">Job Board</a> &nbsp;|&nbsp;
             <a href="{{ route('privacy') }}" class="hover:underline">Privacy Policy</a>
         </div>

@@ -23,12 +23,12 @@ p{color:#475569;font-size:14px;line-height:1.6;margin:0 0 12px}
 </style></head><body>
 <div class="wrapper">
 <div class="header">
-    <h1>Mastermind Consultants HRMS</h1>
+    <h1>Mastermind Consult Ltd HRMS</h1>
     <p>Human Resources Management System</p>
 </div>
 <div class="body">@yield('content')</div>
 <div class="footer">
-    <p>This is an automated message from Mastermind Consultants HRMS.<br>Please do not reply to this email.</p>
+    <p>This is an automated message from Mastermind Consult Ltd HRMS.<br>Please do not reply to this email.</p>
 </div>
 </div>
 </body></html>

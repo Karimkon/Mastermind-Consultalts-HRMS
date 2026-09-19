@@ -96,6 +96,14 @@
 
     {{-- KCB Payment Files: available as soon as payroll is processed --}}
     @if(in_array($payroll->status, ['processed','hr_approved','finance_approved','md_approved','approved','paid']))
+    <a href="{{ route('payroll.payment-readiness', $payroll) }}"
+       class="btn-secondary flex items-center gap-1 {{ ($totals['unpayable'] ?? 0) > 0 ? 'ring-2 ring-red-400' : '' }}">
+        <i class="fas fa-clipboard-check {{ ($totals['unpayable'] ?? 0) > 0 ? 'text-red-600' : 'text-emerald-600' }}"></i>
+        Payment Readiness
+        @if(($totals['unpayable'] ?? 0) > 0)
+            <span class="ml-1 px-1.5 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-bold">{{ $totals['unpayable'] }}</span>
+        @endif
+    </a>
     <div class="relative" x-data="{ open: false }">
         <button @click="open = !open" class="btn-secondary flex items-center gap-1">
             <i class="fas fa-university text-emerald-600"></i>
@@ -116,57 +124,62 @@
                class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
                 <i class="fas fa-mobile-alt w-4 text-red-500"></i> Airtel Mobile Money
             </a>
+            <div class="border-t border-gray-100 my-1"></div>
+            <a href="{{ route('payroll.bank-export', $payroll) }}"
+               class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                <i class="fas fa-list-ul w-4 text-slate-500"></i> Full Payment Schedule (CSV)
+            </a>
         </div>
     </div>
-    @endif
 
-    {{-- Downloads: available after MD approval --}}
-    @if(in_array($payroll->status, ['md_approved','approved','paid']))
+    {{-- Payroll & statutory reports. The KCB files above carry only what the bank
+         needs, so employee details and NSSF live here. --}}
     @can('reports.export')
-    <a href="{{ route('payroll.export-pdf', $payroll) }}" class="btn-secondary">
-        <i class="fas fa-file-pdf text-red-500 mr-1"></i> Summary PDF
-    </a>
-    <a href="{{ route('payroll.export-excel', $payroll) }}" class="btn-secondary">
-        <i class="fas fa-file-excel text-green-600 mr-1"></i> Export Excel
-    </a>
-    {{-- KCB Bulk Payment Files --}}
-    <div x-data="{ open: false }" class="relative">
+    <div class="relative" x-data="{ open: false }">
         <button @click="open = !open" type="button" class="btn-secondary flex items-center gap-1">
-            <i class="fas fa-landmark text-blue-600 mr-1"></i> KCB Payment Files
-            <i class="fas fa-chevron-down text-xs ml-1" :class="open ? 'rotate-180' : ''" style="transition:transform .2s"></i>
+            <i class="fas fa-file-excel text-green-600"></i>
+            Payroll Reports
+            <i class="fas fa-chevron-down text-xs ml-1"></i>
         </button>
         <div x-show="open" @click.outside="open=false" x-cloak
-             class="absolute right-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1">
-            <a href="{{ route('payroll.kcb-eft', $payroll) }}"
-               class="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                <span class="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
-                    <i class="fas fa-university text-blue-600 text-xs"></i>
-                </span>
+             class="absolute right-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+            <a href="{{ route('payroll.export-nssf', $payroll) }}"
+               class="flex items-start gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                <i class="fas fa-shield-alt w-4 mt-0.5 text-purple-600"></i>
                 <div>
-                    <p class="font-medium">EFT Bank Transfer</p>
-                    <p class="text-xs text-slate-400">Bank account employees</p>
+                    <p class="font-medium">NSSF Contribution Schedule</p>
+                    <p class="text-xs text-slate-400">5% employee + 10% employer, for filing</p>
                 </div>
             </a>
-            <a href="{{ route('payroll.kcb-mtn', $payroll) }}"
-               class="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                <span class="w-7 h-7 rounded-lg bg-yellow-100 flex items-center justify-center">
-                    <i class="fas fa-mobile-alt text-yellow-600 text-xs"></i>
-                </span>
+            @if(in_array($payroll->status, ['hr_approved','finance_approved','md_approved','approved','paid']))
+            <a href="{{ route('payroll.export-excel', $payroll) }}"
+               class="flex items-start gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                <i class="fas fa-file-excel w-4 mt-0.5 text-green-600"></i>
                 <div>
-                    <p class="font-medium">MTN Mobile Money</p>
-                    <p class="text-xs text-slate-400">MTN payment employees</p>
+                    <p class="font-medium">Full Payroll Excel</p>
+                    <p class="text-xs text-slate-400">Employee details, PAYE, NSSF, net pay</p>
                 </div>
             </a>
-            <a href="{{ route('payroll.kcb-airtel', $payroll) }}"
-               class="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                <span class="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center">
-                    <i class="fas fa-mobile-alt text-red-600 text-xs"></i>
-                </span>
+            @else
+            <span class="flex items-start gap-3 px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed"
+                  title="Available once HR has approved this run">
+                <i class="fas fa-file-excel w-4 mt-0.5"></i>
                 <div>
-                    <p class="font-medium">Airtel Mobile Money</p>
-                    <p class="text-xs text-slate-400">Airtel payment employees</p>
+                    <p class="font-medium">Full Payroll Excel</p>
+                    <p class="text-xs">Available after HR approval</p>
+                </div>
+            </span>
+            @endif
+            @if(in_array($payroll->status, ['md_approved','approved','paid']))
+            <a href="{{ route('payroll.export-pdf', $payroll) }}"
+               class="flex items-start gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                <i class="fas fa-file-pdf w-4 mt-0.5 text-red-500"></i>
+                <div>
+                    <p class="font-medium">Summary PDF</p>
+                    <p class="text-xs text-slate-400">Signed-off summary with approval chain</p>
                 </div>
             </a>
+            @endif
         </div>
     </div>
     @endcan
@@ -244,6 +257,19 @@
         Contact a Super Admin to unlock if corrections are needed.
         @endif
         </p>
+        {{-- A run locked before MD approval cannot advance: every approval button is
+             hidden while locked, so say plainly that it needs unlocking. --}}
+        @if(!in_array($payroll->status, ['md_approved','approved','paid']))
+        <p class="text-sm mt-1 font-medium">
+            <i class="fas fa-triangle-exclamation mr-1"></i>
+            This run was locked before MD approval, so the approval workflow cannot continue.
+            @if(auth()->user()->hasRole('super-admin'))
+                Use <strong>Unlock</strong> above to release it.
+            @else
+                A Super Admin needs to unlock it.
+            @endif
+        </p>
+        @endif
     </div>
 </div>
 @endif
@@ -360,8 +386,34 @@
     @endif
 </div>
 
+{{-- Pre-payment warnings --}}
+@if(($totals['unpayable'] ?? 0) > 0 || ($totals['zero_net'] ?? 0) > 0)
+<div class="mb-6 space-y-3">
+    @if(($totals['unpayable'] ?? 0) > 0)
+    <div class="p-4 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800 flex items-start gap-3">
+        <i class="fas fa-triangle-exclamation mt-0.5"></i>
+        <div>
+            <p class="font-semibold">{{ $totals['unpayable'] }} employee(s) are missing bank or mobile money details.</p>
+            <p>They will be left out of the KCB payment files.
+               <a href="{{ route('payroll.payment-readiness', $payroll) }}" class="underline font-medium">Review payment readiness</a>
+               before you download.</p>
+        </div>
+    </div>
+    @endif
+    @if(($totals['zero_net'] ?? 0) > 0)
+    <div class="p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 flex items-start gap-3">
+        <i class="fas fa-circle-info mt-0.5"></i>
+        <div>
+            <p class="font-semibold">{{ $totals['zero_net'] }} of {{ $totals['count'] }} payslips have zero net pay.</p>
+            <p>Usually this means days worked were never uploaded for them. Check the Manual Days upload before approving.</p>
+        </div>
+    </div>
+    @endif
+</div>
+@endif
+
 {{-- Stats --}}
-<div class="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+<div class="grid grid-cols-2 lg:grid-cols-7 gap-4 mb-6">
     <div class="card p-4 text-center">
         <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Employees</p>
         <p class="text-2xl font-bold text-slate-800">{{ $totals['count'] }}</p>
@@ -382,6 +434,11 @@
         <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">NSSF (Employee 5%)</p>
         <p class="text-xl font-bold text-purple-600">UGX {{ number_format($totals['nssf'], 0) }}</p>
     </div>
+    <div class="card p-4 text-center">
+        <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">NSSF (Employer 10%)</p>
+        <p class="text-xl font-bold text-indigo-600">UGX {{ number_format($totals['nssf_employer'] ?? 0, 0) }}</p>
+        <p class="text-[10px] text-slate-400 mt-0.5">Total remitted UGX {{ number_format($totals['nssf_total'] ?? 0, 0) }}</p>
+    </div>
     <div class="card p-4 text-center border-2 border-emerald-200">
         <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Total Net Pay</p>
         <p class="text-xl font-bold text-emerald-700">UGX {{ number_format($totals['net'], 0) }}</p>
@@ -389,14 +446,35 @@
 </div>
 
 {{-- Payslips table --}}
+@php
+    // Emailing a payslip is a communication action, not an edit, so it stays
+    // available on a locked run — Finance still needs it after Mark as Paid.
+    $canEmailPayslips = auth()->user()->hasAnyRole(['super-admin','hr-admin','payroll-officer','account-manager']);
+    $emailableCount   = $canEmailPayslips
+        ? $payroll->payslips->filter(fn ($s) => filled($s->employee?->user?->email))->count()
+        : 0;
+@endphp
 <div class="card overflow-hidden">
-    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
         <h2 class="font-semibold text-slate-800">Payslips ({{ $totals['count'] }})</h2>
-        @if($totals['count'] > 0)
-        <a href="{{ route('payroll.payslips', $payroll) }}" class="text-sm text-blue-600 hover:underline">
-            View all payslips <i class="fas fa-arrow-right ml-1"></i>
-        </a>
-        @endif
+        <div class="flex items-center gap-4">
+            @if($canEmailPayslips && $emailableCount > 0)
+            <form method="POST" action="{{ route('payroll.email-all-payslips', $payroll) }}"
+                  onsubmit="return confirm('Email the payslip PDF to {{ $emailableCount }} employee(s)? This cannot be undone.')">
+                @csrf
+                <button type="submit" class="btn-secondary text-sm flex items-center gap-1">
+                    <i class="fas fa-paper-plane text-blue-600"></i>
+                    Email All Payslips
+                    <span class="ml-1 px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">{{ $emailableCount }}</span>
+                </button>
+            </form>
+            @endif
+            @if($totals['count'] > 0)
+            <a href="{{ route('payroll.payslips', $payroll) }}" class="text-sm text-blue-600 hover:underline whitespace-nowrap">
+                View all payslips <i class="fas fa-arrow-right ml-1"></i>
+            </a>
+            @endif
+        </div>
     </div>
     <table class="w-full">
         <thead class="bg-slate-50">
@@ -410,7 +488,7 @@
                 <th class="table-head px-4 py-3 text-right">NSSF 5%</th>
                 <th class="table-head px-4 py-3 text-right">Net Pay</th>
                 <th class="table-head px-4 py-3 text-center">Days</th>
-                <th class="table-head px-4 py-3 text-left">PDF</th>
+                <th class="table-head px-4 py-3 text-left">Payslip</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -430,23 +508,37 @@
                 <td class="px-4 py-3 text-right text-sm font-semibold text-slate-800">UGX {{ number_format($slip->gross_salary, 0) }}</td>
                 <td class="px-4 py-3 text-right text-sm text-red-500">-{{ number_format($slip->total_deductions - $slip->tax_amount, 0) }}</td>
                 <td class="px-4 py-3 text-right text-sm text-orange-500">-{{ number_format($slip->tax_amount, 0) }}</td>
-                @php
-                    $slipNssf = 0;
-                    foreach ($slip->component_details ?? [] as $_d) {
-                        if (($_d['code'] ?? '') === 'NSSF_EMP') { $slipNssf = $_d['amount'] ?? 0; break; }
-                    }
-                @endphp
-                <td class="px-4 py-3 text-right text-sm text-purple-600">-{{ number_format($slipNssf, 0) }}</td>
+                <td class="px-4 py-3 text-right text-sm text-purple-600">-{{ number_format($slip->employeeNssf(), 0) }}</td>
                 <td class="px-4 py-3 text-right text-sm font-bold text-emerald-700">UGX {{ number_format($slip->net_salary, 0) }}</td>
                 <td class="px-4 py-3 text-center text-xs text-slate-500">
                     <span class="text-green-600 font-medium">{{ $slip->worked_days }}P</span> /
                     <span class="text-red-400">{{ $slip->absent_days }}A</span>
                 </td>
                 <td class="px-4 py-3">
-                    <a href="{{ route('payroll.payslip.pdf', [$payroll, $slip->employee]) }}"
-                       class="inline-flex items-center gap-1 text-xs text-red-600 hover:text-red-800 font-medium">
-                        <i class="fas fa-file-pdf"></i> PDF
-                    </a>
+                    <div class="flex items-center gap-3">
+                        <a href="{{ route('payroll.payslip.pdf', [$payroll, $slip->employee]) }}"
+                           class="inline-flex items-center gap-1 text-xs text-red-600 hover:text-red-800 font-medium">
+                            <i class="fas fa-file-pdf"></i> PDF
+                        </a>
+                        @if($canEmailPayslips)
+                            @php $slipEmail = $slip->employee->user?->email; @endphp
+                            @if($slipEmail)
+                            <form method="POST" action="{{ route('payroll.payslip.email', [$payroll, $slip->employee]) }}"
+                                  onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').innerHTML='<i class=\'fas fa-spinner fa-spin\'></i> Sending';">
+                                @csrf
+                                <button type="submit" title="Email this payslip to {{ $slipEmail }}"
+                                        class="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50">
+                                    <i class="fas fa-envelope"></i> Email
+                                </button>
+                            </form>
+                            @else
+                            <span class="inline-flex items-center gap-1 text-xs text-slate-300 cursor-not-allowed"
+                                  title="This employee has no email address on file">
+                                <i class="fas fa-envelope"></i> Email
+                            </span>
+                            @endif
+                        @endif
+                    </div>
                 </td>
             </tr>
             @empty

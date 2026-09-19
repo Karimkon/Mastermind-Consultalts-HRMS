@@ -157,4 +157,125 @@ class Employee extends Model
             default             => '<span class="badge-gray">Unknown</span>',
         };
     }
+
+    // ── Payment channel ───────────────────────────────────────────────
+    // payment_mode has been written by several screens over time with
+    // different spellings ("Bank", "bank", "bank_transfer", "mobile_money").
+    // Everything that pays money out must go through paymentChannel(), never
+    // read payment_mode directly, or rows silently drop out of the bank files.
+
+    public const PAYMENT_CHANNELS = [
+        'bank'   => 'Bank Transfer (EFT)',
+        'mtn'    => 'MTN Mobile Money',
+        'airtel' => 'Airtel Mobile Money',
+        'cash'   => 'Cash',
+        'cheque' => 'Cheque',
+    ];
+
+    /** MNO prefixes as allocated by UCC (local part, without the leading 0). */
+    private const MTN_PREFIXES    = ['76', '77', '78', '79', '39', '31'];
+    private const AIRTEL_PREFIXES = ['70', '74', '75', '20'];
+
+    /**
+     * Normalised payout channel: bank|mtn|airtel|cash|cheque|unassigned.
+     * Legacy "mobile_money" rows are resolved to the real network from the
+     * subscriber number; if that cannot be determined the employee is
+     * "unassigned" so the readiness report flags them instead of them
+     * disappearing from every payment file.
+     */
+    public function paymentChannel(): string
+    {
+        $raw = str_replace([' ', '-'], '_', strtolower(trim((string) $this->payment_mode)));
+
+        return match ($raw) {
+            'mtn', 'mtn_momo', 'mtn_mobile_money'          => 'mtn',
+            'airtel', 'airtel_money', 'airtel_mobile_money' => 'airtel',
+            'cash'                                          => 'cash',
+            'cheque', 'check'                               => 'cheque',
+            'mobile_money', 'momo', 'mobile'                => $this->detectMno() ?? 'unassigned',
+            default                                         => 'bank',
+        };
+    }
+
+    public function paymentChannelLabel(): string
+    {
+        return self::PAYMENT_CHANNELS[$this->paymentChannel()] ?? 'Not set';
+    }
+
+    /**
+     * Map whatever a form or spreadsheet supplied onto a canonical payment_mode.
+     * Every write path (forms, imports, API) must run through this so the
+     * column never drifts back into mixed spellings.
+     */
+    public static function normalisePaymentMode(?string $raw, ?string $mobileNumber = null): string
+    {
+        $value = str_replace([' ', '-'], '_', strtolower(trim((string) $raw)));
+
+        $mode = match ($value) {
+            'mtn', 'mtn_momo', 'mtn_mobile_money'           => 'mtn',
+            'airtel', 'airtel_money', 'airtel_mobile_money' => 'airtel',
+            'cash'                                          => 'cash',
+            'cheque', 'check'                               => 'cheque',
+            'mobile_money', 'momo', 'mobile'                => 'mobile_money',
+            default                                         => 'bank',
+        };
+
+        // "Mobile money" without a network: resolve it from the subscriber number.
+        if ($mode === 'mobile_money') {
+            $probe = new static(['mobile_money_number' => $mobileNumber]);
+            $mode  = $probe->detectMno() ?? 'mobile_money';
+        }
+
+        return $mode;
+    }
+
+    /** Which network does the employee's number belong to? Null when undeterminable. */
+    public function detectMno(): ?string
+    {
+        $msisdn = $this->payoutNumber();
+        if ($msisdn === '') return null;
+
+        $prefix = substr($msisdn, 3, 2);
+        if (in_array($prefix, self::MTN_PREFIXES, true))    return 'mtn';
+        if (in_array($prefix, self::AIRTEL_PREFIXES, true)) return 'airtel';
+        return null;
+    }
+
+    /**
+     * Mobile money number in the 256XXXXXXXXX form the bank requires.
+     * Returns '' when there is no usable number.
+     */
+    public function payoutNumber(): string
+    {
+        $digits = preg_replace('/\D/', '', (string) ($this->mobile_money_number ?: $this->phone));
+        $digits = ltrim($digits, '0');                                  // 00256… / 07… → 256… / 7…
+        if (str_starts_with($digits, '256')) $digits = substr($digits, 3);
+
+        return strlen($digits) === 9 ? '256' . $digits : '';
+    }
+
+    /**
+     * Why this employee cannot be paid, or null when they are payable.
+     * Used by the payroll payment-readiness screen.
+     */
+    public function payoutIssue(): ?string
+    {
+        return match ($this->paymentChannel()) {
+            'bank' => match (true) {
+                blank($this->bank_account) => 'No bank account number',
+                blank($this->bank_name)    => 'No bank name',
+                default                    => null,
+            },
+            'mtn', 'airtel' => $this->payoutNumber() === ''
+                ? 'No valid mobile money number'
+                : null,
+            'unassigned' => 'Mobile money selected but the network could not be determined from the number',
+            default      => null,   // cash / cheque are handled outside the bank files
+        };
+    }
+
+    public function isPayable(): bool
+    {
+        return $this->payoutIssue() === null;
+    }
 }

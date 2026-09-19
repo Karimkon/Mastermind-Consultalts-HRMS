@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 namespace App\Exports;
 
 use App\Models\PayrollRun;
@@ -22,8 +22,8 @@ class KcbMtnExport implements FromArray, WithEvents
              "MNO", "MNO Code", "Mobile Number", "Amount"],
         ];
 
-        $payslips = $this->run->payslips()->with("employee")->get()
-            ->filter(fn($s) => $s->employee->payment_mode === "mtn");
+        $payslips = $this->run->payableSlips("mtn")
+            ->filter(fn($s) => $s->employee->payoutNumber() !== "");
 
         foreach ($payslips as $slip) {
             $emp = $slip->employee;
@@ -33,19 +33,11 @@ class KcbMtnExport implements FromArray, WithEvents
                 $emp->full_name,
                 "MTN",
                 989999,
-                $this->ugPhone($emp->mobile_money_number ?? $emp->phone ?? ""),
+                $emp->payoutNumber(),
                 (int) $slip->net_salary,
             ];
         }
         return $rows;
-    }
-
-    private function ugPhone(string $p): string
-    {
-        $p = preg_replace("/\D/", "", $p);
-        if (str_starts_with($p, "0")) $p = "256" . substr($p, 1);
-        if (!str_starts_with($p, "256")) $p = "256" . $p;
-        return $p;
     }
 
     public function registerEvents(): array

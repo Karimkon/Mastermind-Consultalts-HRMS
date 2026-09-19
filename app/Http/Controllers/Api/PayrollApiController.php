@@ -66,20 +66,98 @@ class PayrollApiController extends Controller
         return response()->json(['data' => ['id' => $payroll->id, 'status' => $payroll->fresh()->status]]);
     }
 
+    /**
+     * Stage 1 of 3 — HR approval.
+     *
+     * The three stages exist because paying people is the one thing in this system
+     * that moves money out of the company, and no single person may do it alone.
+     * HR confirms the figures are right, Finance confirms the company can pay them,
+     * and the MD releases the money. Three roles, three records, in that order.
+     *
+     * This endpoint used to be a single `approve` that took a run straight from
+     * `processed` to `approved` and locked it, on the say-so of one hr-admin. It
+     * skipped Finance and the MD entirely, left `hr_approved_at`,
+     * `finance_approved_at` and `md_approved_at` all null, and produced a locked
+     * payroll with no approval trail behind it. The web has always enforced the
+     * chain; the phone was a way around it.
+     */
+    public function hrApprove(PayrollRun $payroll)
+    {
+        if (!request()->user()->hasAnyRole(['super-admin', 'hr-admin'])) {
+            abort(403, 'Only HR can give the first approval.');
+        }
+
+        if ($payroll->status !== 'processed') {
+            return response()->json([
+                'message' => 'Payroll must be processed before HR approval.',
+            ], 422);
+        }
+
+        $payroll->update([
+            'status'          => 'hr_approved',
+            'hr_approved_by'  => request()->user()->id,
+            'hr_approved_at'  => now(),
+        ]);
+
+        return response()->json(['data' => ['status' => 'hr_approved']]);
+    }
+
+    /** Stage 2 of 3 — Finance approval. A different role from HR, deliberately. */
+    public function financeApprove(PayrollRun $payroll)
+    {
+        if (!request()->user()->hasAnyRole(['super-admin', 'payroll-officer'])) {
+            abort(403, 'Only Finance can give the second approval.');
+        }
+
+        if ($payroll->status !== 'hr_approved') {
+            return response()->json([
+                'message' => 'Payroll must be HR-approved before Finance approval.',
+            ], 422);
+        }
+
+        $payroll->update([
+            'status'               => 'finance_approved',
+            'finance_approved_by'  => request()->user()->id,
+            'finance_approved_at'  => now(),
+        ]);
+
+        return response()->json(['data' => ['status' => 'finance_approved']]);
+    }
+
+    /**
+     * Stage 3 of 3 — MD final approval, which locks the run.
+     *
+     * Locking happens here and only here, exactly as on the web: a run is locked
+     * because the MD released it, not because somebody approved something.
+     *
+     * Withholding individual payslips is intentionally NOT offered on the phone.
+     * The web does it by selecting which payslips to release, and a decision to
+     * withhold somebody's pay should be taken in front of the full list rather
+     * than on a handset.
+     */
     public function approve(PayrollRun $payroll)
     {
-        if (!request()->user()->hasRole(['super-admin','hr-admin'])) abort(403);
-        if ($payroll->status !== 'processed') {
-            return response()->json(['message' => 'Must be processed before approval.'], 422);
+        if (!request()->user()->hasAnyRole(['super-admin', 'md'])) {
+            abort(403, 'Only the MD can give final approval.');
         }
+
+        if ($payroll->status !== 'finance_approved') {
+            return response()->json([
+                'message' => 'Payroll must be Finance-approved before MD approval.',
+            ], 422);
+        }
+
         $payroll->update([
-            'status'      => 'approved',
-            'approved_by' => request()->user()->id,
-            'approved_at' => now(),
-            'locked_at'   => now(),
-            'locked_by'   => request()->user()->id,
+            'status'         => 'md_approved',
+            'md_approved_by' => request()->user()->id,
+            'md_approved_at' => now(),
+            'approved_by'    => request()->user()->id,
+            'approved_at'    => now(),
+            'locked_at'      => now(),
+            'locked_by'      => request()->user()->id,
         ]);
-        return response()->json(['data' => ['status' => 'approved']]);
+
+        return response()->json(['data' => ['status' => 'md_approved']]);
     }
 
     public function payslips(PayrollRun $payroll)

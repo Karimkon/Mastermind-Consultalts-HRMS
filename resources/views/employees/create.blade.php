@@ -120,10 +120,9 @@
                     <div class="sm:col-span-2">
                         <label class="form-label">Payment Mode <span class="text-red-500">*</span></label>
                         <select name="payment_mode" class="form-input">
-                            <option value="bank"   @selected(old('payment_mode','bank')==='bank')>Bank Transfer (EFT)</option>
-                            <option value="mtn"    @selected(old('payment_mode')==='mtn')>MTN Mobile Money</option>
-                            <option value="airtel" @selected(old('payment_mode')==='airtel')>Airtel Mobile Money</option>
-                            <option value="cash"   @selected(old('payment_mode')==='cash')>Cash</option>
+                            @foreach(\App\Models\Employee::PAYMENT_CHANNELS as $v=>$l)
+                            <option value="{{ $v }}" @selected(old('payment_mode','bank')===$v)>{{ $l }}</option>
+                            @endforeach
                         </select>
                     </div>
                     <div>
@@ -137,6 +136,11 @@
                     <div>
                         <label class="form-label">Bank Branch</label>
                         <input type="text" name="bank_branch" value="{{ old('bank_branch') }}" class="form-input" placeholder="e.g. Kampala Main">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="form-label">Mobile Money Number</label>
+                        <input type="text" name="mobile_money_number" value="{{ old('mobile_money_number') }}" class="form-input" placeholder="e.g. 0776123456">
+                        <p class="text-xs text-slate-400 mt-1">Required when the payment mode is MTN or Airtel Mobile Money.</p>
                     </div>
                     <div>
                         <label class="form-label">Tax Number</label>

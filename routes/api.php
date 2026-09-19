@@ -87,6 +87,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('payroll',                 [PayrollApiController::class, 'store']);
     Route::get('payroll/{payroll}',        [PayrollApiController::class, 'show']);
     Route::post('payroll/{payroll}/process',[PayrollApiController::class, 'process']);
+    // Payroll approval is three stages by three different roles, and the phone
+    // enforces the same order the web does. `approve` is the MD's final release
+    // and is the only step that locks the run.
+    Route::post('payroll/{payroll}/hr-approve', [PayrollApiController::class, 'hrApprove']);
+    Route::post('payroll/{payroll}/finance-approve', [PayrollApiController::class, 'financeApprove']);
     Route::post('payroll/{payroll}/approve',[PayrollApiController::class, 'approve']);
     Route::get('payroll/{payroll}/payslips',[PayrollApiController::class, 'payslips']);
     Route::get('my-payslips',              [PayrollApiController::class, 'myPayslips']);

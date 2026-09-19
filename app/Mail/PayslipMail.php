@@ -17,12 +17,26 @@ class PayslipMail extends Mailable
     public function envelope(): Envelope
     {
         $month = \Carbon\Carbon::createFromDate($this->run->year, $this->run->month, 1)->format('F Y');
-        return new Envelope(subject: "Your Payslip — {$month}");
+
+        // Sent from the authenticated SMTP account, but replies go to payroll.
+        // Overriding the From address instead would be rejected by the mail
+        // provider, since it only permits its own verified sender.
+        return new Envelope(
+            subject: "Your Payslip — {$month}",
+            replyTo: [new \Illuminate\Mail\Mailables\Address(
+                \App\Models\Setting::get('company_email', 'payroll@mastermindconsults.co.ug'),
+                'Mastermind Consult Ltd Payroll'
+            )],
+        );
     }
 
     public function content(): Content
     {
-        return new Content(view: 'emails.payslip');
+        // The view refers to the run as $payroll_run, matching the payslip PDF
+        // template; the Mailable property is $run, so bind it explicitly.
+        return new Content(view: 'emails.payslip', with: [
+            'payroll_run' => $this->run,
+        ]);
     }
 
     public function attachments(): array

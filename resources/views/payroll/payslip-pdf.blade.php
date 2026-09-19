@@ -3,62 +3,95 @@
 <head>
 <meta charset="UTF-8">
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: DejaVu Sans, Arial, sans-serif; font-size:10px; color:#111; background:#fff; }
-.page { padding:22px 26px; }
+/* One family for the whole slip. DejaVu Sans ships only 400 and 700, so any
+   intermediate weight (600) makes DomPDF fall back to a serif face — which is
+   why the employee name used to render in a different font from the table
+   below it. Every rule here sticks to 400 or 700. */
+* { margin:0; padding:0; box-sizing:border-box;
+    font-family:"DejaVu Sans", Arial, sans-serif; }
+/* Type is set larger than a typical payslip: these are read on phones and
+   printed for staff on site, and removing the employer-contributions block
+   freed the vertical space to do it while still fitting one A4 page. */
+body { font-family:"DejaVu Sans", Arial, sans-serif; font-size:12.5px; color:#111; background:#fff; }
+.page { padding:24px 28px; }
 
 table { border-collapse:collapse; }
 
 /* ── Header ── */
 .hdr { width:100%; }
 .hdr td { vertical-align:middle; padding:0; }
-.co-name { font-size:14px; font-weight:700; color:#ea580c; letter-spacing:.02em; }
-.co-addr { font-size:8px; color:#555; line-height:1.65; margin-top:3px; }
-.slip-badge { background:#ea580c; color:#fff; font-size:12px; font-weight:700;
-              padding:9px 16px; text-align:center; letter-spacing:.08em; }
+.co-name { font-size:19px; font-weight:700; color:#ea580c; letter-spacing:.02em; }
+.co-addr { font-size:10px; color:#555; line-height:1.6; margin-top:4px; }
+.slip-badge { background:#ea580c; color:#fff; font-size:15px; font-weight:700;
+              padding:10px 20px; text-align:center; letter-spacing:.08em; }
 
 /* ── Orange divider ── */
-.rule { border:none; border-top:2.5px solid #ea580c; margin:9px 0; }
+.rule { border:none; border-top:2.5px solid #ea580c; margin:10px 0; }
 
 /* ── Employee info row ── */
-.info { width:100%; margin-bottom:11px; }
-.info th { background:#ea580c; color:#fff; font-size:7.5px; font-weight:700;
-           text-transform:uppercase; letter-spacing:.04em; padding:5px 5px;
+.info { width:100%; margin-bottom:13px; }
+.info th { background:#ea580c; color:#fff; font-size:9.5px; font-weight:700;
+           text-transform:uppercase; letter-spacing:.04em; padding:6px 5px;
            text-align:center; border:1px solid #c2410c; }
-.info td { padding:5px 5px; text-align:center; font-size:9.5px; font-weight:600;
+.info td { padding:7px 5px; text-align:center; font-size:12px; font-weight:400;
            border:1px solid #d1d5db; background:#fff; }
 
 /* ── Main earnings/deductions/balances table ── */
-.mt { width:100%; margin-bottom:11px; }
-.mt th { background:#ea580c; color:#fff; font-size:8px; font-weight:700;
-         text-transform:uppercase; letter-spacing:.03em; padding:5px 7px;
+.mt { width:100%; margin-bottom:13px; }
+.mt th { background:#ea580c; color:#fff; font-size:10.5px; font-weight:700;
+         text-transform:uppercase; letter-spacing:.03em; padding:7px 8px;
          border:1px solid #c2410c; text-align:left; }
 .mt th.r { text-align:right; }
-.mt td { padding:4px 7px; border:1px solid #e5e7eb; font-size:9.5px; vertical-align:middle; }
+.mt td { padding:6px 8px; border:1px solid #e5e7eb; font-size:12px; vertical-align:middle; }
 .mt td.r { text-align:right; }
-.mt td.bal { font-weight:700; font-size:8.5px; color:#374151; background:#f9fafb; }
-.mt td.bval { font-weight:700; text-align:right; background:#f9fafb; }
-.mt tr.totrow td { background:#f3f4f6; font-weight:700; border-top:1.5px solid #ea580c; }
+/* The balances column is reference information, so it stays regular weight.
+   The only bold figures on the slip are the two totals below and the net pay
+   band, which is what the eye should land on. */
+.mt td.bal { font-weight:400; font-size:12px; color:#374151; background:#f9fafb; }
+.mt td.bval { font-weight:400; text-align:right; background:#f9fafb; font-size:12px; }
+.mt tr.totrow td { background:#f3f4f6; font-weight:700; border-top:1.5px solid #ea580c; font-size:12.5px; }
+/* Blank spacer between the two totals — no fill and no side rules, so it reads
+   as a genuine gap. It keeps its top rule so the deductions block above still
+   closes off cleanly. */
+.mt tr.totrow td.gap { background:#fff; border:none; border-top:1.5px solid #ea580c; }
 
-/* ── Total Remitted ── */
-.remit { width:100%; margin-bottom:11px; }
-.remit td { padding:8px 10px; }
-.remit td.lbl { background:#111827; color:#fff; font-weight:700; font-size:11px;
+/* ── Orange block outlines ──
+   Each pair of columns (earned income, deductions, balances) is boxed in
+   orange so the three read as separate panels rather than one wide grid.
+   gl = left edge of a block, gr = right edge. */
+.info th.gl, .info td.gl,
+.mt   th.gl, .mt   td.gl,
+.bank th.gl, .bank td.gl { border-left:1.5px solid #ea580c; }
+
+.info th.gr, .info td.gr,
+.mt   th.gr, .mt   td.gr,
+.bank th.gr, .bank td.gr { border-right:1.5px solid #ea580c; }
+
+/* Close the single-row tables along the bottom. */
+.info tbody td, .bank tbody td { border-bottom:1.5px solid #ea580c; }
+
+/* Close the two totals blocks, leaving the gap between them open. */
+.mt tr.totrow td.gl, .mt tr.totrow td.gr { border-bottom:1.5px solid #ea580c; }
+
+/* ── Net pay band ── */
+.remit { width:100%; margin-bottom:13px; }
+.remit td { padding:11px 12px; }
+.remit td.lbl { background:#111827; color:#fff; font-weight:700; font-size:14px;
                 letter-spacing:.04em; width:70%; }
-.remit td.amt { background:#ea580c; color:#fff; font-weight:700; font-size:14px;
+.remit td.amt { background:#ea580c; color:#fff; font-weight:700; font-size:19px;
                 text-align:right; }
 
-/* ── Bank / Personal Details ── */
+/* ── Payment details ── */
 .bank { width:100%; margin-bottom:0; }
-.bank th { background:#ea580c; color:#fff; font-size:8px; font-weight:700;
-           text-transform:uppercase; letter-spacing:.03em; padding:5px 7px;
+.bank th { background:#ea580c; color:#fff; font-size:10.5px; font-weight:700;
+           text-transform:uppercase; letter-spacing:.03em; padding:7px 8px;
            border:1px solid #c2410c; text-align:center; }
-.bank td { padding:6px 7px; border:1px solid #e5e7eb; font-size:10px;
-           font-weight:600; text-align:center; }
+.bank td { padding:9px 8px; border:1px solid #e5e7eb; font-size:12.5px;
+           font-weight:400; text-align:center; }
 
 /* ── Footer ── */
-.footer { margin-top:14px; padding-top:6px; border-top:1px solid #e5e7eb;
-          font-size:7.5px; color:#9ca3af; text-align:center; }
+.footer { margin-top:16px; padding-top:7px; border-top:1px solid #e5e7eb;
+          font-size:9px; color:#9ca3af; text-align:center; }
 </style>
 </head>
 <body>
@@ -81,21 +114,35 @@ table { border-collapse:collapse; }
       $deployment = $deptName ?: '—';
   }
 
-  // Component lists
-  $allComps = collect($payslip->component_details ?? []);
+  // Component lists — orderedComponents() puts PAYE before NSSF
+  $allComps = collect($payslip->orderedComponents());
   $earns    = $allComps->where('type', 'allowance')->values();
   $deds     = $allComps->where('type', 'deduction')->values();
 
-  // Build rows arrays
-  $earnRows = [['Basic Pay', $payslip->basic_salary]];
+  $employeeNssf = $payslip->employeeNssf();
+  $employerNssf = $payslip->employerNssf();
+  $totalNssf    = $payslip->totalNssf();
+
+  // The employer's 10% NSSF is shown on both sides of the slip: added to earned
+  // income so the employee sees the full cost of employing them, then taken off
+  // again under deductions because it is remitted straight to NSSF. The two
+  // entries cancel, so net pay is exactly what it was before.
+  $earnRows = [['Gross Pay', $payslip->gross_salary]];
   foreach ($earns as $e) $earnRows[] = [$e['name'], $e['amount']];
+  if ($employerNssf > 0) $earnRows[] = ['NSSF (Employer 10%)', $employerNssf];
 
   $dedRows = [];
   foreach ($deds as $d) $dedRows[] = [$d['name'], $d['amount']];
+  if ($employerNssf > 0) $dedRows[] = ['NSSF (Employer 10%)', $employerNssf];
+
+  $totalEarned     = $payslip->gross_salary + $employerNssf;
+  $totalDeductions = $payslip->total_deductions + $employerNssf;
 
   $balRows = [
+      // Taxable income stays the employee's gross — the employer's share is
+      // never part of the employee's taxable pay.
       ['TAXABLE INCOME',   $payslip->gross_salary],
-      ['TOTAL DEDUCTIONS', $payslip->total_deductions],
+      ['TOTAL DEDUCTIONS', $totalDeductions],
       ['NET PAY',          $payslip->net_salary],
   ];
 
@@ -106,34 +153,37 @@ table { border-collapse:collapse; }
 <table class="hdr">
 <tr>
   {{-- Logo --}}
-  <td style="width:140px; vertical-align:middle;">
+  <td style="width:200px; vertical-align:middle;">
     @if(!empty($logo))
-      <img src="{{ $logo }}" style="width:130px; height:auto;" alt="Mastermind Logo">
+      <img src="{{ $logo }}" style="width:190px; height:auto;" alt="Mastermind Logo">
     @else
-      <div style="font-size:22px; font-weight:900; color:#ea580c;">MM</div>
+      <div style="font-size:30px; font-weight:700; color:#ea580c;">MM</div>
     @endif
   </td>
   {{-- Company info + centered title --}}
   <td style="vertical-align:middle; text-align:center; padding:0 8px;">
-    <div class="co-name">MASTERMIND CONSULT LTD</div>
+    <div class="co-name">MASTERMIND CONSULT LIMITED</div>
     <div class="co-addr">
       Plot 28A Katula Road, Kisasi, P.O. Box 74915, Kampala-Uganda<br>
-      Tel: +256 393 215 289 &nbsp;&nbsp; www.mastermindconsults.co.ug
+      Tel: +256 393 215 289 &nbsp;&nbsp; www.mastermindconsults.co.ug<br>
+      payroll@mastermindconsults.co.ug
     </div>
     <div style="margin-top:7px;">
       <div class="slip-badge" style="display:inline-block; padding:7px 22px;">PAYMENT ADVISE SLIP</div>
     </div>
   </td>
   {{-- Employee Photo --}}
-  <td style="width:80px; vertical-align:middle; text-align:center;">
+  <td style="width:115px; vertical-align:middle; text-align:center;">
     @if(!empty($avatar))
-      <img src="{{ $avatar }}" style="width:70px; height:70px; object-fit:cover; border-radius:4px; border:2px solid #ea580c;" alt="Photo">
+      <img src="{{ $avatar }}" style="width:105px; height:105px; object-fit:cover; border-radius:4px; border:2px solid #ea580c;" alt="Photo">
     @else
-      <div style="width:70px; height:70px; background:#f3f4f6; border:2px solid #ea580c; display:flex; align-items:center; justify-content:center; font-size:22px; color:#9ca3af; border-radius:4px;">
-        <span style="font-size:28px; color:#d1d5db;">&#9786;</span>
+      {{-- Placeholder sized to match a real photo, so the header keeps the same
+           shape whether or not the employee has one on file. --}}
+      <div style="width:105px; height:105px; background:#f3f4f6; border:2px solid #ea580c; border-radius:4px; text-align:center;">
+        <span style="font-size:42px; line-height:105px; color:#d1d5db;">&#9786;</span>
       </div>
     @endif
-    <div style="font-size:7px; color:#6b7280; margin-top:3px;">{{ $payslip->employee->emp_number }}</div>
+    <div style="font-size:10.5px; font-weight:700; color:#6b7280; margin-top:5px;">{{ $payslip->employee->emp_number }}</div>
   </td>
 </tr>
 </table>
@@ -144,26 +194,26 @@ table { border-collapse:collapse; }
 <table class="info">
 <thead>
 <tr>
-  <th style="width:22%">NAME</th>
+  <th class="gl" style="width:22%">NAME</th>
   <th style="width:13%">ROLE</th>
   <th style="width:13%">DEPLOYMENT</th>
   <th style="width:11%">PERIOD</th>
   <th style="width:11%">PAY DATE</th>
   <th style="width:10%">PAY FREQ</th>
   <th style="width:10%">EMP NO</th>
-  <th style="width:10%">DAYS WORKED</th>
+  <th class="gr" style="width:10%">DAYS WORKED</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-  <td>{{ $emp->full_name }}</td>
+  <td class="gl">{{ $emp->full_name }}</td>
   <td>{{ $emp->designation?->title ?? '—' }}</td>
   <td>{{ $deployment }}</td>
   <td>{{ $period }}</td>
   <td>{{ $payDate }}</td>
   <td>Monthly</td>
   <td>{{ $emp->emp_number }}</td>
-  <td>{{ $payslip->worked_days }}</td>
+  <td class="gr">{{ $payslip->worked_days }}</td>
 </tr>
 </tbody>
 </table>
@@ -172,70 +222,96 @@ table { border-collapse:collapse; }
 <table class="mt">
 <thead>
 <tr>
-  <th style="width:22%">PAYMENTS</th>
-  <th class="r" style="width:12%">AMOUNT (UGX)</th>
-  <th style="width:22%">DEDUCTIONS</th>
-  <th class="r" style="width:12%">AMOUNT (UGX)</th>
-  <th style="width:18%">BALANCES</th>
-  <th class="r" style="width:14%">NET SALARY (UGX)</th>
+  <th class="gl" style="width:22%">EARNED INCOME</th>
+  <th class="r gr" style="width:12%">AMOUNT (UGX)</th>
+  <th class="gl" style="width:22%">DEDUCTIONS</th>
+  <th class="r gr" style="width:12%">AMOUNT (UGX)</th>
+  <th class="gl" style="width:18%">BALANCES</th>
+  <th class="r gr" style="width:14%">NET SALARY (UGX)</th>
 </tr>
 </thead>
 <tbody>
 @for($i = 0; $i < $rowCount; $i++)
 <tr>
   @if(isset($earnRows[$i]))
-    <td>{{ $earnRows[$i][0] }}</td>
-    <td class="r">{{ number_format($earnRows[$i][1]) }}</td>
+    <td class="gl">{{ $earnRows[$i][0] }}</td>
+    <td class="r gr">{{ number_format($earnRows[$i][1]) }}</td>
   @else
-    <td></td><td></td>
+    <td class="gl"></td><td class="gr"></td>
   @endif
   @if(isset($dedRows[$i]))
-    <td>{{ $dedRows[$i][0] }}</td>
-    <td class="r">{{ number_format($dedRows[$i][1]) }}</td>
+    <td class="gl">{{ $dedRows[$i][0] }}</td>
+    <td class="r gr">{{ number_format($dedRows[$i][1]) }}</td>
   @else
-    <td></td><td></td>
+    <td class="gl"></td><td class="gr"></td>
   @endif
   @if(isset($balRows[$i]))
-    <td class="bal">{{ $balRows[$i][0] }}</td>
-    <td class="bval">{{ number_format($balRows[$i][1]) }}</td>
+    <td class="bal gl">{{ $balRows[$i][0] }}</td>
+    <td class="bval gr">{{ number_format($balRows[$i][1]) }}</td>
   @else
-    <td></td><td></td>
+    <td class="bal gl"></td><td class="bval gr"></td>
   @endif
 </tr>
 @endfor
+{{-- The two totals sit at opposite ends with an empty gap between them, so
+     earned income reads under its own columns and deductions lands on the
+     right beside the balances. --}}
 <tr class="totrow">
-  <td>TOTAL PAYMENTS</td>
-  <td class="r">{{ number_format($payslip->gross_salary) }}</td>
-  <td>TOTAL DEDUCTIONS</td>
-  <td class="r">{{ number_format($payslip->total_deductions) }}</td>
-  <td></td>
-  <td></td>
+  <td class="gl">TOTAL EARNED INCOME</td>
+  <td class="r gr">{{ number_format($totalEarned) }}</td>
+  <td class="gap"></td>
+  <td class="gap"></td>
+  <td class="gl">TOTAL DEDUCTIONS</td>
+  <td class="r gr">{{ number_format($totalDeductions) }}</td>
 </tr>
 </tbody>
 </table>
 
-{{-- ── Total Remitted ── --}}
+{{-- ── Net Pay ── --}}
 <table class="remit">
 <tr>
-  <td class="lbl">TOTAL REMITTED</td>
+  <td class="lbl">NET PAY</td>
   <td class="amt">UGX &nbsp; {{ number_format($payslip->net_salary) }}</td>
 </tr>
 </table>
 
-{{-- ── Personal / Bank Details ── --}}
+{{-- ── How this employee is paid ──
+     Driven by paymentChannel(), so the slip shows mobile money details for a
+     mobile money employee and bank details for a bank employee, rather than a
+     fixed set of bank columns that read as blank for most casual staff. --}}
+@php
+  $channel = $emp->paymentChannel();
+
+  [$providerLabel, $providerValue, $refLabel, $refValue] = match ($channel) {
+      'mtn', 'airtel' => [
+          'MOBILE MONEY NETWORK',
+          strtoupper($channel) . ' Mobile Money',
+          'MOBILE MONEY NUMBER',
+          $emp->mobile_money_number ?: ($emp->payoutNumber() ?: '—'),
+      ],
+      'cash'   => ['PAYMENT METHOD', 'Cash',   'REFERENCE', '—'],
+      'cheque' => ['PAYMENT METHOD', 'Cheque', 'REFERENCE', '—'],
+      default  => [
+          'BANK NAME',
+          $emp->bank_name ?: '—',
+          'BANK ACCOUNT NUMBER',
+          $emp->bank_account ?: '—',
+      ],
+  };
+@endphp
 <table class="bank">
 <thead>
 <tr>
-  <th style="width:33%">BANK NAME</th>
+  <th class="gl" style="width:33%">{{ $providerLabel }}</th>
   <th style="width:34%">ACCOUNT NAME</th>
-  <th style="width:33%">BANK ACCOUNT</th>
+  <th class="gr" style="width:33%">{{ $refLabel }}</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-  <td>{{ $emp->bank_name ?: '—' }}</td>
+  <td class="gl">{{ $providerValue }}</td>
   <td>{{ $emp->full_name }}</td>
-  <td>{{ $emp->bank_account ?: '—' }}</td>
+  <td class="gr">{{ $refValue }}</td>
 </tr>
 </tbody>
 </table>

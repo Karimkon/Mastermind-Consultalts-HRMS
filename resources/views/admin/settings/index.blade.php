@@ -8,7 +8,9 @@
     <!-- Tabs sidebar -->
     <div class="w-48 flex-shrink-0">
         <div class="card overflow-hidden">
-            @foreach(['general'=>'Building','payroll'=>'Money Bill Wave','leave'=>'Calendar Minus','banking'=>'University','notifications'=>'Bell','website'=>'Globe'] as $tab => $icon)
+            {{-- 'attendance' was missing here, so the attendance / geo-fence
+                 panel existed but no tab ever selected it. --}}
+            @foreach(['general'=>'Building','payroll'=>'Money Bill Wave','leave'=>'Calendar Minus','attendance'=>'Clock','banking'=>'University','notifications'=>'Bell','website'=>'Globe'] as $tab => $icon)
             <button type="button" @click="activeTab = '{{ $tab }}'"
                 :class="activeTab === '{{ $tab }}' ? 'bg-blue-50 text-blue-700 font-semibold border-r-2 border-blue-600' : 'text-slate-600 hover:bg-slate-50'"
                 class="w-full text-left px-4 py-3 text-sm flex items-center gap-2 transition-colors">
@@ -98,31 +100,44 @@
             </div>
             <!-- Attendance / Geo-Fence -->
             <div x-show="activeTab === 'attendance'" x-cloak class="card p-6 space-y-4">
-                <h3 class="font-semibold text-slate-700 mb-2">Attendance & Geo-Fence Settings</h3>
+                <h3 class="font-semibold text-slate-700 mb-2">Attendance &amp; Geo-Fence Settings</h3>
                 <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
                     <i class="fas fa-map-marker-alt mr-1"></i>
-                    Set the office GPS coordinates below to enable geo-fenced clock-in/out. Leave blank to allow clocking from anywhere.
+                    These coordinates are the Mastermind head office (Plot 28A Katula Road, Kisaasi).
+                    They geo-fence employee clock-in and flag office clock-ins as off-site.
+                    Leave blank to allow clocking from anywhere.
                 </div>
+
+                {{-- Search the office on the map and drop the pin, rather than
+                     having to be standing there. The GPS button is still offered
+                     inside the picker for when you are. --}}
+                <x-map-picker
+                    lat-input="officeLat"
+                    lng-input="officeLng"
+                    radius-input="officeRadius"
+                    label="Head office location"
+                />
+
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="form-label">Office Latitude</label>
-                        <input type="text" name="office_lat" class="form-input" placeholder="e.g. -26.2041" value="{{ $settings['office_lat'] ?? '' }}">
-                        <p class="text-xs text-slate-400 mt-1">Decimal degrees (negative = South)</p>
+                        <input type="text" name="office_lat" id="officeLat" class="form-input" placeholder="e.g. 0.3607" value="{{ $settings['office_lat'] ?? '' }}">
+                        <p class="text-xs text-slate-400 mt-1">Decimal degrees (negative = South). Kampala is near 0.34.</p>
                     </div>
                     <div>
                         <label class="form-label">Office Longitude</label>
-                        <input type="text" name="office_lng" class="form-input" placeholder="e.g. 28.0473" value="{{ $settings['office_lng'] ?? '' }}">
-                        <p class="text-xs text-slate-400 mt-1">Decimal degrees (positive = East)</p>
+                        <input type="text" name="office_lng" id="officeLng" class="form-input" placeholder="e.g. 32.6103" value="{{ $settings['office_lng'] ?? '' }}">
+                        <p class="text-xs text-slate-400 mt-1">Decimal degrees (positive = East). Kampala is near 32.58.</p>
                     </div>
                 </div>
                 <div>
                     <label class="form-label">Geo-Fence Radius (metres)</label>
-                    <input type="number" name="geo_radius_meters" class="form-input w-36" min="50" max="5000" value="{{ $settings['geo_radius_meters'] ?? 100 }}">
-                    <p class="text-xs text-slate-400 mt-1">Employees must be within this radius to clock in/out. Minimum 50m.</p>
-                </div>
-                <div class="text-xs text-slate-500 flex items-center gap-2">
-                    <i class="fas fa-info-circle text-blue-400"></i>
-                    To find your office coordinates: open Google Maps, right-click on your office location, and copy the coordinates shown.
+                    <input type="number" name="geo_radius_meters" id="officeRadius" class="form-input w-36" min="50" max="5000" value="{{ $settings['geo_radius_meters'] ?? 150 }}">
+                    <p class="text-xs text-slate-400 mt-1">
+                        Employees must be within this radius to clock in at a site. Office clock-ins outside it are
+                        flagged as off-site but never blocked. 150m suits most compounds. The blue circle on the
+                        map shows this radius.
+                    </p>
                 </div>
             </div>
             <!-- Notifications -->

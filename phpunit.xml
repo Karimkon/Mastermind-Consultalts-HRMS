@@ -23,6 +23,12 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
+        <!-- The local .env serves this app from a XAMPP subdirectory
+             (http://localhost/Mastermind Consultalts HRMS/public). Laravel's test
+             client prefixes every request path with APP_URL, so that subdirectory
+             made every route resolve to a 404 - including routes that plainly
+             exist in route:list. Tests always use the root. -->
+        <env name="APP_URL" value="http://localhost"/>
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>

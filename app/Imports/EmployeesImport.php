@@ -28,7 +28,7 @@ class EmployeesImport implements ToModel, WithHeadingRow, SkipsOnError
         'emergency_contact_name','emergency_contact_phone',
         'next_of_kin_name','next_of_kin_relation','next_of_kin_phone','next_of_kin_email',
         'nssf_number','tin_number','ifms_supplier_no','pension_no','tax_number',
-        'bank_name','bank_account','bank_branch','payment_mode',
+        'bank_name','bank_account','bank_branch','payment_mode','mobile_money_number',
         'ot_calc_hours','absenteeism_calc_hours','ot1_calc_hours','ot2_calc_hours','min_daily_working_hours',
         'bio',
     ];
@@ -55,6 +55,13 @@ class EmployeesImport implements ToModel, WithHeadingRow, SkipsOnError
             }
             if ($dept)  $updates['department_id']  = $dept->id;
             if ($desig) $updates['designation_id'] = $desig->id;
+
+            if (isset($updates['payment_mode'])) {
+                $updates['payment_mode'] = Employee::normalisePaymentMode(
+                    $updates['payment_mode'],
+                    $row['mobile_money_number'] ?? $updates['phone'] ?? $employee->phone
+                );
+            }
 
             if (!empty($updates)) {
                 $employee->update($updates);
@@ -100,6 +107,11 @@ class EmployeesImport implements ToModel, WithHeadingRow, SkipsOnError
                 $data[$col] = $row[$col];
             }
         }
+
+        $data['payment_mode'] = Employee::normalisePaymentMode(
+            $data['payment_mode'] ?? null,
+            $data['mobile_money_number'] ?? $data['phone'] ?? null
+        );
 
         return new Employee($data);
     }

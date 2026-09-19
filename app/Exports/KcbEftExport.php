@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 namespace App\Exports;
 
 use App\Models\PayrollRun;
@@ -51,8 +51,8 @@ class KcbEftExport implements FromArray, WithEvents
              "Credit/To Account", "Beneficiary Bank", "BIC/SORT Code", "Amount", "My reference", "Beneficiary Ref"],
         ];
 
-        $payslips = $this->run->payslips()->with("employee")->get()
-            ->filter(fn($s) => in_array($s->employee->payment_mode ?? "bank", ["bank", ""]));
+        $payslips = $this->run->payableSlips("bank")
+            ->filter(fn($s) => filled($s->employee->bank_account));
 
         foreach ($payslips as $slip) {
             $emp = $slip->employee;

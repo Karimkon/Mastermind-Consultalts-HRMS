@@ -594,14 +594,14 @@
         <div x-show="tab==='salary'" x-cloak class="space-y-5">
 
             {{-- Banking --}}
-            <div class="card p-6" x-data="{ payMode: '{{ old('payment_mode', $employee->payment_mode ?? 'bank') }}' }">
+            <div id="payment" class="card p-6" x-data="{ payMode: '{{ old('payment_mode', $employee->paymentChannel()) }}' }">
                 <h3 class="section-title"><i class="fas fa-university text-green-500"></i> Banking Details</h3>
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
                     <div>
                         <label class="form-label">Payment Mode</label>
                         <select name="payment_mode" class="form-input" x-model="payMode">
-                            @foreach(['bank'=>'Bank Transfer','mtn'=>'MTN Mobile Money','airtel'=>'Airtel Mobile Money','cash'=>'Cash'] as $v=>$l)
-                            <option value="{{ $v }}" @selected(old('payment_mode',$employee->payment_mode ?? 'bank')===$v)>{{ $l }}</option>
+                            @foreach(\App\Models\Employee::PAYMENT_CHANNELS as $v=>$l)
+                            <option value="{{ $v }}" @selected(old('payment_mode', $employee->paymentChannel())===$v)>{{ $l }}</option>
                             @endforeach
                         </select>
                     </div>

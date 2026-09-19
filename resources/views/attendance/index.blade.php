@@ -12,7 +12,8 @@
     <x-stat-card icon="fas fa-check-circle" label="Present" :value="$summary['present']" color="green" />
     <x-stat-card icon="fas fa-times-circle" label="Absent" :value="$summary['absent']" color="red" />
     <x-stat-card icon="fas fa-clock" label="Late" :value="$summary['late']" color="yellow" />
-    <x-stat-card icon="fas fa-users" label="Total Active" :value="$summary['total']" color="blue" />
+    {{-- present + absent + late for the current filter, not a headcount --}}
+    <x-stat-card icon="fas fa-list-check" label="Records Shown" :value="$summary['total']" color="blue" />
 </div>
 
 {{-- Clock In/Out (for employees) --}}
@@ -31,17 +32,45 @@
 @endif
 
 <x-filter-bar :action="route('attendance.index')">
-    <div><label class="form-label">Date</label><input type="date" name="date" value="{{ $date }}" class="form-input"></div>
+    <div><label class="form-label">Date</label>
+        <input type="date" name="date" value="{{ $date }}" class="form-input">
+    </div>
+    <div><label class="form-label">From</label>
+        <input type="date" name="date_from" value="{{ request('date_from') }}" class="form-input">
+    </div>
+    <div><label class="form-label">To</label>
+        <input type="date" name="date_to" value="{{ request('date_to') }}" class="form-input">
+    </div>
+    {{-- Client, section and department are only meaningful to someone who can
+         see more than their own record. --}}
+    @if($canSeeAll)
+    <div><label class="form-label">Client</label>
+        <select name="client_id" class="form-select w-48 select2">
+            <option value="">All Clients</option>
+            @foreach($clients as $client)
+                <option value="{{ $client->id }}" {{ request('client_id')==$client->id?'selected':'' }}>{{ $client->company_name }}</option>
+            @endforeach
+        </select>
+    </div>
+    <div><label class="form-label">Section</label>
+        <select name="section" class="form-select w-44 select2">
+            <option value="">All Sections</option>
+            @foreach($sections as $section)
+                <option value="{{ $section }}" {{ request('section')===$section?'selected':'' }}>{{ $section }}</option>
+            @endforeach
+        </select>
+    </div>
     <div><label class="form-label">Department</label>
         <select name="department_id" class="form-select w-44 select2">
             <option value="">All Departments</option>
             @foreach($departments as $dept)<option value="{{ $dept->id }}" {{ request('department_id')==$dept->id?'selected':'' }}>{{ $dept->name }}</option>@endforeach
         </select>
     </div>
+    @endif
     <div><label class="form-label">Status</label>
         <select name="status" class="form-select w-36">
             <option value="">All</option>
-            @foreach(["present"=>"Present","absent"=>"Absent","late"=>"Late","half_day"=>"Half Day"] as $v=>$l)<option value="{{ $v }}" {{ request('status')==$v?'selected':'' }}>{{ $l }}</option>@endforeach
+            @foreach(["present"=>"Present","absent"=>"Absent","late"=>"Late","half_day"=>"Half Day","leave"=>"On Leave"] as $v=>$l)<option value="{{ $v }}" {{ request('status')==$v?'selected':'' }}>{{ $l }}</option>@endforeach
         </select>
     </div>
 </x-filter-bar>
@@ -49,6 +78,10 @@
 <x-data-table>
     <thead class="bg-slate-50"><tr>
         <th class="table-head px-6 py-3 text-left">Employee</th>
+        <th class="table-head px-4 py-3 text-left">Date</th>
+        @if($canSeeAll)
+        <th class="table-head px-4 py-3 text-left">Client / Section</th>
+        @endif
         <th class="table-head px-4 py-3 text-left">Clock In</th>
         <th class="table-head px-4 py-3 text-left">Clock Out</th>
         <th class="table-head px-4 py-3 text-left">Hours</th>
@@ -59,6 +92,13 @@
         @forelse($logs as $log)
         <tr class="table-row">
             <td class="px-6 py-3"><div class="flex items-center gap-3"><img src="{{ $log->employee->avatar_url }}" class="w-8 h-8 rounded-full object-cover"><div><p class="text-sm font-medium text-slate-800">{{ $log->employee->full_name }}</p><p class="text-xs text-slate-500">{{ $log->employee->department?->name }}</p></div></div></td>
+            <td class="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">{{ $log->date?->format('d M Y') ?? '—' }}</td>
+            @if($canSeeAll)
+            <td class="px-4 py-3 text-sm">
+                <p class="text-slate-700">{{ $log->client?->company_name ?? $log->employee->clients->first()?->company_name ?? '—' }}</p>
+                <p class="text-xs text-slate-400">{{ $log->employee->work_location ?: '—' }}</p>
+            </td>
+            @endif
             <td class="px-4 py-3 text-sm text-slate-600">{{ $log->clock_in?->format('H:i') ?? '—' }}</td>
             <td class="px-4 py-3 text-sm text-slate-600">{{ $log->clock_out?->format('H:i') ?? '—' }}</td>
             <td class="px-4 py-3 text-sm text-slate-600">
@@ -68,11 +108,21 @@
             <td class="px-4 py-3"><span class="badge-{{ $log->status==='present'?'green':($log->status==='late'?'yellow':'red') }}">{{ ucfirst($log->status) }}</span></td>
         </tr>
         @empty
-        <tr><td colspan="6" class="py-12 text-center text-slate-400">No attendance records for {{ $date }}</td></tr>
+        <tr><td colspan="{{ $canSeeAll ? 8 : 7 }}" class="py-12 text-center">
+            <i class="fas fa-calendar-xmark text-3xl text-slate-300 mb-3 block"></i>
+            <p class="text-slate-500 text-sm">
+                No attendance records{{ $date ? ' for ' . $date : ' match these filters' }}.
+            </p>
+            @if($canSeeAll)
+            <p class="text-slate-400 text-xs mt-1">
+                Records appear when employees clock in, or when you add them with <strong>Mark Attendance</strong>.
+            </p>
+            @endif
+        </td></tr>
         @endforelse
     </tbody>
 </x-data-table>
-<div class="mt-4">{{ $logs->withQueryString()->links() }}</div>
+<div class="mt-4">{{ $logs->links() }}</div>
 @endsection
 @push("scripts")
 <script>

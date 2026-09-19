@@ -42,7 +42,7 @@ class SettingController extends Controller
             if ($title || $imgPath) {
                 $slides[] = [
                     'image'      => $imgPath,
-                    'eyebrow'    => $request->input('slide_eyebrow')[$i] ?? 'Mastermind Consults',
+                    'eyebrow'    => $request->input('slide_eyebrow')[$i] ?? 'Mastermind Consult Ltd',
                     'title'      => $title,
                     'subtitle'   => $request->input('slide_subtitle')[$i] ?? '',
                     'btn1_label' => $request->input('slide_btn1_label')[$i] ?? 'View Jobs',

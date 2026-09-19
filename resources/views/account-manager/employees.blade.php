@@ -100,10 +100,26 @@
                         <li><i class="fas fa-circle text-slate-300 mr-1 text-xs"></i>emp_number (auto if blank)</li>
                         <li><i class="fas fa-circle text-slate-300 mr-1 text-xs"></i>department, designation</li>
                         <li><i class="fas fa-circle text-slate-300 mr-1 text-xs"></i>phone, national_id</li>
-                        <li><i class="fas fa-circle text-slate-300 mr-1 text-xs"></i>bank / mobile money</li>
+                        <li><i class="fas fa-circle text-slate-300 mr-1 text-xs"></i>bank_name, bank_account</li>
+                        <li><i class="fas fa-circle text-slate-300 mr-1 text-xs"></i>mobile_money_number</li>
                         <li><i class="fas fa-circle text-slate-300 mr-1 text-xs"></i>charge_paye, charge_nssf</li>
                     </ul>
                 </div>
+            </div>
+
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs text-amber-900">
+                <p class="font-semibold mb-1"><i class="fas fa-money-check-dollar mr-1"></i>payment_mode must be one of:</p>
+                <p class="mb-1">
+                    <code class="bg-white px-1 rounded border">bank</code>
+                    <code class="bg-white px-1 rounded border">mtn</code>
+                    <code class="bg-white px-1 rounded border">airtel</code>
+                    <code class="bg-white px-1 rounded border">cash</code>
+                    <code class="bg-white px-1 rounded border">cheque</code>
+                </p>
+                <p>Use <strong>bank</strong> with a bank_account, or <strong>mtn</strong>/<strong>airtel</strong> with a
+                   mobile_money_number. If you just write <em>mobile money</em>, the network is worked out from the number.
+                   Employees with no account number and no phone number cannot be paid and will be listed on the
+                   Payment Readiness screen.</p>
             </div>
 
             <a href="{{ route('account-manager.employees.full-import-template') }}"

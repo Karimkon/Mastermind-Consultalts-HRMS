@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-<title>Mastermind Consultants HRMS — System Documentation</title>
+<title>Mastermind Consult Ltd HRMS — System Documentation</title>
 <style>
     /* ── Base ─────────────────────────────────────────── */
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -375,7 +375,7 @@
         <div class="cover-logo-box">M</div>
 
         <div class="cover-tag">System Documentation &nbsp;·&nbsp; Version 1.0</div>
-        <div class="cover-title">Mastermind Consultants<br>HRMS</div>
+        <div class="cover-title">Mastermind Consult Ltd<br>HRMS</div>
         <div class="cover-subtitle">Human Resource Management System</div>
 
         <hr class="cover-divider">
@@ -390,7 +390,7 @@
         </div>
         <div class="cover-meta-row">
             <span class="cover-meta-label">Client</span>
-            <span class="cover-meta-value">Mastermind Consultants</span>
+            <span class="cover-meta-value">Mastermind Consult Ltd</span>
         </div>
         <div class="cover-meta-row">
             <span class="cover-meta-label">Document Type</span>
@@ -438,7 +438,7 @@
 <div class="section">
     <div class="toc-header">
         <h2>Table of Contents</h2>
-        <p style="color:#64748b;font-size:8.5pt;margin-top:4px;margin-bottom:0;">Mastermind Consultants HRMS &nbsp;·&nbsp; Complete System Documentation</p>
+        <p style="color:#64748b;font-size:8.5pt;margin-top:4px;margin-bottom:0;">Mastermind Consult Ltd HRMS &nbsp;·&nbsp; Complete System Documentation</p>
     </div>
 
     <div class="toc-group">Overview &amp; Architecture</div>
@@ -571,8 +571,8 @@
     <div class="sub-section">
         <div class="sub-title">1.1 Introduction</div>
         <p>
-            The <strong>Mastermind Consultants HRMS</strong> is a comprehensive, web-based Human Resource
-            Management System purpose-built for Mastermind Consultants. It consolidates all HR operations —
+            The <strong>Mastermind Consult Ltd HRMS</strong> is a comprehensive, web-based Human Resource
+            Management System purpose-built for Mastermind Consult Ltd. It consolidates all HR operations —
             from hiring to retirement — into a single, secure, and intuitive platform. The system is
             developed and delivered by <strong>Ehsan Developers</strong>.
         </p>
@@ -585,7 +585,7 @@
         <div class="callout">
             <strong>Mission Statement:</strong> To digitise and streamline every HR touchpoint — reducing
             administrative overhead, enforcing compliance, and providing real-time workforce intelligence
-            to leadership at Mastermind Consultants.
+            to leadership at Mastermind Consult Ltd.
         </div>
     </div>
 
@@ -1526,7 +1526,7 @@
         <div style="font-size:8pt; letter-spacing:0.15em; text-transform:uppercase; color:#60a5fa; margin-bottom:12px;">
             Document Certification
         </div>
-        <h2 style="font-size:20pt; color:#fff; margin-bottom:6px;">Mastermind Consultants HRMS</h2>
+        <h2 style="font-size:20pt; color:#fff; margin-bottom:6px;">Mastermind Consult Ltd HRMS</h2>
         <p style="color:#64748b; font-size:10pt; margin-bottom:40px;">System Documentation — Version 1.0</p>
 
         <table style="width:100%; border-collapse:collapse;">
@@ -1542,7 +1542,7 @@
                 <td style="width:50%; vertical-align:top; padding-left:40px; border-left:1px solid #1e293b;">
                     <div style="border-top:1px solid #334155; padding-top:16px; margin-top:60px;">
                         <p style="color:#94a3b8; font-size:8pt; margin-bottom:4px;">Prepared for</p>
-                        <p style="color:#f1f5f9; font-size:13pt; font-weight:bold; margin-bottom:2px;">Mastermind Consultants</p>
+                        <p style="color:#f1f5f9; font-size:13pt; font-weight:bold; margin-bottom:2px;">Mastermind Consult Ltd</p>
                         <p style="color:#60a5fa; font-size:9pt;">Client Organisation</p>
                         <p style="color:#64748b; font-size:8.5pt; margin-top:8px;">{{ \Carbon\Carbon::now()->format('F j, Y') }}</p>
                     </div>
@@ -1552,7 +1552,7 @@
 
         <div style="margin-top:60px; padding:20px; background:#1e293b; border-radius:8px; border:1px solid #334155;">
             <p style="font-size:8pt; color:#475569; margin:0; text-align:center;">
-                This document is <strong style="color:#64748b;">confidential and proprietary</strong> to Mastermind Consultants and Ehsan Developers.
+                This document is <strong style="color:#64748b;">confidential and proprietary</strong> to Mastermind Consult Ltd and Ehsan Developers.
                 It may not be reproduced, distributed, or disclosed to any third party without prior written consent.
                 &copy; 2026 Ehsan Developers. All rights reserved.
             </p>

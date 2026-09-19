@@ -76,16 +76,43 @@
                 </div>
                 <div>
                     <label class="form-label">Geo-Fence Radius (metres)</label>
-                    <input type="number" name="geo_fence_radius" min="10" max="5000"
+                    <input type="number" name="geo_fence_radius" id="adminGeoRadius" min="10" max="5000"
                            class="form-input" value="{{ old('geo_fence_radius', $client->geo_fence_radius ?? 100) }}">
                 </div>
             </div>
+
+            {{-- Some clients keep their own register and do not want staff
+                 clocking in here; their payroll runs off the manual days sheet. --}}
+            <div class="mt-4 flex items-start gap-3 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                <input type="hidden" name="attendance_enabled" value="0">
+                <input type="checkbox" name="attendance_enabled" value="1" id="attendance_enabled"
+                       class="mt-1"
+                       {{ old('attendance_enabled', $client->attendance_enabled ?? true) ? 'checked' : '' }}>
+                <label for="attendance_enabled" class="cursor-pointer">
+                    <span class="font-medium text-slate-700">Use clock in / out for this client</span>
+                    <p class="text-xs text-slate-500 mt-0.5">
+                        Untick if {{ $client->company_name }} keeps its own attendance register. Their employees will not
+                        see clock in / out, and payroll for this client will run from the manual days upload instead.
+                    </p>
+                </label>
+            </div>
             <div class="mt-4">
                 <label class="form-label">Work Site Address</label>
-                <input type="text" name="work_site_address" class="form-input"
+                <input type="text" name="work_site_address" id="adminSiteAddress" class="form-input"
                        value="{{ old('work_site_address', $client->work_site_address) }}"
                        placeholder="e.g. Bukoto Plot 78, Kampala">
             </div>
+
+            {{-- Pick the premises on the map. The lat/lng boxes below stay
+                 editable for anyone who already has exact coordinates. --}}
+            <x-map-picker
+                lat-input="adminSiteLat"
+                lng-input="adminSiteLng"
+                address-input="adminSiteAddress"
+                radius-input="adminGeoRadius"
+                label="Work site location"
+            />
+
             <div class="grid grid-cols-2 gap-4 mt-4">
                 <div>
                     <label class="form-label">Latitude</label>
@@ -98,9 +125,6 @@
                            value="{{ old('work_site_lng', $client->work_site_lng) }}" placeholder="e.g. 32.5825">
                 </div>
             </div>
-            <button type="button" onclick="adminDetectLocation()" class="btn-secondary text-sm mt-2">
-                <i class="fas fa-crosshairs mr-1"></i> Use My Current Location
-            </button>
         </div>
     </div>
     <div class="flex gap-3 mt-4">
@@ -108,15 +132,6 @@
         <a href="{{ route('admin.clients.show', $client) }}" class="btn-secondary">Cancel</a>
     </div>
 </form>
-@push('scripts')
-<script>
-function adminDetectLocation() {
-    if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
-    navigator.geolocation.getCurrentPosition(pos => {
-        document.getElementById('adminSiteLat').value = pos.coords.latitude.toFixed(7);
-        document.getElementById('adminSiteLng').value = pos.coords.longitude.toFixed(7);
-    }, err => alert('Location error: ' + err.message));
-}
-</script>
-@endpush
+{{-- The old adminDetectLocation() helper is gone: the map picker above owns
+     both searching and the "use my current location" button now. --}}
 @endsection

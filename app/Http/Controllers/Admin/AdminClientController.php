@@ -106,6 +106,9 @@ class AdminClientController extends Controller
             'deployment_area', 'work_area', 'status', 'notes',
             'payment_day', 'work_site_address', 'work_site_lat', 'work_site_lng', 'geo_fence_radius'
         ));
+        // Checkbox: paired with a hidden 0 in the form so unticking is recorded.
+        $client->update(['attendance_enabled' => $request->boolean('attendance_enabled')]);
+
         if ($request->filled('client_email')) $client->update(['email' => $request->client_email]);
 
         return redirect()->route('admin.clients.show', $client)
