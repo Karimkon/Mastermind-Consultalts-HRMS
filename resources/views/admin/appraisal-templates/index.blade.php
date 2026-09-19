@@ -2,7 +2,7 @@
 @section('title','Appraisal Templates')
 @section('content')
 
-<x-page-header title="Appraisal Weighting"
+<x-page-header title="Performance Management"
     subtitle="Set how each role's scorecard is weighted, and the KPIs it starts with">
     <a href="{{ route('appraisals.index') }}" class="btn-secondary"><i class="fas fa-clipboard-check mr-1"></i> Appraisals</a>
 </x-page-header>

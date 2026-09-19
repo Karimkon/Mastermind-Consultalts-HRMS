@@ -262,7 +262,7 @@
         @endrole
         @role('super-admin|hr-admin')
         <a href="{{ route('admin.appraisal-templates.index') }}" class="sidebar-link {{ request()->routeIs('admin.appraisal-templates.*') ? 'active' : '' }}">
-            <i class="fas fa-sliders w-4 text-center"></i><span x-show="sidebarOpen">Appraisal Weighting</span>
+            <i class="fas fa-sliders w-4 text-center"></i><span x-show="sidebarOpen">Performance Management</span>
         </a>
         @endrole
         <a href="{{ route('leaves.index') }}" class="sidebar-link {{ request()->routeIs('leaves.*') ? 'active' : '' }}">
