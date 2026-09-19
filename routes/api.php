@@ -274,6 +274,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('appraisals',                         [AppraisalApiController::class, 'index']);
     Route::get('appraisals/mine',                    [AppraisalApiController::class, 'mine']);
     Route::get('appraisals/{appraisal}',             [AppraisalApiController::class, 'show']);
+    // The employee's own account, before anybody rates them. Saving and
+    // submitting are separate so a long card can be filled in over days.
+    Route::post('appraisals/{appraisal}/self-assessment',        [AppraisalApiController::class, 'saveSelfAssessment']);
+    Route::post('appraisals/{appraisal}/self-assessment/submit', [AppraisalApiController::class, 'submitSelfAssessment']);
     Route::post('appraisals/{appraisal}/score',      [AppraisalApiController::class, 'score']);
     Route::post('appraisals/{appraisal}/return',     [AppraisalApiController::class, 'returnToManager']);
     Route::post('appraisals/{appraisal}/confirm',    [AppraisalApiController::class, 'confirm']);

@@ -99,6 +99,11 @@ class AppraisalApiController extends Controller
                     'weightage' => (float) $k->weightage,
                     'actual_achieved' => $k->actual_achieved,
                     'rating' => $k->rating,
+                    // Carried separately from `rating`, which is the appraiser's.
+                    // Where the two disagree the app shows both, because that gap
+                    // is the conversation rather than an error to reconcile.
+                    'self_rating' => $k->self_rating,
+                    'self_note' => $k->self_note,
                     'evidence_note' => $k->evidence_note,
                     'weighted_index' => $k->weighted_index !== null ? (float) $k->weighted_index : null,
                 ])->values(),
@@ -117,6 +122,87 @@ class AppraisalApiController extends Controller
                 'manager_comment' => $appraisal->manager_comment,
             ]),
         ]);
+    }
+
+    /**
+     * What the employee says they achieved, before anybody rates them.
+     *
+     * Partial saves, for the same reason the appraiser gets them: a card of
+     * nineteen KRAs is not completed in one sitting on a handset, and losing half
+     * of it to a validation error would be worse than an incomplete card.
+     */
+    public function saveSelfAssessment(Request $request, Appraisal $appraisal)
+    {
+        abort_unless(
+            $appraisal->status === 'self_assessment'
+                && $request->user()->id === $appraisal->employee?->user_id,
+            403,
+            'This appraisal is not with you.'
+        );
+
+        $rows = $request->validate([
+            'kpi' => 'required|array',
+            'kpi.*.actual_achieved' => 'nullable|string|max:50',
+            'kpi.*.self_rating' => 'nullable|integer|min:1|max:5',
+            'kpi.*.self_note' => 'nullable|string|max:1000',
+        ])['kpi'];
+
+        foreach ($appraisal->kpis as $kpi) {
+            if (! isset($rows[$kpi->id])) {
+                continue;
+            }
+
+            $kpi->fill([
+                'actual_achieved' => $rows[$kpi->id]['actual_achieved'] ?? null,
+                'self_rating' => $rows[$kpi->id]['self_rating'] ?? null,
+                'self_note' => $rows[$kpi->id]['self_note'] ?? null,
+            ])->save();
+        }
+
+        return response()->json([
+            'data' => $this->summarise($appraisal->refresh(), $request),
+            'unrated' => $appraisal->kpis()->whereNull('self_rating')->count(),
+        ]);
+    }
+
+    /**
+     * Hand the card to the appraiser.
+     *
+     * Every KPI must carry a self-rating. A half-answered card invites the
+     * appraiser to fill the gaps themselves, which is what asking the employee
+     * first was meant to prevent.
+     */
+    public function submitSelfAssessment(Request $request, Appraisal $appraisal)
+    {
+        abort_unless(
+            $appraisal->status === 'self_assessment'
+                && $request->user()->id === $appraisal->employee?->user_id,
+            403,
+            'This appraisal is not with you.'
+        );
+
+        $unrated = $appraisal->kpis()->whereNull('self_rating')->count();
+
+        if ($unrated > 0) {
+            return response()->json([
+                'message' => "{$unrated} KPI(s) still have no self-rating. Complete them all before submitting.",
+            ], 422);
+        }
+
+        $appraisal->update([
+            'status' => 'with_appraiser',
+            'self_assessed_at' => now(),
+        ]);
+        $appraisal->log('self_assessment_submitted', 'with_appraiser', null);
+
+        $this->notify(
+            $appraisal->appraiser_id,
+            'Appraisal ready for scoring',
+            "{$appraisal->employee?->full_name} has completed their self-assessment for {$appraisal->title}.",
+            $appraisal
+        );
+
+        return response()->json(['data' => $this->summarise($appraisal->refresh(), $request)]);
     }
 
     /**
@@ -302,6 +388,10 @@ class AppraisalApiController extends Controller
         $userId = $request->user()->id;
 
         $yourMove = match ($a->status) {
+            // The employee's first touch. Without this case a card sitting in
+            // self_assessment shows no action at all on the phone, which is the
+            // one place the person being appraised is most likely to be.
+            'self_assessment' => $userId === $a->employee?->user_id ? 'self_assess' : null,
             'with_appraiser' => $userId === $a->appraiser_id ? 'score' : null,
             'with_manager' => $userId === ($a->return_to_id ?? $a->initiated_by) ? 'confirm' : null,
             'with_employee' => $userId === $a->employee?->user_id ? 'self_appraise' : null,

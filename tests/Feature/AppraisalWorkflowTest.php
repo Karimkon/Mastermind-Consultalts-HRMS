@@ -247,6 +247,113 @@ class AppraisalWorkflowTest extends TestCase
         $this->assertNull($moveFor($appraiser));
     }
 
+    // ── Self-assessment: the employee's first touch ──────────────────────
+
+    /**
+     * Without a case for `self_assessment`, a card sitting with the employee
+     * showed no action at all on the phone — which is the one place the person
+     * being appraised is most likely to be.
+     */
+    public function test_the_card_tells_the_employee_it_is_their_move(): void
+    {
+        [$appraisal, $appraiser, $manager, $staff] = $this->card('self_assessment');
+
+        $moveFor = fn ($u) => $this->actingAs($u, 'sanctum')
+            ->getJson("/api/appraisals/{$appraisal->id}")
+            ->json('data.your_move');
+
+        $this->assertSame('self_assess', $moveFor($staff));
+        $this->assertNull($moveFor($appraiser), 'The appraiser has not been handed it yet.');
+        $this->assertNull($moveFor($manager));
+    }
+
+    public function test_the_employee_can_record_what_they_achieved(): void
+    {
+        [$appraisal, , , $staff] = $this->card('self_assessment');
+        $kpi = $appraisal->kpis->first();
+
+        $this->actingAs($staff, 'sanctum')
+            ->postJson("/api/appraisals/{$appraisal->id}/self-assessment", [
+                'kpi' => [$kpi->id => [
+                    'actual_achieved' => '26',
+                    'self_rating' => 5,
+                    'self_note' => 'Cleared the backlog in August.',
+                ]],
+            ])
+            ->assertOk()
+            ->assertJsonPath('unrated', 0);
+
+        $kpi->refresh();
+
+        $this->assertSame(5, $kpi->self_rating);
+        $this->assertNull($kpi->rating, 'The appraiser has not scored it yet.');
+    }
+
+    public function test_the_appraiser_cannot_fill_in_the_self_assessment(): void
+    {
+        [$appraisal, $appraiser] = $this->card('self_assessment');
+        $kpi = $appraisal->kpis->first();
+
+        $this->actingAs($appraiser, 'sanctum')
+            ->postJson("/api/appraisals/{$appraisal->id}/self-assessment", [
+                'kpi' => [$kpi->id => ['self_rating' => 1]],
+            ])
+            ->assertForbidden();
+
+        $this->assertNull($kpi->refresh()->self_rating);
+    }
+
+    public function test_an_incomplete_self_assessment_cannot_be_submitted(): void
+    {
+        [$appraisal, , , $staff] = $this->card('self_assessment');
+
+        $this->actingAs($staff, 'sanctum')
+            ->postJson("/api/appraisals/{$appraisal->id}/self-assessment/submit")
+            ->assertStatus(422);
+
+        $this->assertSame('self_assessment', $appraisal->refresh()->status);
+    }
+
+    public function test_a_complete_self_assessment_moves_the_card_to_the_appraiser(): void
+    {
+        [$appraisal, , , $staff] = $this->card('self_assessment');
+        $appraisal->kpis()->update(['self_rating' => 4]);
+
+        $this->actingAs($staff, 'sanctum')
+            ->postJson("/api/appraisals/{$appraisal->id}/self-assessment/submit")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'with_appraiser');
+
+        $this->assertNotNull($appraisal->refresh()->self_assessed_at);
+    }
+
+    /** Both ratings travel with the card, so the app can show the gap. */
+    public function test_the_card_carries_both_ratings(): void
+    {
+        [$appraisal, $appraiser, , $staff] = $this->card('self_assessment');
+        $kpi = $appraisal->kpis->first();
+
+        $this->actingAs($staff, 'sanctum')
+            ->postJson("/api/appraisals/{$appraisal->id}/self-assessment", [
+                'kpi' => [$kpi->id => ['self_rating' => 5]],
+            ])->assertOk();
+
+        $this->actingAs($staff, 'sanctum')
+            ->postJson("/api/appraisals/{$appraisal->id}/self-assessment/submit")->assertOk();
+
+        $this->actingAs($appraiser, 'sanctum')
+            ->postJson("/api/appraisals/{$appraisal->id}/score", [
+                'kpi' => [$kpi->id => ['rating' => 3]],
+            ])->assertOk();
+
+        $row = $this->actingAs($staff, 'sanctum')
+            ->getJson("/api/appraisals/{$appraisal->id}")
+            ->json('data.kpis.0');
+
+        $this->assertSame(5, $row['self_rating']);
+        $this->assertSame(3, $row['rating']);
+    }
+
     public function test_a_stranger_cannot_read_somebody_elses_appraisal(): void
     {
         [$appraisal] = $this->card('with_appraiser');
