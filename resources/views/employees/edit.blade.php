@@ -534,6 +534,7 @@
                         ['charge_lst','Charge LST', false],
                         ['lst_paid_by_employer','LST Paid by Employer', false],
                         ['tax_paid_by_employer','Tax (PAYE) Paid by Employer', false],
+                        ['charge_wht','Charge Withholding Tax (WHT)', false],
                     ];
                     @endphp
                     @foreach($bools as [$field, $label, $defaultChecked])
@@ -552,6 +553,19 @@
 
                     <div class="sm:col-span-2 lg:col-span-3 grid grid-cols-2 gap-4 mt-2">
                         <div>
+                            <label class="form-label">Withholding Tax %</label>
+                            <input type="number" name="wht_percentage" class="form-input" step="0.01" min="0" max="100"
+                                   value="{{ old('wht_percentage', $employee->wht_percentage ?? 6) }}">
+                            {{-- Stated rather than assumed: the statutory rate has moved
+                                 before, and a reprinted payslip must show the rate that
+                                 was actually applied. --}}
+                            <p class="text-xs text-gray-400 mt-1">
+                                Uganda withholds 6% on payments for services. Only applied when
+                                <strong>Charge Withholding Tax</strong> is ticked.
+                            </p>
+                        </div>
+                        <div></div>
+                        <div>
                             <label class="form-label">Fixed NSSF Amount</label>
                             <input type="number" name="fixed_nssf_amount" class="form-input" step="0.01" placeholder="0.00"
                                    value="{{ old('fixed_nssf_amount', $employee->fixed_nssf_amount) }}">
@@ -562,6 +576,21 @@
                                    value="{{ old('voluntary_nssf', $employee->voluntary_nssf) }}">
                         </div>
                     </div>
+
+                    {{-- PAYE and WHT answer to different arrangements: an employee is
+                         taxed on a graduated scale, someone engaged for services is
+                         withheld a flat percentage. Both at once is occasionally right
+                         and usually a mistake, so it is flagged, not blocked. --}}
+                    @if(($employee->charge_paye ?? true) && ($employee->charge_wht ?? false))
+                    <div class="sm:col-span-2 lg:col-span-3 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+                        <i class="fas fa-triangle-exclamation mt-0.5"></i>
+                        <span>
+                            This employee is set to be charged <strong>both PAYE and withholding tax</strong>.
+                            That is unusual — PAYE is for employment income, WHT for payments for services.
+                            Check this is intended before running payroll.
+                        </span>
+                    </div>
+                    @endif
                 </div>
             </div>
 

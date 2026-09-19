@@ -33,6 +33,7 @@ class Employee extends Model
         'do_not_charge_nssf_employee','voluntary_nssf',
         'charge_lst','lst_paid_by_employer','tax_paid_by_employer','charge_paye',
         'apply_special_tax','special_tax_percentage',
+        'charge_wht','wht_percentage',
         // Banking & Salary Calculation
         'bank_name','bank_account','bank_branch','mobile_money_number','tax_number','payment_mode',
         'ot_calc_hours','absenteeism_calc_hours','ot1_calc_hours','ot2_calc_hours','min_daily_working_hours',
@@ -78,6 +79,8 @@ class Employee extends Model
         'tax_paid_by_employer'        => 'boolean',
         'charge_paye'                 => 'boolean',
         'apply_special_tax'           => 'boolean',
+        'charge_wht'                  => 'boolean',
+        'wht_percentage'              => 'decimal:2',
         'pf_applicable'               => 'boolean',
         'do_not_deduct_voluntary_pf'  => 'boolean',
         'pension_applicable'                => 'boolean',

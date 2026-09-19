@@ -309,6 +309,29 @@ class PayrollService
             $deductions += $paye;
         }
 
+        // Withholding tax: a flat percentage of the gross payment, not a
+        // graduated scale. Separate from PAYE because they answer to different
+        // arrangements — a consultant is withheld, an employee is taxed — and
+        // an employee set up for both would legitimately carry both lines.
+        //
+        // The rate is read from the employee rather than assumed at 6%, so a
+        // reprinted payslip shows the rate that was actually applied.
+        if ($employee->charge_wht) {
+            $whtRate = (float) ($employee->wht_percentage ?? 6);
+            $wht = round($gross * $whtRate / 100, 0);
+
+            if ($wht > 0) {
+                $details[] = [
+                    'name'    => 'Withholding Tax (' . rtrim(rtrim(number_format($whtRate, 2), '0'), '.') . '%)',
+                    'code'    => 'WHT',
+                    'type'    => 'deduction',
+                    'amount'  => $wht,
+                    'taxable' => false,
+                ];
+                $deductions += $wht;
+            }
+        }
+
         $net = max(0, round($gross - $deductions, 0));
 
         // Employer NSSF (10%): if no NSSF_CO component is attached to this

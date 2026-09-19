@@ -17,7 +17,9 @@ class Payslip extends Model
     public static function orderComponents(array $details): array
     {
         $typeRank      = ['allowance' => 1, 'deduction' => 2, 'employer_cost' => 3];
-        $deductionRank = ['PAYE' => 1, 'PAYE5' => 1, 'NSSF_EMP' => 2];
+        // WHT prints with the taxes, directly under PAYE, rather than falling in
+        // among the voluntary deductions at the bottom.
+        $deductionRank = ['PAYE' => 1, 'PAYE5' => 1, 'WHT' => 2, 'NSSF_EMP' => 3];
 
         $indexed = array_map(null, array_keys($details), $details);
 

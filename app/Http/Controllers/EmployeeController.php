@@ -134,7 +134,7 @@ class EmployeeController extends Controller
             'next_of_kin_name','next_of_kin_relation','next_of_kin_phone','next_of_kin_email',
             // Insurance & Statutory
             'nssf_number','tin_number','ifms_supplier_no','pension_no',
-            'fixed_nssf_amount','voluntary_nssf','special_tax_percentage',
+            'fixed_nssf_amount','voluntary_nssf','special_tax_percentage','wht_percentage',
             // Banking & Calculation
             'bank_name','bank_account','bank_branch','tax_number','payment_mode','mobile_money_number',
             'ot_calc_hours','absenteeism_calc_hours','ot1_calc_hours','ot2_calc_hours','min_daily_working_hours',
@@ -156,6 +156,7 @@ class EmployeeController extends Controller
             'contract_applicable','is_expatriate','insurance_relief',
             'charge_nssf','force_fixed_nssf','nssf_paid_by_employer','do_not_charge_nssf_employee',
             'charge_lst','lst_paid_by_employer','tax_paid_by_employer',
+            'charge_paye','charge_wht',
             'apply_special_tax','pf_applicable','do_not_deduct_voluntary_pf',
             'pension_applicable','do_not_deduct_voluntary_pension',
             'is_blacklisted','on_hold',
@@ -178,10 +179,10 @@ class EmployeeController extends Controller
         if ($request->filled('login_email') && filter_var($request->login_email, FILTER_VALIDATE_EMAIL)) {
             $newEmail = strtolower(trim($request->login_email));
             // Only update if not already taken by another user
-            $taken = \App\Models\User::where('email', $newEmail)->where('id', '!=', $employee->user->id)->exists();
+            $taken = \App\Models\User::where('email', $newEmail)->where('id', '!=', $employee->user?->id)->exists();
             if (!$taken) $userUpdates['email'] = $newEmail;
         }
-        $employee->user->update($userUpdates);
+        $employee->user?->update($userUpdates);
 
         // When employee is terminated, suspended, retired, or contract expired — cancel all future leaves
         if (in_array($data['status'] ?? '', ['terminated', 'suspended', 'retired', 'contract_expired']) && $previousStatus !== ($data['status'] ?? '')) {
@@ -208,7 +209,7 @@ class EmployeeController extends Controller
         if ($request->hasFile('photo')) {
             if ($employee->user?->avatar) Storage::disk('public')->delete($employee->user->avatar);
             $path = $request->file('photo')->store('employees/photos', 'public');
-            $employee->user->update(['avatar' => $path]);
+            $employee->user?->update(['avatar' => $path]);
         }
 
         // If salary_grade changed and employee has no current salary record, seed one from grade's basic_min
