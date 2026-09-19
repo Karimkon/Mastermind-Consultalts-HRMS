@@ -133,6 +133,45 @@ class AppraisalTemplateController extends Controller
         return back()->with('success', 'KPI added to the template.');
     }
 
+    /**
+     * Change a KPI in place.
+     *
+     * There was only add and delete, so correcting a typo meant deleting the row
+     * and retyping it — which also sent it to the bottom of its perspective,
+     * because sort_order is assigned on create. Building a card of nineteen KRAs
+     * that way reshuffles itself every time somebody fixes a target.
+     */
+    public function updateKpi(Request $request, AppraisalTemplate $template, AppraisalTemplateKpi $kpi)
+    {
+        $this->authorise();
+        abort_if($kpi->appraisal_template_id !== $template->id, 404);
+
+        $data = $request->validate([
+            'perspective'         => 'required|in:' . implode(',', array_keys(Appraisal::PERSPECTIVES)),
+            'kra_name'            => 'required|string|max:255',
+            'performance_measure' => 'nullable|string|max:1000',
+            'target'              => 'nullable|string|max:50',
+            'weightage'           => 'required|numeric|min:0.01|max:100',
+            'evidence_note'       => 'nullable|string|max:255',
+        ]);
+
+        // The ceiling excludes this row's own current weight, or raising a KPI
+        // from 5% to 6% would be measured as though the 5% were still spent and
+        // refused on a template that has room.
+        $others = round($template->kpiWeight() - (float) $kpi->weightage, 2);
+        $remaining = round(100 - $others, 2);
+
+        if ($data['weightage'] > $remaining + 0.001) {
+            return back()->withInput()->with('error',
+                "That weight would take the template past 100%. Only {$remaining}% is available for this KPI.");
+        }
+
+        // sort_order is untouched: an edit is a correction, not a re-ordering.
+        $kpi->update($data);
+
+        return back()->with('success', 'KPI updated.');
+    }
+
     public function destroyKpi(AppraisalTemplate $template, AppraisalTemplateKpi $kpi)
     {
         $this->authorise();

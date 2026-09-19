@@ -446,6 +446,7 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::put('appraisal-templates/{template}',             [AppraisalTemplateController::class, 'update'])->name('appraisal-templates.update');
         Route::delete('appraisal-templates/{template}',          [AppraisalTemplateController::class, 'destroy'])->name('appraisal-templates.destroy');
         Route::post('appraisal-templates/{template}/kpis',       [AppraisalTemplateController::class, 'storeKpi'])->name('appraisal-templates.kpis.store');
+        Route::put('appraisal-templates/{template}/kpis/{kpi}',   [AppraisalTemplateController::class, 'updateKpi'])->name('appraisal-templates.kpis.update');
         Route::delete('appraisal-templates/{template}/kpis/{kpi}',[AppraisalTemplateController::class, 'destroyKpi'])->name('appraisal-templates.kpis.destroy');
 
         Route::get('settings', [SettingController::class, 'index'])->name('settings.index');

@@ -101,24 +101,77 @@
         </div>
         <div class="border border-t-0 border-slate-200 rounded-b-lg divide-y divide-slate-100">
             @forelse($rows as $kpi)
-            <div class="p-3 flex items-start justify-between gap-3">
-                <div class="flex-1">
-                    <p class="text-sm font-medium text-slate-800">{{ $kpi->kra_name }}</p>
-                    <p class="text-xs text-slate-500">{{ $kpi->performance_measure }}</p>
-                    @if($kpi->evidence_note)
-                        <p class="text-xs text-slate-400 mt-0.5"><i class="fas fa-paperclip mr-1"></i>{{ $kpi->evidence_note }}</p>
-                    @endif
+            {{-- Two states in one row: a readable summary, and the same values in
+                 inputs. Editing used to mean deleting and retyping, which also
+                 pushed the KPI to the bottom of its perspective because
+                 sort_order is assigned on create -- so correcting one target in a
+                 card of nineteen reshuffled the card. --}}
+            <div class="p-3" id="kpi-{{ $kpi->id }}">
+                <div class="flex items-start justify-between gap-3" data-kpi-view>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-slate-800">{{ $kpi->kra_name }}</p>
+                        <p class="text-xs text-slate-500">{{ $kpi->performance_measure }}</p>
+                        @if($kpi->evidence_note)
+                            <p class="text-xs text-slate-400 mt-0.5"><i class="fas fa-paperclip mr-1"></i>{{ $kpi->evidence_note }}</p>
+                        @endif
+                    </div>
+                    <div class="text-right whitespace-nowrap">
+                        <p class="text-xs text-slate-400">Target {{ $kpi->target ?: '—' }}</p>
+                        <p class="text-sm font-semibold text-slate-700">
+                            {{ rtrim(rtrim(number_format($kpi->weightage, 2), '0'), '.') }}%
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button type="button" class="text-slate-400 hover:text-blue-600 text-xs"
+                                title="Edit this KPI" onclick="toggleKpi({{ $kpi->id }})">
+                            <i class="fas fa-pen"></i>
+                        </button>
+                        <form method="POST" action="{{ route('admin.appraisal-templates.kpis.destroy', [$template, $kpi]) }}"
+                              onsubmit="return confirm('Remove this KPI from the template?')">
+                            @csrf @method('DELETE')
+                            <button class="text-rose-500 hover:text-rose-700 text-xs" title="Remove"><i class="fas fa-trash"></i></button>
+                        </form>
+                    </div>
                 </div>
-                <div class="text-right whitespace-nowrap">
-                    <p class="text-xs text-slate-400">Target {{ $kpi->target ?: '—' }}</p>
-                    <p class="text-sm font-semibold text-slate-700">
-                        {{ rtrim(rtrim(number_format($kpi->weightage, 2), '0'), '.') }}%
-                    </p>
-                </div>
-                <form method="POST" action="{{ route('admin.appraisal-templates.kpis.destroy', [$template, $kpi]) }}"
-                      onsubmit="return confirm('Remove this KPI from the template?')">
-                    @csrf @method('DELETE')
-                    <button class="text-rose-500 hover:text-rose-700 text-xs"><i class="fas fa-trash"></i></button>
+
+                <form method="POST" action="{{ route('admin.appraisal-templates.kpis.update', [$template, $kpi]) }}"
+                      class="hidden mt-1 space-y-2" data-kpi-edit>
+                    @csrf @method('PUT')
+
+                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                        {{-- Perspective is editable here too: a KRA filed under the
+                             wrong one otherwise has to be deleted and rebuilt. --}}
+                        <select name="perspective" class="form-input text-sm sm:col-span-3">
+                            @foreach(\App\Models\Appraisal::PERSPECTIVES as $key => $label)
+                                <option value="{{ $key }}" @selected($kpi->perspective === $key)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+
+                        <input type="text" name="kra_name" value="{{ $kpi->kra_name }}"
+                               class="form-input text-sm sm:col-span-5" placeholder="Key result area" required>
+
+                        <input type="text" name="target" value="{{ $kpi->target }}"
+                               class="form-input text-sm sm:col-span-2" placeholder="Target">
+
+                        <div class="relative sm:col-span-2">
+                            <input type="number" name="weightage" step="0.01" min="0.01" max="100"
+                                   value="{{ rtrim(rtrim(number_format($kpi->weightage, 2, '.', ''), '0'), '.') }}"
+                                   class="form-input text-sm pr-7" required>
+                            <span class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                        </div>
+                    </div>
+
+                    <input type="text" name="performance_measure" value="{{ $kpi->performance_measure }}"
+                           class="form-input text-sm" placeholder="Performance measure">
+
+                    <input type="text" name="evidence_note" value="{{ $kpi->evidence_note }}"
+                           class="form-input text-sm" placeholder="Evidence expected">
+
+                    <div class="flex items-center gap-2">
+                        <button class="btn-primary text-xs">Save changes</button>
+                        <button type="button" class="text-xs text-slate-500 hover:text-slate-700"
+                                onclick="toggleKpi({{ $kpi->id }})">Cancel</button>
+                    </div>
                 </form>
             </div>
             @empty
@@ -175,3 +228,24 @@
     @endif
 </div>
 @endsection
+
+@push('scripts')
+<script>
+    // Swap one row between its summary and its form. Nothing is fetched: the
+    // inputs are already rendered carrying the current values, so an edit opens
+    // instantly and cancelling costs nothing.
+    function toggleKpi(id) {
+        const row = document.getElementById('kpi-' + id);
+        if (!row) return;
+
+        row.querySelector('[data-kpi-view]').classList.toggle('hidden');
+
+        const form = row.querySelector('[data-kpi-edit]');
+        form.classList.toggle('hidden');
+
+        if (!form.classList.contains('hidden')) {
+            form.querySelector('input[name="kra_name"]').focus();
+        }
+    }
+</script>
+@endpush
