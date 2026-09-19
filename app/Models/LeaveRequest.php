@@ -8,6 +8,7 @@ class LeaveRequest extends Model
         'employee_id', 'leave_type_id', 'from_date', 'to_date', 'days_count',
         'reason', 'status', 'approved_by', 'rejection_reason', 'document_path',
         'client_approval_required', 'client_approval_status', 'client_approved_by', 'client_actioned_at',
+        'replacement_employee_id',
         'replacement_name', 'replacement_email', 'replacement_phone',
     ];
     protected $casts = [
@@ -21,6 +22,12 @@ class LeaveRequest extends Model
     public function leaveType()      { return $this->belongsTo(LeaveType::class); }
     public function approver()       { return $this->belongsTo(Employee::class, 'approved_by'); }
     public function clientApprover() { return $this->belongsTo(Client::class, 'client_approved_by'); }
+
+    /** The staff member nominated to cover, when one was picked from the register. */
+    public function replacementEmployee()
+    {
+        return $this->belongsTo(Employee::class, 'replacement_employee_id');
+    }
 
     public function getStatusBadgeAttribute(): string
     {

@@ -467,7 +467,13 @@ $(document).ready(function () {
     $(".select2").select2({ theme: "classic", placeholder: "Select...", allowClear: true });
     $(".select2-ajax-employees").select2({
         theme: "classic", placeholder: "Search employee...", allowClear: true,
-        ajax: { url: "/ajax/employees/search", dataType: "json", delay: 250,
+        ajax: {
+            url: "/ajax/employees/search", dataType: "json", delay: 250,
+            data: function (params) {
+                // Some pickers must not offer the signed-in user their own name
+                // - you cannot cover your own leave.
+                return { q: params.term, exclude_self: $(this).data("exclude-self") ? 1 : 0 };
+            },
             processResults: function (data) { return { results: data.results }; }
         }
     });

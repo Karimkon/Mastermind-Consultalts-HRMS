@@ -49,30 +49,64 @@
                     Replacement / Cover Person <span class="text-red-500">*</span>
                 </h3>
                 <p class="text-xs text-amber-700 mb-4">
-                    You must provide the contact details of the person who will cover your responsibilities during your absence.
-                    This information is sent to your Account Manager and Client for approval.
+                    Search for the colleague who will cover your responsibilities while you are away.
+                    They are told straight away that you have nominated them, and your Account Manager
+                    and Client see it when they review this request.
                 </p>
                 <div class="space-y-3">
                     <div>
-                        <label class="form-label">Full Name <span class="text-red-500">*</span></label>
-                        <input type="text" name="replacement_name" class="form-input"
-                               value="{{ old('replacement_name') }}"
-                               placeholder="Full name of replacement person" required>
+                        <label class="form-label">Who will cover for you? <span class="text-red-500">*</span></label>
+
+                        {{-- Picked from the staff register, not typed. A typed name
+                             could not be notified, could not see the request, and
+                             quietly disagreed with Employee Central about spelling. --}}
+                        <select name="replacement_employee_id"
+                                class="select2-ajax-employees w-full"
+                                data-exclude-self="1" required>
+                            @if(old('replacement_employee_id'))
+                                @php($picked = \App\Models\Employee::find(old('replacement_employee_id')))
+                                @if($picked)
+                                    <option value="{{ $picked->id }}" selected>
+                                        {{ $picked->full_name }} ({{ $picked->emp_number }})
+                                    </option>
+                                @endif
+                            @endif
+                        </select>
+
+                        <p class="text-xs text-amber-700 mt-1">
+                            Search by name or staff number. Their email is taken from their staff record.
+                        </p>
+                        @error('replacement_employee_id')
+                            <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                        @enderror
                     </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="form-label">Email <span class="text-red-500">*</span></label>
-                            <input type="email" name="replacement_email" class="form-input"
-                                   value="{{ old('replacement_email') }}"
-                                   placeholder="replacement@email.com" required>
+
+                    {{-- Optional overrides. Their record is the default; these exist
+                         so a stale address can be corrected without an admin, and
+                         so the submitter is told rather than the mail failing
+                         silently at send time. --}}
+                    <details class="text-xs" {{ $errors->has('replacement_email') || $errors->has('replacement_phone') ? 'open' : '' }}>
+                        <summary class="cursor-pointer text-amber-800 font-medium select-none">
+                            Use different contact details for them
+                        </summary>
+                        <div class="grid grid-cols-2 gap-3 mt-3">
+                            <div>
+                                <label class="form-label">Email</label>
+                                <input type="email" name="replacement_email" class="form-input"
+                                       value="{{ old('replacement_email') }}"
+                                       placeholder="Leave blank to use their staff record">
+                                @error('replacement_email')
+                                    <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                            <div>
+                                <label class="form-label">Phone</label>
+                                <input type="tel" name="replacement_phone" class="form-input"
+                                       value="{{ old('replacement_phone') }}"
+                                       placeholder="Leave blank to use their staff record">
+                            </div>
                         </div>
-                        <div>
-                            <label class="form-label">Phone <span class="text-red-500">*</span></label>
-                            <input type="tel" name="replacement_phone" class="form-input"
-                                   value="{{ old('replacement_phone') }}"
-                                   placeholder="+256 700 000000" required>
-                        </div>
-                    </div>
+                    </details>
                 </div>
             </div>
 
@@ -81,7 +115,8 @@
             </button>
 
             <p class="text-xs text-slate-400 text-center">
-                An email notification will be sent to your <strong>Account Manager</strong> and <strong>Client</strong> upon submission.
+                On submission an email goes to your <strong>Account Manager</strong>, your <strong>Client</strong>,
+                and the <strong>colleague you nominated</strong>.
             </p>
         </form>
     </div>

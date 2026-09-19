@@ -16,7 +16,7 @@ class LeaveReplacementMail extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: 'You are covering for ' . $leave->employee?->full_name . ' — Leave Coverage Notification');
+        return new Envelope(subject: 'You are covering for ' . $this->leave->employee?->full_name . ' — Leave Coverage Notification');
     }
 
     public function content(): Content

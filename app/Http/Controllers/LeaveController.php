@@ -6,7 +6,7 @@ use App\Mail\LeaveClientNotificationMail;
 use App\Mail\LeaveApprovedByClientMail;
 use App\Mail\LeaveStatusMail;
 use App\Services\NotificationService;
-use App\Models\{LeaveRequest, LeaveType, LeaveBalance, Employee, Department, User, Client};
+use App\Models\{LeaveRequest, LeaveType, LeaveBalance, Employee, Department, User, Client, Notification};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Carbon\Carbon;
@@ -49,10 +49,36 @@ class LeaveController extends Controller
             'from_date'        => 'required|date',
             'to_date'          => 'required|date|after_or_equal:from_date',
             'reason'           => 'required|string',
-            'replacement_name' => 'required|string|max:255',
-            'replacement_email'=> 'required|email|max:255',
-            'replacement_phone'=> 'required|string|max:30',
+            // Chosen from the staff register rather than typed. A free-typed name
+            // could not be notified, could not see the request, and quietly
+            // disagreed with Employee Central about spelling.
+            'replacement_employee_id' => 'required|exists:employees,id',
+            'replacement_email'=> 'nullable|email|max:255',
+            'replacement_phone'=> 'nullable|string|max:30',
+        ], [
+            'replacement_employee_id.required' => 'Choose the person who will cover for you.',
         ]);
+
+        $cover = Employee::with('user')->findOrFail($request->replacement_employee_id);
+        $mine  = auth()->user()->employee;
+
+        if ($mine && $cover->id === $mine->id) {
+            return back()->withInput()->withErrors([
+                'replacement_employee_id' => 'You cannot nominate yourself to cover your own leave.',
+            ]);
+        }
+
+        // Their own record is the source; the form may override it for a
+        // one-off. Said plainly rather than failing silently at send time.
+        $coverEmail = $request->replacement_email ?: ($cover->user?->email ?? $cover->personal_email);
+        $coverPhone = $request->replacement_phone ?: $cover->phone;
+
+        if (! $coverEmail) {
+            return back()->withInput()->withErrors([
+                'replacement_email' => "{$cover->full_name} has no email address on record, so they cannot be notified. "
+                    . 'Add one in Employee Central, or type an address here.',
+            ]);
+        }
 
         $days  = Carbon::parse($request->from_date)->diffInWeekdays(Carbon::parse($request->to_date)) + 1;
         $empId = auth()->user()->employee->id;
@@ -65,9 +91,13 @@ class LeaveController extends Controller
             'days_count'        => $days,
             'reason'            => $request->reason,
             'status'            => 'pending',
-            'replacement_name'  => $request->replacement_name,
-            'replacement_email' => $request->replacement_email,
-            'replacement_phone' => $request->replacement_phone,
+            'replacement_employee_id' => $cover->id,
+            // Snapshotted as well as linked: a request from two years ago should
+            // still read correctly after this person changes their number or
+            // leaves, the same reason a payslip keeps its own figures.
+            'replacement_name'  => $cover->full_name,
+            'replacement_email' => $coverEmail,
+            'replacement_phone' => $coverPhone,
         ]);
 
         // In-app notification
@@ -79,7 +109,50 @@ class LeaveController extends Controller
         // Email 2: Client company contact
         $this->notifyClient($leave);
 
-        return redirect()->route('leaves.index')->with('success', 'Leave request submitted. Your Account Manager and Client have been notified.');
+        // Email 3: the person being asked to cover
+        $this->notifyCoverPerson($leave, $cover);
+
+        return redirect()->route('leaves.index')->with('success',
+            "Leave request submitted. {$cover->full_name} has been told they are nominated to cover, "
+            . 'and your Account Manager and Client have been notified.');
+    }
+
+    /**
+     * The cover person hears about it when they are nominated, not when the
+     * request is finally approved days later.
+     *
+     * Worded as a nomination, because that is what it is at this point: saying
+     * "you are covering" before the client has approved would be telling them
+     * something that is not yet true.
+     */
+    private function notifyCoverPerson(LeaveRequest $leave, Employee $cover): void
+    {
+        try {
+            if ($cover->user) {
+                Notification::create([
+                    'user_id' => $cover->user->id,
+                    'type'    => 'leave_cover_nominated',
+                    'title'   => 'You have been nominated to cover',
+                    'body'    => sprintf(
+                        '%s has asked you to cover their responsibilities from %s to %s (%s day(s)), pending approval.',
+                        $leave->employee?->full_name ?? 'A colleague',
+                        $leave->from_date->format('d M Y'),
+                        $leave->to_date->format('d M Y'),
+                        $leave->days_count
+                    ),
+                    'data'    => ['leave_id' => $leave->id],
+                ]);
+            }
+
+            // Sent, not queued: the queue has no worker of its own on this host,
+            // and a nomination that arrives after the leave has started is no use.
+            if ($leave->replacement_email) {
+                Mail::to($leave->replacement_email)->send(new \App\Mail\LeaveCoverNominatedMail($leave));
+            }
+        } catch (\Exception $e) {
+            // A failed notification must not lose the leave request.
+            logger()->error('Leave cover nomination failed: ' . $e->getMessage());
+        }
     }
 
     private function notifyAccountManager(LeaveRequest $leave): void
