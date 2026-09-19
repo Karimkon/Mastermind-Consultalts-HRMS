@@ -68,10 +68,12 @@ class AttendanceApiController extends Controller
         $geoError = $this->employeeGeoCheck($client, $request->latitude, $request->longitude);
         if ($geoError) return response()->json(['message' => $geoError, 'geo_error' => true], 422);
 
-        $distance = $client ? $this->distanceMetres(
-            (float)$request->latitude, (float)$request->longitude,
-            (float)$client->work_site_lat, (float)$client->work_site_lng
-        ) : null;
+        // What could actually be established about where this person was. The
+        // fence blocks when it can; when it cannot, the row says so rather than
+        // looking identical to a verified one.
+        [$distance, $locationStatus] = $this->assessLocation(
+            $client, $request->latitude, $request->longitude
+        );
 
         $log = AttendanceLog::create([
             'employee_id'       => $employee->id,
@@ -80,7 +82,8 @@ class AttendanceApiController extends Controller
             'date'              => Carbon::today()->format('Y-m-d'),
             'lat'               => $request->latitude,
             'lng'               => $request->longitude,
-            'distance_metres'   => $distance ? round($distance, 2) : null,
+            'distance_metres'   => $distance,
+            'location_status'   => $locationStatus,
             'status'            => 'present',
         ]);
 
@@ -152,6 +155,50 @@ class AttendanceApiController extends Controller
         return Client::whereHas('employees', fn($q) => $q->where('employees.id', $employee->id))->first();
     }
 
+    /**
+     * Distance from the work site, and what that distance is worth.
+     *
+     * Returns [distance in metres or null, one of verified|outside|unfenced|no_fix].
+     *
+     * The distance was previously computed as
+     *
+     *     $client ? $this->distanceMetres($lat, $lng, (float)$client->work_site_lat, ...)
+     *
+     * which casts a NULL work_site_lat to 0.0. For an unmapped client that
+     * measured the distance to Null Island — roughly three thousand kilometres
+     * off the coast of Ghana — and stored it as though it meant something. It
+     * only ever came out null because the device was not sending a fix either.
+     *
+     * @return array{float|null, string}
+     */
+    private function assessLocation(?Client $client, $lat, $lng): array
+    {
+        $hasFence = $client && $client->work_site_lat && $client->work_site_lng;
+        $hasFix = $lat !== null && $lng !== null && $lat !== '' && $lng !== '';
+
+        if (! $hasFix) {
+            return [null, AttendanceLog::LOCATION_NO_FIX];
+        }
+
+        if (! $hasFence) {
+            // A fix was given and there is nothing to measure it against. The
+            // coordinates are still stored; the status says they prove nothing.
+            return [null, AttendanceLog::LOCATION_UNFENCED];
+        }
+
+        $distance = $this->distanceMetres(
+            (float) $lat, (float) $lng,
+            (float) $client->work_site_lat, (float) $client->work_site_lng,
+        );
+
+        $radius = (int) ($client->geo_fence_radius ?? 100);
+
+        return [
+            round($distance, 2),
+            $distance <= $radius ? AttendanceLog::LOCATION_VERIFIED : AttendanceLog::LOCATION_OUTSIDE,
+        ];
+    }
+
     private function employeeGeoCheck(?Client $client, $lat, $lng): ?string
     {
         if (!$client || !$client->work_site_lat || !$client->work_site_lng) return null;
@@ -196,6 +243,12 @@ class AttendanceApiController extends Controller
             'clock_out'       => $clockOut?->format('H:i'),
             'clock_in_lat'    => $a->lat,
             'clock_in_lng'    => $a->lng,
+            // Whether those coordinates were checked against anything. Carried
+            // so the app does not have to infer it from a distance that is null
+            // for two quite different reasons.
+            'location_status' => $a->location_status,
+            'location_label'  => $a->locationLabel(),
+            'location_checked' => $a->locationWasChecked(),
             'clock_out_lat'   => $a->clock_out_lat,
             'clock_out_lng'   => $a->clock_out_lng,
             'distance_metres' => $a->distance_metres,

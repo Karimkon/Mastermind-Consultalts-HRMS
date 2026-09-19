@@ -145,9 +145,15 @@
             Geo-fence is active. Employees must be within <strong>{{ $client->geo_fence_radius ?? 100 }}m</strong> of the work site to clock in.
         </div>
         @else
-        <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
+        {{-- Stated as a live consequence rather than an optional upgrade. The
+             radius above is already on screen, which makes the page look as
+             though a fence exists; without a centre it has never run once. --}}
+        <div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
             <i class="fas fa-exclamation-triangle mr-1"></i>
-            No work site coordinates set yet. Set lat/lng to enable geo-fence enforcement.
+            <strong>Attendance is not being verified for this client.</strong>
+            The {{ $client->geo_fence_radius ?? 100 }}m radius above has no work site to measure from,
+            so staff can clock in from anywhere and the record cannot show where they were.
+            Set the work site coordinates to turn the fence on.
         </div>
         @endif
     </div>

@@ -4,8 +4,43 @@ use Illuminate\Database\Eloquent\Model;
 
 class AttendanceLog extends Model
 {
+    /** A fence was configured and the fix was inside it. */
+    public const LOCATION_VERIFIED = 'verified';
+
+    /** A fence was configured and the fix was outside it. */
+    public const LOCATION_OUTSIDE = 'outside';
+
+    /** The client has no coordinates, so nothing could be checked. */
+    public const LOCATION_UNFENCED = 'unfenced';
+
+    /** The device supplied no location at all. */
+    public const LOCATION_NO_FIX = 'no_fix';
+
+    /**
+     * Whether this row's location means anything.
+     *
+     * Only `verified` is evidence of where somebody was. The other three are the
+     * different ways the check could not be made, and a report that treats them
+     * as the same thing is reporting a control that does not exist.
+     */
+    public function locationWasChecked(): bool
+    {
+        return in_array($this->location_status, [self::LOCATION_VERIFIED, self::LOCATION_OUTSIDE], true);
+    }
+
+    public function locationLabel(): string
+    {
+        return match ($this->location_status) {
+            self::LOCATION_VERIFIED => 'On site',
+            self::LOCATION_OUTSIDE => 'Away from site',
+            self::LOCATION_UNFENCED => 'Not verified — no work site set',
+            self::LOCATION_NO_FIX => 'Not verified — no GPS',
+            default => 'Not recorded',
+        };
+    }
+
     protected $fillable = [
-        'employee_id', 'date', 'clock_in', 'clock_out', 'status',
+        'employee_id', 'date', 'clock_in', 'clock_out', 'status', 'location_status',
         'overtime_hours', 'lat', 'lng', 'note', 'approved_by',
         'client_id', 'clock_out_lat', 'clock_out_lng', 'distance_metres',
         'approved_overtime_hours', 'overtime_status',

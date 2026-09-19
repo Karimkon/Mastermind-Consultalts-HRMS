@@ -83,6 +83,10 @@
         <th class="table-head px-4 py-3 text-left">Client / Section</th>
         @endif
         <th class="table-head px-4 py-3 text-left">Clock In</th>
+        {{-- Whether the clock-in could be checked at all. Without this the
+             register cannot distinguish somebody standing on site from
+             somebody clocking in from home on an unmapped client. --}}
+        <th class="table-head px-4 py-3 text-left">Location</th>
         <th class="table-head px-4 py-3 text-left">Clock Out</th>
         <th class="table-head px-4 py-3 text-left">Hours</th>
         <th class="table-head px-4 py-3 text-left">Overtime</th>
@@ -100,6 +104,29 @@
             </td>
             @endif
             <td class="px-4 py-3 text-sm text-slate-600">{{ $log->clock_in?->format('H:i') ?? '—' }}</td>
+            <td class="px-4 py-3 text-sm">
+                @php($loc = $log->location_status)
+                @if($loc === \App\Models\AttendanceLog::LOCATION_VERIFIED)
+                    <span class="inline-flex items-center gap-1 text-emerald-700">
+                        <i class="fas fa-location-dot text-xs"></i>
+                        On site@if($log->distance_metres !== null) · {{ round($log->distance_metres) }}m @endif
+                    </span>
+                @elseif($loc === \App\Models\AttendanceLog::LOCATION_OUTSIDE)
+                    <span class="inline-flex items-center gap-1 text-red-700 font-medium">
+                        <i class="fas fa-triangle-exclamation text-xs"></i>
+                        {{ round($log->distance_metres) }}m away
+                    </span>
+                @elseif($loc)
+                    {{-- Not a failure by the employee. The check could not be made,
+                         and saying so is the whole point of the column. --}}
+                    <span class="inline-flex items-center gap-1 text-slate-400" title="{{ $log->locationLabel() }}">
+                        <i class="fas fa-circle-question text-xs"></i>
+                        Not verified
+                    </span>
+                @else
+                    <span class="text-slate-300">—</span>
+                @endif
+            </td>
             <td class="px-4 py-3 text-sm text-slate-600">{{ $log->clock_out?->format('H:i') ?? '—' }}</td>
             <td class="px-4 py-3 text-sm text-slate-600">
                 @if($log->clock_in && $log->clock_out){{ number_format($log->clock_in->diffInHours($log->clock_out), 1) }}h@else—@endif
