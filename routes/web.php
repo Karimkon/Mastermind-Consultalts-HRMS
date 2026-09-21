@@ -2,7 +2,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\{LoginController, MfaController, PasswordResetController};
 use App\Http\Controllers\{DashboardController, ProfileController, AjaxController, EmployeeController, AttendanceController, LeaveController, PayrollController, RecruitmentController, PerformanceController, TrainingController, MeetingController, ReportController};
-use App\Http\Controllers\Admin\{UserController, DepartmentController, SettingController, RoleController, AuditLogController, DocumentationController, AdminClientController, AppraisalTemplateController};
+use App\Http\Controllers\Admin\{UserController, DepartmentController, SettingController, RoleController, AuditLogController, DocumentationController, AdminClientController, AppraisalTemplateController, BulkUpdateController};
 use App\Http\Controllers\{ClientController, ClientLeaveController, ClientRecruitmentController, AiRecruitmentController};
 use App\Http\Controllers\Employee\{OnboardingController, ExitController, SelfServiceController};
 use App\Http\Controllers\AccountManagerController;
@@ -444,6 +444,12 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::post('designations', [DepartmentController::class, 'storeDesignation'])->name('designations.store');
         Route::delete('designations/{designation}', [DepartmentController::class, 'destroyDesignation'])->name('designations.destroy');
         // Appraisal weighting policy — the perspective split and starting KPIs.
+        // Filling in details on staff who already exist. Never creates anybody.
+        Route::get('bulk-update',          [BulkUpdateController::class, 'index'])->name('bulk-update.index');
+        Route::get('bulk-update/template', [BulkUpdateController::class, 'template'])->name('bulk-update.template');
+        Route::post('bulk-update/preview', [BulkUpdateController::class, 'preview'])->name('bulk-update.preview');
+        Route::post('bulk-update/apply',   [BulkUpdateController::class, 'apply'])->name('bulk-update.apply');
+
         Route::get('appraisal-templates',                        [AppraisalTemplateController::class, 'index'])->name('appraisal-templates.index');
         Route::post('appraisal-templates',                       [AppraisalTemplateController::class, 'store'])->name('appraisal-templates.store');
         Route::get('appraisal-templates/{template}/edit',        [AppraisalTemplateController::class, 'edit'])->name('appraisal-templates.edit');
