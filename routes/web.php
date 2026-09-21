@@ -132,6 +132,11 @@ Route::middleware(['auth','mfa'])->group(function () {
     Route::post('appraisals/{appraisal}/send-back', [AppraisalController::class, 'sendBack'])->name('appraisals.send-back');
     Route::post('appraisals/{appraisal}/self',      [AppraisalController::class, 'selfAppraise'])->name('appraisals.self');
 
+    // HR and administrators working a card that is not at their step.
+    Route::post('appraisals/{appraisal}/import-kpis', [AppraisalController::class, 'importKpis'])->name('appraisals.import-kpis');
+    Route::post('appraisals/{appraisal}/comments',    [AppraisalController::class, 'adminComment'])->name('appraisals.comments');
+    Route::delete('appraisals/{appraisal}',           [AppraisalController::class, 'destroy'])->name('appraisals.destroy');
+
     Route::post('appraisals/{appraisal}/actions',            [AppraisalController::class, 'storeAction'])->name('appraisals.actions.store');
     Route::delete('appraisals/{appraisal}/actions/{action}', [AppraisalController::class, 'destroyAction'])->name('appraisals.actions.destroy');
 

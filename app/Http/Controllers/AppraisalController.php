@@ -204,7 +204,7 @@ class AppraisalController extends Controller
 
         // The supervisor edits while it is a draft. Admin and HR can also open
         // it later to correct a weight — see updateKpi() for the same rule.
-        $isAdmin = auth()->user()->hasAnyRole(['super-admin', 'hr-admin']);
+        $isAdmin = $this->isAdmin();
         abort_unless($appraisal->status === 'draft' || $isAdmin, 403,
             'The KPIs are locked once the appraisal has been sent out.');
         abort_unless(auth()->id() === $appraisal->initiated_by || $isAdmin, 403);
@@ -355,7 +355,12 @@ class AppraisalController extends Controller
         return view('appraisals.show', [
             'appraisal'  => $appraisal,
             'grouped'    => $appraisal->kpisByPerspective(),
-            'canScore'   => $appraisal->status === 'with_appraiser' && auth()->id() === $appraisal->appraiser_id,
+            // An administrator can work the card at any stage. Every control on
+            // this screen was gated on being one named person at one named
+            // step, so HR looking at a card mid-flight could change nothing at
+            // all - not a rating, not a weight, not a comment.
+            'canScore'   => $this->isAdmin()
+                            || ($appraisal->status === 'with_appraiser' && auth()->id() === $appraisal->appraiser_id),
             'canConfirm' => $appraisal->status === 'with_manager'
                             && auth()->id() === ($appraisal->return_to_id ?? $appraisal->initiated_by),
             'canSelf'    => $appraisal->status === 'with_employee'
@@ -366,13 +371,19 @@ class AppraisalController extends Controller
             'canSelfAssess' => $appraisal->status === 'self_assessment'
                             && auth()->id() === $appraisal->employee?->user_id,
             'returnees'  => $this->appraiserChoices($appraisal->employee),
+            // Offered to an administrator so a half-built card can be filled
+            // from a template instead of one KRA at a time.
+            'templates'  => AppraisalTemplate::withCount('kpis')->where('is_active', true)
+                                ->orderBy('name')->get(),
         ]);
     }
 
     /** The appraiser fills in actuals, ratings and evidence notes. */
     public function score(Request $request, Appraisal $appraisal)
     {
-        abort_unless($appraisal->status === 'with_appraiser' && auth()->id() === $appraisal->appraiser_id,
+        abort_unless(
+            $this->isAdmin()
+                || ($appraisal->status === 'with_appraiser' && auth()->id() === $appraisal->appraiser_id),
             403, 'This appraisal is not with you for scoring.');
 
         $rows = $request->validate([
@@ -392,8 +403,14 @@ class AppraisalController extends Controller
             $kpi->recalculate();
         }
 
+        // weighted index = rating x weight%, re-derived on every save rather
+        // than stored by the form, so it can never disagree with the rating
+        // sitting next to it.
         $appraisal->recalculate();
-        return back()->with('success', 'Scores saved.');
+
+        $index = number_format((float) $appraisal->kpis()->sum('weighted_index'), 2);
+
+        return back()->with('success', "Scores saved. Weighted index is now {$index}.");
     }
 
     /** Appraiser returns the card — to the initiator, or someone they nominate. */
@@ -562,6 +579,130 @@ class AppraisalController extends Controller
     }
 
     // ── Part II actions ──────────────────────────────────────────────────
+
+    /**
+     * HR or an administrator correcting the written sections.
+     *
+     * The manager's and the employee's comments are normally written at their
+     * own step and locked afterwards. An administrator fixing a card - a typo,
+     * a missing paragraph, a comment the employee dictated over the phone -
+     * had no way in at all once the step had passed.
+     */
+    public function adminComment(Request $request, Appraisal $appraisal)
+    {
+        abort_unless($this->isAdmin(), 403, 'Only HR or an administrator can edit these.');
+
+        $data = $request->validate([
+            'manager_comment'  => 'nullable|string|max:5000',
+            'employee_comment' => 'nullable|string|max:5000',
+        ]);
+
+        $appraisal->update($data);
+
+        // Written into the history, because an administrator editing somebody
+        // else's comment should never be invisible.
+        $appraisal->log('comments_edited', $appraisal->status,
+            'Comments edited by ' . auth()->user()->name . '.');
+
+        return back()->with('success', 'Comments saved.');
+    }
+
+    /**
+     * Pull a template's KPIs into a card that already exists.
+     *
+     * A card built before the template was finished - or one started empty -
+     * could only be filled in one KRA at a time. Nineteen rows retyped by hand
+     * is how weights stop adding to 100.
+     *
+     * Rows already on the card are left alone and not duplicated: this adds
+     * what is missing rather than replacing what somebody has already tuned.
+     */
+    public function importKpis(Request $request, Appraisal $appraisal)
+    {
+        abort_unless($this->isAdmin() || auth()->id() === $appraisal->initiated_by, 403);
+
+        abort_unless($appraisal->status === 'draft' || $this->isAdmin(), 403,
+            'The KPIs are locked once the appraisal has been sent out.');
+
+        $data = $request->validate([
+            'appraisal_template_id' => 'required|exists:appraisal_templates,id',
+        ]);
+
+        $template = AppraisalTemplate::with('kpis')->findOrFail($data['appraisal_template_id']);
+
+        $existing = $appraisal->kpis()->pluck('kra_name')
+            ->map(fn ($n) => mb_strtolower(trim($n)))->all();
+
+        $order = (int) $appraisal->kpis()->max('sort_order');
+        $added = 0;
+        $skipped = 0;
+
+        foreach ($template->kpis as $tk) {
+            if (in_array(mb_strtolower(trim($tk->kra_name)), $existing, true)) {
+                $skipped++;
+                continue;
+            }
+
+            $appraisal->kpis()->create([
+                'perspective'         => $tk->perspective,
+                'kra_name'            => $tk->kra_name,
+                'performance_measure' => $tk->performance_measure,
+                'target'              => $tk->target,
+                'weightage'           => $tk->weightage,
+                'evidence_note'       => $tk->evidence_note,
+                'sort_order'          => ++$order,
+            ]);
+            $added++;
+        }
+
+        if ($added) {
+            $appraisal->recalculate();
+            $appraisal->log('kpis_imported', $appraisal->status,
+                "Imported {$added} KPI(s) from template: {$template->name}");
+        }
+
+        $total = round($appraisal->totalWeight(), 2);
+
+        return back()->with($added ? 'success' : 'error', $added
+            ? "Added {$added} KPI(s)"
+                . ($skipped ? ", skipped {$skipped} already on the card" : '')
+                . ". The weights now total {$total}%."
+            : 'Every KPI on that template is already on this card.');
+    }
+
+    /**
+     * Remove a card that should not exist.
+     *
+     * Restricted to an administrator, and to a card nobody has scored: once
+     * ratings exist the card is a record of a conversation that happened, and
+     * deleting it destroys that rather than tidying it.
+     */
+    public function destroy(Appraisal $appraisal)
+    {
+        abort_unless($this->isAdmin(), 403, 'Only HR or an administrator can delete an appraisal.');
+
+        $scored = $appraisal->kpis()->whereNotNull('rating')->count();
+
+        if ($scored > 0 && $appraisal->status !== 'draft') {
+            return back()->with('error',
+                "This appraisal has {$scored} scored KPI(s) and is past draft, so it is a record of a review that "
+                . 'happened. Cancel it instead of deleting it, or clear the ratings first.');
+        }
+
+        $name = $appraisal->employee?->full_name ?? 'the employee';
+        $title = $appraisal->title;
+
+        $appraisal->delete();
+
+        return redirect()->route('appraisals.index')
+            ->with('success', "Deleted \"{$title}\" for {$name}.");
+    }
+
+    /** HR and administrators are not bound to one step of the card. */
+    private function isAdmin(): bool
+    {
+        return auth()->user()->hasAnyRole(['super-admin', 'hr-admin']);
+    }
 
     public function storeAction(Request $request, Appraisal $appraisal)
     {

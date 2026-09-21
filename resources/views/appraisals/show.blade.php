@@ -5,6 +5,8 @@
 @php
     $emp   = $appraisal->employee;
     $bands = \App\Models\Appraisal::BANDS;
+    $isAdmin = auth()->user()->hasAnyRole(['super-admin', 'hr-admin']);
+    $scoredCount = $appraisal->kpis->whereNotNull('rating')->count();
 @endphp
 
 <x-page-header title="Individual Balanced Score Card" subtitle="{{ $appraisal->title }}">
@@ -19,6 +21,55 @@
     </div>
     @endif
 @endforeach
+
+@if($isAdmin)
+{{-- An administrator is not at any one step of this card, so the things only
+     they can do are gathered here rather than scattered through the flow. --}}
+<div class="card p-5 mb-5 border-l-4 border-blue-500">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+            <h3 class="font-semibold text-slate-800">Administrator controls</h3>
+            <p class="text-xs text-slate-500 mt-1">
+                {{ $appraisal->kpis->count() }} KPI(s) on this card, weights totalling
+                <strong class="{{ $appraisal->weightIsComplete() ? 'text-green-700' : 'text-amber-700' }}">{{ round($appraisal->totalWeight(), 2) }}%</strong>.
+                @if(! $appraisal->weightIsComplete())
+                    They must total exactly 100% before this can be sent.
+                @endif
+            </p>
+        </div>
+
+        <form method="POST" action="{{ route('appraisals.destroy', $appraisal) }}"
+              onsubmit="return confirm('Delete this appraisal for good? This cannot be undone.')">
+            @csrf @method('DELETE')
+            <button class="btn-secondary text-rose-600 text-sm">
+                <i class="fas fa-trash mr-1"></i> Delete appraisal
+            </button>
+        </form>
+    </div>
+
+    {{-- Adds what is missing rather than replacing what somebody has tuned:
+         a KRA already on the card is skipped, never duplicated. --}}
+    @if(isset($templates) && $templates->isNotEmpty())
+    <form method="POST" action="{{ route('appraisals.import-kpis', $appraisal) }}"
+          class="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
+        @csrf
+        <div class="flex-1 min-w-[16rem]">
+            <label class="form-label">Import KPIs from a template</label>
+            <select name="appraisal_template_id" class="form-select" required>
+                <option value="">Choose a template…</option>
+                @foreach($templates as $t)
+                <option value="{{ $t->id }}">{{ $t->name }} ({{ $t->kpis_count ?? $t->kpis->count() }} KPIs)</option>
+                @endforeach
+            </select>
+        </div>
+        <button class="btn-primary"><i class="fas fa-file-import mr-1"></i> Import</button>
+        <p class="basis-full text-xs text-slate-500">
+            KRAs already on this card are skipped, not duplicated.
+        </p>
+    </form>
+    @endif
+</div>
+@endif
 
 {{-- ── Header block: employee | immediate manager ── --}}
 <div class="card p-0 overflow-hidden mb-5">
@@ -387,6 +438,20 @@
                       placeholder="Your own view of this review period…">{{ $appraisal->employee_comment }}</textarea>
             <button class="btn-primary mt-3"><i class="fas fa-signature mr-1"></i> Submit &amp; Sign Off</button>
         </form>
+        @elseif($isAdmin)
+        {{-- The employee writes this at their own step. An administrator
+             correcting it afterwards is logged into the history. --}}
+        <form method="POST" action="{{ route('appraisals.comments', $appraisal) }}">
+            @csrf
+            <textarea name="employee_comment" rows="5" class="form-input"
+                      placeholder="The employee's own view of this review period…">{{ $appraisal->employee_comment }}</textarea>
+            <button class="btn-secondary mt-3 text-sm"><i class="fas fa-pen mr-1"></i> Save comment</button>
+        </form>
+            @if($appraisal->employee_signed_at)
+                <p class="text-xs text-slate-400 mt-3">
+                    Signed by {{ $emp?->full_name }} · {{ $appraisal->employee_signed_at->format('d M Y H:i') }}
+                </p>
+            @endif
         @else
             <p class="text-sm text-slate-600 whitespace-pre-line">{{ $appraisal->employee_comment ?: '—' }}</p>
             @if($appraisal->employee_signed_at)
@@ -407,6 +472,19 @@
                       placeholder="Your comment on the overall performance…">{{ $appraisal->manager_comment }}</textarea>
             <button class="btn-primary mt-3"><i class="fas fa-check mr-1"></i> Confirm &amp; Send to Employee</button>
         </form>
+        @elseif($isAdmin)
+        <form method="POST" action="{{ route('appraisals.comments', $appraisal) }}">
+            @csrf
+            <textarea name="manager_comment" rows="5" class="form-input"
+                      placeholder="Comment on the overall performance…">{{ $appraisal->manager_comment }}</textarea>
+            <button class="btn-secondary mt-3 text-sm"><i class="fas fa-pen mr-1"></i> Save comment</button>
+        </form>
+            @if($appraisal->manager_signed_at)
+                <p class="text-xs text-slate-400 mt-3">
+                    Confirmed by {{ $appraisal->returnTo?->name ?? $appraisal->initiator?->name }} ·
+                    {{ $appraisal->manager_signed_at->format('d M Y H:i') }}
+                </p>
+            @endif
         @else
             <p class="text-sm text-slate-600 whitespace-pre-line">{{ $appraisal->manager_comment ?: '—' }}</p>
             @if($appraisal->manager_signed_at)
