@@ -417,8 +417,10 @@ class AppraisalController extends Controller
 
         $rows = $request->validate([
             'kpi'                    => 'required|array',
+            'kpi.*.target'           => 'nullable|string|max:50',
             'kpi.*.actual_achieved'  => 'nullable|string|max:50',
             'kpi.*.rating'           => 'nullable|integer|min:1|max:5',
+            'kpi.*.self_rating'      => 'nullable|integer|min:1|max:5',
             'kpi.*.evidence_note'    => 'nullable|string|max:255',
         ])['kpi'];
 
@@ -429,6 +431,20 @@ class AppraisalController extends Controller
                 'rating'          => $rows[$kpi->id]['rating'] ?? null,
                 'evidence_note'   => $rows[$kpi->id]['evidence_note'] ?? null,
             ]);
+
+            // The target drives "% Target Achieved", so it is saved before the
+            // row is recalculated rather than after.
+            if (array_key_exists('target', $rows[$kpi->id])) {
+                $kpi->target = $rows[$kpi->id]['target'];
+            }
+
+            // Only an administrator may record somebody else's self-rating.
+            if ($this->isAdmin() && array_key_exists('self_rating', $rows[$kpi->id])) {
+                $kpi->self_rating = $rows[$kpi->id]['self_rating'];
+            }
+
+            // weighted index = rating x weight%, so a 3 against a 5% weight is
+            // 0.15. Derived here on every save, never posted by the form.
             $kpi->recalculate();
         }
 

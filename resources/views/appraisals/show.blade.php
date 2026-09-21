@@ -142,7 +142,20 @@
             <tr class="border-b border-slate-100 hover:bg-slate-50">
                 <td class="px-3 py-2 align-top text-slate-800">{{ $kpi->kra_name }}</td>
                 <td class="px-3 py-2 align-top text-slate-600 text-xs">{{ $kpi->performance_measure }}</td>
-                <td class="px-3 py-2 align-top text-center text-slate-700">{{ $kpi->target ?? '—' }}</td>
+                <td class="px-3 py-2 align-top text-center text-slate-700">
+                    {{-- The target was display-only, so a KPI that arrived from a
+                         template without one could never be given a target at all -
+                         and "% Target Achieved" is derived from it, so that column
+                         stayed empty too. The scorer sets it; the employee does
+                         not, because a target is set for you, not by you. --}}
+                    @if($canScore)
+                        <input type="text" name="kpi[{{ $kpi->id }}][target]"
+                               value="{{ $kpi->target }}" class="form-input text-center py-1 text-sm"
+                               placeholder="e.g. 30">
+                    @else
+                        {{ $kpi->target ?: '—' }}
+                    @endif
+                </td>
                 <td class="px-3 py-2 align-top text-center">
                     {{-- Written by the employee first and editable by the appraiser
                          afterwards: it is a fact about the period, not an opinion,
@@ -156,7 +169,12 @@
                 </td>
 
                 <td class="px-3 py-2 align-top text-center">
-                    @if($canSelfAssess)
+                    {{-- The employee normally writes this at their own step. An
+                         administrator can record it as well - often they are
+                         entering a card that was filled in on paper - but an
+                         ordinary appraiser cannot, because writing somebody
+                         else's self-rating is not scoring, it is inventing. --}}
+                    @if($canSelfAssess || $isAdmin)
                         <div class="flex justify-center gap-1">
                             @for($r = 1; $r <= 5; $r++)
                                 <label class="cursor-pointer">
