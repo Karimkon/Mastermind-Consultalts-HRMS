@@ -261,6 +261,17 @@
         </a>
         @endrole
         @role('super-admin|hr-admin')
+        @php($awaitingApproval = \App\Models\PendingChange::pending()->count())
+        <a href="{{ route('admin.change-approvals.index') }}" class="sidebar-link {{ request()->routeIs('admin.change-approvals.*') ? 'active' : '' }}">
+            <i class="fas fa-user-check w-4 text-center"></i>
+            <span x-show="sidebarOpen" class="flex-1">Change Approvals</span>
+            @if($awaitingApproval)
+            {{-- A queue nobody can see is a queue nobody clears. --}}
+            <span x-show="sidebarOpen" class="ml-auto px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[11px] font-semibold">
+                {{ $awaitingApproval }}
+            </span>
+            @endif
+        </a>
         <a href="{{ route('admin.bulk-update.index') }}" class="sidebar-link {{ request()->routeIs('admin.bulk-update.*') ? 'active' : '' }}">
             <i class="fas fa-file-arrow-up w-4 text-center"></i><span x-show="sidebarOpen">Bulk Update Staff</span>
         </a>

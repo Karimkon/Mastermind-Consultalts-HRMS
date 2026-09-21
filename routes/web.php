@@ -2,7 +2,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\{LoginController, MfaController, PasswordResetController};
 use App\Http\Controllers\{DashboardController, ProfileController, AjaxController, EmployeeController, AttendanceController, LeaveController, PayrollController, RecruitmentController, PerformanceController, TrainingController, MeetingController, ReportController};
-use App\Http\Controllers\Admin\{UserController, DepartmentController, SettingController, RoleController, AuditLogController, DocumentationController, AdminClientController, AppraisalTemplateController, BulkUpdateController};
+use App\Http\Controllers\Admin\{UserController, DepartmentController, SettingController, RoleController, AuditLogController, DocumentationController, AdminClientController, AppraisalTemplateController, BulkUpdateController, ChangeApprovalController};
 use App\Http\Controllers\{ClientController, ClientLeaveController, ClientRecruitmentController, AiRecruitmentController};
 use App\Http\Controllers\Employee\{OnboardingController, ExitController, SelfServiceController};
 use App\Http\Controllers\AccountManagerController;
@@ -467,6 +467,13 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::get('roles/{role}/edit', [RoleController::class, 'edit'])->name('roles.edit');
         Route::put('roles/{role}', [RoleController::class, 'update'])->name('roles.update');
         Route::get('audit', [AuditLogController::class, 'index'])->name('audit.index');
+
+        // An account manager proposes; HR decides. Nothing in this queue has
+        // been written to the record it refers to.
+        Route::get('change-approvals',                  [ChangeApprovalController::class, 'index'])->name('change-approvals.index');
+        Route::get('change-approvals/{change}',         [ChangeApprovalController::class, 'show'])->name('change-approvals.show');
+        Route::post('change-approvals/{change}/approve',[ChangeApprovalController::class, 'approve'])->name('change-approvals.approve');
+        Route::post('change-approvals/{change}/reject', [ChangeApprovalController::class, 'reject'])->name('change-approvals.reject');
         Route::get('documentation/pdf', [DocumentationController::class, 'pdf'])->name('documentation.pdf');
 
         // Account Manager Management

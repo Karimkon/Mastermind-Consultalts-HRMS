@@ -17,6 +17,32 @@
 </div>
 @endif
 
+@php
+    $awaiting = \App\Models\PendingChange::pending()
+        ->where('requested_by', auth()->id())
+        ->where(function ($q) use ($employee) {
+            $q->where(fn ($m) => $m->where('model_type', 'Employee')->where('model_id', $employee->id))
+              ->orWhere(fn ($m) => $m->where('model_type', 'EmployeeSalary')
+                  ->where('model_id', optional($employee->salary)->id));
+        })
+        ->latest()->get();
+@endphp
+
+@if($awaiting->isNotEmpty())
+{{-- Without this the account manager saves, sees the record unchanged, and
+     saves again — which is how a queue fills with duplicates of one edit. --}}
+<div class="mb-4 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-sm">
+    <i class="fas fa-hourglass-half mt-0.5"></i>
+    <div>
+        <strong>{{ $awaiting->sum(fn($c) => count($c->payload)) }} change(s) waiting for HR approval.</strong>
+        <span class="block text-xs mt-1">
+            What you see below is what is on file. Your edit is not applied until HR approves it.
+            Asked for {{ $awaiting->first()->created_at->diffForHumans() }}.
+        </span>
+    </div>
+</div>
+@endif
+
 <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
 
     {{-- ── Left sidebar ─────────────────────────────────────────────────── --}}

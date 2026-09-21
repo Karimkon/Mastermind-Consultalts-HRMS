@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Exports\AmEmployeesExport;
+use App\Services\ChangeRequestService;
 use App\Models\{Client, Department, Designation, Employee, EmployeeSalary, LeaveRequest, AttendanceLog, EmployeeDocument, PayrollRun, AmSalaryPayment, User};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -173,8 +174,7 @@ class AccountManagerController extends Controller
             'payment_mode'  => 'nullable|in:bank,mtn,airtel,cash,cheque',
         ]);
 
-        // Scalar fields
-        $employee->update($request->only(
+        $data = $request->only(
             'title', 'first_name', 'middle_name', 'last_name',
             'date_of_birth', 'gender', 'marital_status', 'nationality', 'religion', 'mother_tongue',
             'phone', 'personal_email', 'address', 'city', 'country',
@@ -182,50 +182,120 @@ class AccountManagerController extends Controller
             'next_of_kin_name', 'next_of_kin_relation', 'next_of_kin_phone', 'next_of_kin_email',
             'status', 'employment_type', 'hire_date', 'contract_end_date', 'work_location',
             'nssf_number', 'tin_number', 'national_id', 'passport_number', 'ifms_supplier_no', 'pension_no',
-            'payment_mode', 'bank_name', 'bank_account', 'bank_branch', 'mobile_money_number',
-        ));
+            'bank_name', 'bank_account', 'bank_branch', 'mobile_money_number',
+        );
 
-        // Boolean checkboxes (only present when checked)
-        $employee->update([
-            'charge_paye'            => $request->boolean('charge_paye'),
-            'charge_nssf'            => $request->boolean('charge_nssf'),
-            'nssf_paid_by_employer'  => $request->boolean('nssf_paid_by_employer'),
-            'charge_lst'             => $request->boolean('charge_lst'),
-            'tax_paid_by_employer'   => $request->boolean('tax_paid_by_employer'),
-        ]);
+        // Checkboxes send nothing when unticked, so they are read explicitly
+        // rather than taken from only().
+        foreach (['charge_paye', 'charge_nssf', 'nssf_paid_by_employer', 'charge_lst', 'tax_paid_by_employer'] as $flag) {
+            $data[$flag] = $request->boolean($flag) ? 1 : 0;
+        }
 
         // Only rewrite the payment mode when the form actually submitted one.
         // normalisePaymentMode() falls back to 'bank' for an empty value, so
         // writing it unconditionally would silently switch a mobile-money
         // employee to bank on any save that did not include the field.
         if ($request->filled('payment_mode')) {
-            $employee->update([
-                'payment_mode' => Employee::normalisePaymentMode(
-                    $request->input('payment_mode'),
-                    $request->input('mobile_money_number') ?: $request->input('phone')
-                ),
-            ]);
+            $data['payment_mode'] = Employee::normalisePaymentMode(
+                $request->input('payment_mode'),
+                $request->input('mobile_money_number') ?: $request->input('phone')
+            );
         }
 
-        // Salary update
-        if ($request->filled('basic_salary')) {
-            $existing = $employee->salary;
-            $salaryType = $request->input('salary_type', 'monthly');
-            if ($existing) {
-                $existing->update(['basic_salary' => $request->basic_salary, 'salary_type' => $salaryType]);
-            } else {
-                EmployeeSalary::create([
-                    'employee_id'    => $employee->id,
-                    'basic_salary'   => $request->basic_salary,
-                    'salary_type'    => $salaryType,
-                    'effective_from' => today(),
-                    'is_current'     => true,
-                    'created_by'     => auth()->id(),
-                ]);
+        // An account manager proposes; HR decides. Nothing on the record moves
+        // until somebody with HR authority approves it, because these fields
+        // move money - a bank account number, a payment mode, a salary.
+        if ($this->mustBeApproved()) {
+            $pending = app(ChangeRequestService::class)->capture(
+                $employee,
+                $data,
+                $employee->full_name.' ('.$employee->emp_number.')',
+                $this->clientIdFor($employee)
+            );
+
+            // The salary lives on its own record, so it is proposed separately.
+            $salaryPending = $this->captureSalaryChange($request, $employee);
+
+            if (! $pending && ! $salaryPending) {
+                return back()->with('success', 'Nothing was changed.');
             }
+
+            return back()->with('success',
+                'Sent to HR for approval. Nothing on this record changes until they approve it.');
         }
+
+        $employee->update($data);
+        $this->applySalaryChange($request, $employee);
 
         return back()->with('success', 'Employee profile updated successfully.');
+    }
+
+    /**
+     * Whether the person signed in has to ask.
+     *
+     * HR and administrators are the approvers, so they still write directly -
+     * routing their own edits into a queue only they can clear would leave
+     * nobody able to act.
+     */
+    private function mustBeApproved(): bool
+    {
+        return ! auth()->user()->hasAnyRole(['super-admin', 'hr-admin']);
+    }
+
+    /** Which client this person is placed with, for the reviewer's queue. */
+    private function clientIdFor(Employee $employee): ?int
+    {
+        return \Illuminate\Support\Facades\DB::table('client_employee_assignments')
+            ->where('employee_id', $employee->id)->value('client_id');
+    }
+
+    private function captureSalaryChange(Request $request, Employee $employee): ?\App\Models\PendingChange
+    {
+        if (! $request->filled('basic_salary')) {
+            return null;
+        }
+
+        $salary = $employee->salary;
+
+        if (! $salary) {
+            // There is nothing to compare against, so the proposal carries the
+            // whole row and approval creates it.
+            $salary = new EmployeeSalary(['employee_id' => $employee->id]);
+        }
+
+        return app(ChangeRequestService::class)->capture(
+            $salary,
+            [
+                'basic_salary' => $request->basic_salary,
+                'salary_type'  => $request->input('salary_type', 'monthly'),
+            ],
+            'Salary for '.$employee->full_name.' ('.$employee->emp_number.')',
+            $this->clientIdFor($employee)
+        );
+    }
+
+    private function applySalaryChange(Request $request, Employee $employee): void
+    {
+        if (! $request->filled('basic_salary')) {
+            return;
+        }
+
+        $existing = $employee->salary;
+        $salaryType = $request->input('salary_type', 'monthly');
+
+        if ($existing) {
+            $existing->update(['basic_salary' => $request->basic_salary, 'salary_type' => $salaryType]);
+            return;
+        }
+
+        EmployeeSalary::create([
+            'employee_id'    => $employee->id,
+            'basic_salary'   => $request->basic_salary,
+            'salary_type'    => $salaryType,
+            'effective_from' => today(),
+            'is_current'     => true,
+            'created_by'     => auth()->id(),
+        ]);
     }
 
     /* ─────────────────────────── Export / Import ─────────────────────────── */
