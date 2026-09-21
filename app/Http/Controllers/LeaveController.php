@@ -5,6 +5,7 @@ use App\Mail\LeaveSubmittedMail;
 use App\Mail\LeaveClientNotificationMail;
 use App\Mail\LeaveApprovedByClientMail;
 use App\Mail\LeaveStatusMail;
+use App\Services\LeaveAdjustmentService;
 use App\Services\NotificationService;
 use App\Models\{LeaveRequest, LeaveType, LeaveBalance, Employee, Department, User, Client, Notification};
 use Illuminate\Http\Request;
@@ -193,9 +194,129 @@ class LeaveController extends Controller
 
     public function show(LeaveRequest $leave)
     {
-        $leave->load(['employee.user', 'employee.clients', 'employee.department', 'employee.designation', 'leaveType', 'approver']);
+        $leave->load(['employee.user', 'employee.clients', 'employee.department',
+                      'employee.designation', 'leaveType', 'approver', 'recaller']);
+
         $client = $leave->employee?->clients->first();
-        return view('leaves.show', compact('leave', 'client'));
+
+        // What is left of this person's entitlement, so a decision to extend is
+        // made against the balance rather than in the dark.
+        $balance = $leave->employee
+            ? app(LeaveAdjustmentService::class)->balanceFor($leave->employee, $leave->leave_type_id)
+            : null;
+
+        $canManage = auth()->user()->hasAnyRole(['super-admin', 'hr-admin', 'manager']);
+
+        return view('leaves.show', compact('leave', 'client', 'balance', 'canManage'));
+    }
+
+    /**
+     * Bring somebody back from leave early.
+     *
+     * The leave ends today and the days from tomorrow are given back. A leave
+     * that has not started yet is cancelled outright instead, because one
+     * ending before it begins is not a shortened leave.
+     */
+    public function recall(Request $request, LeaveRequest $leave)
+    {
+        $this->authoriseManage();
+
+        if ($leave->status !== 'approved') {
+            return back()->with('error', 'Only an approved leave can be recalled.');
+        }
+
+        $data = $request->validate(['note' => 'nullable|string|max:500']);
+
+        $result = app(LeaveAdjustmentService::class)->recall($leave, $data['note'] ?? null);
+
+        app(NotificationService::class);
+
+        $this->tellEmployee($leave,
+            'You have been recalled from leave',
+            $result['cancelled']
+                ? 'Your approved leave was cancelled before it started. '
+                  . $result['returned'] . ' day(s) have gone back to your balance.'
+                : 'Your leave now ends today. ' . $result['returned']
+                  . ' day(s) have gone back to your balance.');
+
+        return back()->with('success', $result['cancelled']
+            ? "Leave cancelled and {$result['returned']} day(s) returned to the balance."
+            : "Recalled. The leave now ends today ({$result['days']} day(s) taken) and "
+              . "{$result['returned']} day(s) went back to the balance.");
+    }
+
+    /**
+     * Lengthen or shorten a leave that has already been granted.
+     *
+     * The new end date is given; the days are recounted the same way the
+     * application form counts them, and the balance moves by the difference.
+     */
+    public function adjust(Request $request, LeaveRequest $leave)
+    {
+        $this->authoriseManage();
+
+        if (! in_array($leave->status, ['approved', 'pending'], true)) {
+            return back()->with('error', 'Only a pending or approved leave can be changed.');
+        }
+
+        $data = $request->validate([
+            'to_date' => 'required|date|after_or_equal:'.$leave->from_date->toDateString(),
+            'note'    => 'nullable|string|max:500',
+        ], [
+            'to_date.after_or_equal' => 'The leave cannot end before it starts.',
+        ]);
+
+        $service = app(LeaveAdjustmentService::class);
+        $was = (float) $leave->days_count;
+
+        // Refusing here rather than letting the balance go negative: a person
+        // cannot take more days than they have.
+        $balance = $leave->employee
+            ? $service->balanceFor($leave->employee, $leave->leave_type_id)
+            : null;
+
+        $wouldBe = $service->workingDays($leave->from_date, \Carbon\Carbon::parse($data['to_date']));
+        $extra = $wouldBe - $was;
+
+        if ($balance && $extra > 0 && $extra > $balance['remaining']) {
+            return back()->with('error', sprintf(
+                'That would add %s day(s) but only %s remain of the %s entitlement.',
+                round($extra, 2), round($balance['remaining'], 2), $leave->leaveType?->name ?? 'leave'
+            ));
+        }
+
+        $now = $service->changeEndDate($leave, \Carbon\Carbon::parse($data['to_date']), $data['note'] ?? null);
+
+        $this->tellEmployee($leave,
+            $now > $was ? 'Your leave has been extended' : 'Your leave has been shortened',
+            'It now runs to '.$leave->fresh()->to_date->format('d M Y')." ({$now} day(s)).");
+
+        return back()->with('success', sprintf(
+            '%s from %s to %s day(s).',
+            $now > $was ? 'Extended' : ($now < $was ? 'Shortened' : 'Unchanged'),
+            round($was, 2), round($now, 2)
+        ));
+    }
+
+    private function authoriseManage(): void
+    {
+        abort_unless(auth()->user()->hasAnyRole(['super-admin', 'hr-admin', 'manager']), 403,
+            'Only HR, a manager or an administrator can change a granted leave.');
+    }
+
+    private function tellEmployee(LeaveRequest $leave, string $title, string $body): void
+    {
+        if (! $leave->employee?->user_id) {
+            return;
+        }
+
+        Notification::create([
+            'user_id' => $leave->employee->user_id,
+            'type'    => 'leave_adjusted',
+            'title'   => $title,
+            'body'    => $body,
+            'data'    => ['leave_id' => $leave->id],
+        ]);
     }
 
     public function edit(LeaveRequest $leave)
@@ -290,6 +411,17 @@ class LeaveController extends Controller
                 ->where('leave_type_id', $leave->leave_type_id)
                 ->where('year', $leave->from_date->year)
                 ->decrement('used_days', $leave->days_count);
+        } else {
+            // A request that was still waiting had its days reserved against
+            // the balance. Rejecting it released nothing, so the days stayed
+            // held for the rest of the year and the person's remaining
+            // entitlement read short - James Mugisha was holding 3 days on a
+            // request that had been refused.
+            LeaveBalance::where('employee_id', $leave->employee_id)
+                ->where('leave_type_id', $leave->leave_type_id)
+                ->where('year', $leave->from_date->year)
+                ->where('pending_days', '>=', $leave->days_count)
+                ->decrement('pending_days', $leave->days_count);
         }
 
         // Reset employee status to active if no other active approved leaves exist

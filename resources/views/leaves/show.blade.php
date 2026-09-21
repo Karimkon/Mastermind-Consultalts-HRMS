@@ -5,6 +5,122 @@
     <a href="{{ route('leaves.index') }}" class="btn-secondary"><i class="fas fa-arrow-left"></i> Back</a>
 </x-page-header>
 
+@foreach(['success' => ['green','check-circle'], 'error' => ['red','circle-exclamation']] as $key => [$c,$icon])
+    @if(session($key))
+    <div class="mb-4 flex items-center gap-3 px-4 py-3 bg-{{ $c }}-50 border border-{{ $c }}-200 rounded-lg text-{{ $c }}-700 text-sm">
+        <i class="fas fa-{{ $icon }}"></i> {{ session($key) }}
+    </div>
+    @endif
+@endforeach
+
+@if($errors->any())
+<div class="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+    <i class="fas fa-circle-exclamation mr-1"></i> {{ $errors->first() }}
+</div>
+@endif
+
+@if($balance)
+{{-- What is left of the entitlement, so a decision to extend is made against
+     the balance rather than in the dark. --}}
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+    @foreach([
+        ['Entitled', $balance['entitled'], 'slate'],
+        ['Taken', $balance['used'], 'slate'],
+        ['Reserved', $balance['pending'], 'amber'],
+        ['Remaining', $balance['remaining'], $balance['remaining'] > 0 ? 'green' : 'rose'],
+    ] as [$label, $value, $colour])
+    <div class="rounded-xl border border-{{ $colour }}-200 bg-{{ $colour }}-50 p-4">
+        <p class="text-2xl font-bold text-{{ $colour }}-700">{{ rtrim(rtrim(number_format($value, 2), '0'), '.') }}</p>
+        <p class="text-xs text-slate-600">{{ $label }} day(s)</p>
+    </div>
+    @endforeach
+</div>
+@if(! $balance['seeded'])
+<p class="-mt-3 mb-5 text-xs text-amber-700">
+    <i class="fas fa-triangle-exclamation mr-1"></i>
+    No balance has been opened for this person this year, so the entitlement shown is the
+    {{ $leave->leaveType?->name ?? 'leave type' }} default. It is created the first time days move.
+</p>
+@endif
+@endif
+
+@if($leave->wasAdjusted() || $leave->recalled_at)
+<div class="mb-5 flex items-start gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-sm">
+    <i class="fas fa-clock-rotate-left mt-0.5"></i>
+    <div>
+        @if($leave->recalled_at)
+            <strong>Recalled
+            @if($leave->recaller) by {{ $leave->recaller->name }} @endif
+            on {{ $leave->recalled_at->format('d M Y') }}.</strong>
+        @else
+            <strong>This leave was changed after it was granted.</strong>
+        @endif
+        @if($leave->original_to_date)
+        <span class="block text-xs mt-1">
+            Originally ran to {{ $leave->original_to_date->format('d M Y') }}
+            ({{ rtrim(rtrim(number_format((float) $leave->original_days, 2), '0'), '.') }} day(s));
+            now {{ $leave->to_date?->format('d M Y') }}
+            ({{ rtrim(rtrim(number_format((float) $leave->days_count, 2), '0'), '.') }} day(s)).
+        </span>
+        @endif
+        @if($leave->adjustment_note)
+        <span class="block text-xs mt-1 italic">&ldquo;{{ $leave->adjustment_note }}&rdquo;</span>
+        @endif
+    </div>
+</div>
+@endif
+
+@if($canManage && in_array($leave->status, ['approved', 'pending'], true))
+<div class="card p-5 mb-5 border-l-4 border-blue-500">
+    <h3 class="font-semibold text-slate-800 mb-1">Manage this leave</h3>
+    <p class="text-xs text-slate-500 mb-4">
+        The days are recounted automatically and the balance moves by the difference only.
+    </p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {{-- Changing the end date covers both directions: a later date extends,
+             an earlier one shortens. One control, no arithmetic to get wrong. --}}
+        <form method="POST" action="{{ route('leaves.adjust', $leave) }}">
+            @csrf
+            <label class="form-label">Change the last day of leave</label>
+            <div class="flex flex-wrap gap-2">
+                <input type="date" name="to_date" class="form-input w-44"
+                       value="{{ $leave->to_date?->toDateString() }}"
+                       min="{{ $leave->from_date?->toDateString() }}" required>
+                <input type="text" name="note" class="form-input flex-1 min-w-[10rem]" placeholder="Why (optional)">
+                <button class="btn-primary"><i class="fas fa-calendar-day mr-1"></i> Apply</button>
+            </div>
+            <p class="text-xs text-slate-500 mt-2">
+                A later date extends the leave, an earlier one shortens it. Currently
+                {{ rtrim(rtrim(number_format((float) $leave->days_count, 2), '0'), '.') }} working day(s).
+            </p>
+        </form>
+
+        @if($leave->status === 'approved')
+        <form method="POST" action="{{ route('leaves.recall', $leave) }}"
+              onsubmit="return confirm('Recall {{ $leave->employee?->full_name }} from leave? The unused days go back to their balance.')">
+            @csrf
+            <label class="form-label">Recall from leave</label>
+            <div class="flex flex-wrap gap-2">
+                <input type="text" name="note" class="form-input flex-1 min-w-[10rem]" placeholder="Reason (optional)">
+                <button class="btn-secondary text-amber-700">
+                    <i class="fas fa-person-walking-arrow-right mr-1"></i> Recall now
+                </button>
+            </div>
+            <p class="text-xs text-slate-500 mt-2">
+                @if($leave->from_date && $leave->from_date->isFuture())
+                    This leave has not started, so recalling cancels it and returns all
+                    {{ rtrim(rtrim(number_format((float) $leave->days_count, 2), '0'), '.') }} day(s).
+                @else
+                    The leave ends today and the remaining days go back to the balance.
+                @endif
+            </p>
+        </form>
+        @endif
+    </div>
+</div>
+@endif
+
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
     {{-- ── Main card ──────────────────────────────────────────────── --}}

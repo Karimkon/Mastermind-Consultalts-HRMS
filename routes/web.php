@@ -167,10 +167,18 @@ Route::middleware(['auth','mfa'])->group(function () {
     });
 
     // Leaves — all roles (employees see own only — scoped in controller)
-    Route::resource('leaves', LeaveController::class);
+    // ->parameters() because Str::singular('leaves') is 'leaf', so the resource
+    // routes bound {leaf} while every controller method type-hints $leave. The
+    // names never matched, so implicit binding silently injected an empty
+    // LeaveRequest: the detail page rendered "Unknown Employee", no dates and
+    // 0 day(s) for every request ever opened.
+    Route::resource('leaves', LeaveController::class)->parameters(['leaves' => 'leave']);
     Route::post('leaves/{leave}/approve', [LeaveController::class, 'approve'])->name('leaves.approve');
     Route::post('leaves/{leave}/reject', [LeaveController::class, 'reject'])->name('leaves.reject');
     Route::post('leaves/{leave}/cancel', [LeaveController::class, 'cancel'])->name('leaves.cancel');
+    // Changing a leave that has already been granted.
+    Route::post('leaves/{leave}/recall', [LeaveController::class, 'recall'])->name('leaves.recall');
+    Route::post('leaves/{leave}/adjust', [LeaveController::class, 'adjust'])->name('leaves.adjust');
     Route::get('leave-types', [LeaveController::class, 'types'])->name('leaves.types');
     Route::post('leave-types', [LeaveController::class, 'storeType'])->name('leaves.types.store');
     Route::get('leave-balance', [LeaveController::class, 'balance'])->name('leaves.balance');

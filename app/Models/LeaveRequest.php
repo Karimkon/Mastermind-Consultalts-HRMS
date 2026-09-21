@@ -10,18 +10,29 @@ class LeaveRequest extends Model
         'client_approval_required', 'client_approval_status', 'client_approved_by', 'client_actioned_at',
         'replacement_employee_id',
         'replacement_name', 'replacement_email', 'replacement_phone',
+        'recalled_at', 'recalled_by', 'original_to_date', 'original_days', 'adjustment_note',
     ];
     protected $casts = [
         'from_date'               => 'date',
         'to_date'                 => 'date',
         'client_approval_required'=> 'boolean',
         'client_actioned_at'      => 'datetime',
+        'recalled_at'             => 'datetime',
+        'original_to_date'        => 'date',
     ];
 
     public function employee()       { return $this->belongsTo(Employee::class); }
     public function leaveType()      { return $this->belongsTo(LeaveType::class); }
     public function approver()       { return $this->belongsTo(Employee::class, 'approved_by'); }
     public function clientApprover() { return $this->belongsTo(Client::class, 'client_approved_by'); }
+
+    public function recaller() { return $this->belongsTo(User::class, 'recalled_by'); }
+
+    /** Cut short or extended after it was granted. */
+    public function wasAdjusted(): bool
+    {
+        return $this->original_to_date !== null;
+    }
 
     /** The staff member nominated to cover, when one was picked from the register. */
     public function replacementEmployee()
