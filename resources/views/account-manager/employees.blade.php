@@ -182,8 +182,23 @@
         <option value="{{ $v }}" {{ request('status') == $v ? 'selected' : '' }}>{{ $l }}</option>
         @endforeach
     </select>
+
+    {{-- Placement is the site somebody works at - Industrial Area, Lubowa,
+         Banda. On a client of 439 people it is the one thing an account
+         manager actually sorts by. --}}
+    @if($placements->isNotEmpty())
+    <select name="placement" class="form-select w-48">
+        <option value="">All Placements</option>
+        @foreach($placements as $placement)
+        <option value="{{ $placement->id }}" @selected(request('placement') == $placement->id)>
+            {{ $placement->name }}
+        </option>
+        @endforeach
+    </select>
+    @endif
+
     <button type="submit" class="btn-primary"><i class="fas fa-search mr-1"></i>Filter</button>
-    @if(request('search') || request('status'))
+    @if(request('search') || request('status') || request('placement'))
     <a href="{{ route('account-manager.employees', $clientId ? ['client_id'=>$clientId] : []) }}" class="btn-secondary">Clear</a>
     @endif
 </form>

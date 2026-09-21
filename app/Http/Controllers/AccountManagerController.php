@@ -94,7 +94,16 @@ class AccountManagerController extends Controller
                    ->orWhere('last_name',  'like', "%{$request->search}%")
                    ->orWhere('emp_number', 'like', "%{$request->search}%");
             }))
-            ->when($request->status, fn($q) => $q->where('status', $request->status));
+            ->when($request->status, fn($q) => $q->where('status', $request->status))
+            ->when($request->placement, fn($q) => $q->where('department_id', (int) $request->placement));
+
+        // Only the placements these people are actually at. Offering all 48
+        // departments would mostly be sites this account manager does not cover,
+        // and every one of those choices returns nothing.
+        $placements = Department::whereIn(
+            'id',
+            Employee::whereIn('id', $empIds)->whereNotNull('department_id')->distinct()->pluck('department_id')
+        )->orderBy('name')->get();
 
         // How many to show. Paging 439 people twenty-five at a time is eighteen
         // clicks to reach the end of one client, which is why this was asked for.
@@ -108,7 +117,8 @@ class AccountManagerController extends Controller
 
         $activeClient = $clientId ? $clients->firstWhere('id', $clientId) : null;
 
-        return view('account-manager.employees', compact('employees', 'clients', 'activeClient', 'clientId'));
+        return view('account-manager.employees',
+            compact('employees', 'clients', 'activeClient', 'clientId', 'placements'));
     }
 
     /**
