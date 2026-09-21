@@ -11,7 +11,33 @@ class EmployeeController extends Controller
     public function index(Request $request)
     {
         $employees = Employee::with(['department', 'designation', 'user'])
-            ->when($request->search, fn($q) => $q->whereHas('user', fn($u) => $u->where('name', 'like', "%{$request->search}%"))->orWhere('emp_number', 'like', "%{$request->search}%"))
+            // Name, staff number or email. first_name/last_name are the
+            // authoritative names - the linked user account is optional, and
+            // hundreds of staff imported from payroll sheets have none, so
+            // searching only the user name hid them entirely.
+            ->when($request->search, function ($q) use ($request) {
+                $term = trim($request->search);
+
+                $q->where(function ($w) use ($term) {
+                    $w->where('first_name', 'like', "%{$term}%")
+                      ->orWhere('last_name', 'like', "%{$term}%")
+                      ->orWhere('emp_number', 'like', "%{$term}%")
+                      ->orWhere('personal_email', 'like', "%{$term}%")
+                      ->orWhereHas('user', fn($u) => $u->where('name', 'like', "%{$term}%")
+                                                       ->orWhere('email', 'like', "%{$term}%"));
+
+                    $words = preg_split('/\s+/', $term, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+                    if (count($words) > 1) {
+                        $w->orWhere(function ($all) use ($words) {
+                            foreach ($words as $word) {
+                                $all->where(fn($e) => $e->where('first_name', 'like', "%{$word}%")
+                                                        ->orWhere('last_name', 'like', "%{$word}%"));
+                            }
+                        });
+                    }
+                });
+            })
             ->when($request->department_id, fn($q) => $q->where('department_id', $request->department_id))
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->type, fn($q) => $q->where('employment_type', $request->type))
@@ -176,12 +202,42 @@ class EmployeeController extends Controller
         $employee->update($data);
 
         $userUpdates = ['name' => trim(($request->first_name ?? '').' '.($request->last_name ?? ''))];
+        $emailProblem = null;
+
         if ($request->filled('login_email') && filter_var($request->login_email, FILTER_VALIDATE_EMAIL)) {
             $newEmail = strtolower(trim($request->login_email));
-            // Only update if not already taken by another user
-            $taken = \App\Models\User::where('email', $newEmail)->where('id', '!=', $employee->user?->id)->exists();
-            if (!$taken) $userUpdates['email'] = $newEmail;
+
+            $takenBy = \App\Models\User::where('email', $newEmail)
+                ->when($employee->user, fn ($q) => $q->where('id', '!=', $employee->user->id))
+                ->first();
+
+            if ($takenBy) {
+                // Said out loud. This was dropped silently, so the form reported
+                // "updated successfully" while the address was never saved - which
+                // is indistinguishable from the field being broken.
+                $emailProblem = "The address {$newEmail} already belongs to {$takenBy->name}, so it was not saved.";
+            } elseif ($employee->user) {
+                $userUpdates['email'] = $newEmail;
+            } else {
+                // No login yet. Most staff imported from a payroll sheet have no
+                // user account, and typing an address here used to do nothing at
+                // all because there was no row to write it to. One is created so
+                // the field means something.
+                $login = \App\Models\User::create([
+                    'name'     => $userUpdates['name'] ?: $employee->full_name,
+                    'email'    => $newEmail,
+                    'password' => \Illuminate\Support\Facades\Hash::make(\Illuminate\Support\Str::random(32)),
+                    'status'   => 'active',
+                ]);
+
+                $login->syncRoles(['employee']);
+                $employee->update(['user_id' => $login->id]);
+                $employee->setRelation('user', $login);
+
+                $emailProblem = null;
+            }
         }
+
         $employee->user?->update($userUpdates);
 
         // When employee is terminated, suspended, retired, or contract expired — cancel all future leaves
@@ -248,6 +304,14 @@ class EmployeeController extends Controller
                 'notes'         => $request->contract_notes,
                 'uploaded_by'   => auth()->id(),
             ]);
+        }
+
+        // A save that quietly dropped the address is worse than one that refuses:
+        // the page said "updated" and the field came back with the old value.
+        if ($emailProblem) {
+            return redirect()->route('employees.show', $employee)
+                ->with('success', 'Employee profile updated.')
+                ->with('error', $emailProblem);
         }
 
         return redirect()->route('employees.show', $employee)->with('success', 'Employee profile updated.');

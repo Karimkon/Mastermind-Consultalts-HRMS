@@ -57,6 +57,13 @@ class AppraisalController extends Controller
         abort_unless($allowed, 403, 'This appraisal is not yours to view.');
     }
 
+    /**
+     * Tell somebody, in the app and by email.
+     *
+     * Every step of an appraisal wrote an in-app row and nothing else, so a card
+     * could sit with somebody for a week while they had no reason to open the
+     * system at all.
+     */
     private function notify(?int $userId, string $title, string $body, Appraisal $a): void
     {
         if (!$userId) return;
@@ -68,6 +75,23 @@ class AppraisalController extends Controller
             'body'    => $body,
             'data'    => ['appraisal_id' => $a->id, 'url' => route('appraisals.show', $a)],
         ]);
+
+        $user = User::find($userId);
+
+        if (! $user?->email) {
+            return;
+        }
+
+        try {
+            // Sent, not queued: this host runs no queue worker of its own, and a
+            // notification that arrives after the appraisal has moved on is no
+            // use to anybody.
+            \Illuminate\Support\Facades\Mail::to($user->email)
+                ->send(new \App\Mail\AppraisalNotificationMail($a, $title, $body, $user->name));
+        } catch (\Throwable $e) {
+            // A failed email must not lose the appraisal action that caused it.
+            logger()->error('Appraisal email to '.$user->email.' failed: '.$e->getMessage());
+        }
     }
 
     // ── Listing ──────────────────────────────────────────────────────────
