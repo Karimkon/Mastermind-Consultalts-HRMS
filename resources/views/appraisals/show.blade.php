@@ -10,13 +10,16 @@
 @endphp
 
 <x-page-header title="Individual Balanced Score Card" subtitle="{{ $appraisal->title }}">
-    <a href="{{ route('appraisals.index') }}" class="btn-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
+    <button type="button" onclick="window.print()" class="btn-secondary no-print">
+        <i class="fas fa-print mr-1"></i> Print
+    </button>
+    <a href="{{ route('appraisals.index') }}" class="btn-secondary no-print"><i class="fas fa-arrow-left mr-1"></i> Back</a>
     <span class="badge-{{ $appraisal->statusBadge() }}">{{ $appraisal->statusLabel() }}</span>
 </x-page-header>
 
 @foreach(['success' => ['green','check-circle'], 'error' => ['red','circle-exclamation']] as $key => [$c,$icon])
     @if(session($key))
-    <div class="mb-4 flex items-center gap-3 px-4 py-3 bg-{{ $c }}-50 border border-{{ $c }}-200 rounded-lg text-{{ $c }}-700 text-sm">
+    <div class="mb-4 flex items-center gap-3 px-4 py-3 bg-{{ $c }}-50 border border-{{ $c }}-200 rounded-lg text-{{ $c }}-700 text-sm no-print">
         <i class="fas fa-{{ $icon }}"></i> {{ session($key) }}
     </div>
     @endif
@@ -25,7 +28,7 @@
 @if($isAdmin)
 {{-- An administrator is not at any one step of this card, so the things only
      they can do are gathered here rather than scattered through the flow. --}}
-<div class="card p-5 mb-5 border-l-4 border-blue-500">
+<div class="card p-5 mb-5 border-l-4 border-blue-500 no-print">
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
             <h3 class="font-semibold text-slate-800">Administrator controls</h3>
@@ -77,13 +80,24 @@
         INDIVIDUAL BALANCED SCORE CARD
     </div>
     <div class="grid grid-cols-1 md:grid-cols-2 divide-x divide-slate-100">
-        <div class="p-4 space-y-2 text-sm">
-            <div class="flex"><span class="w-40 font-semibold text-slate-600">Employee's Name:</span>
-                <span class="text-slate-800">{{ $emp?->full_name ?? '—' }}</span></div>
-            <div class="flex"><span class="w-40 font-semibold text-slate-600">Job Title:</span>
-                <span class="text-slate-800">{{ $emp?->designation?->title ?? '—' }}</span></div>
-            <div class="flex"><span class="w-40 font-semibold text-slate-600">Employee No.</span>
-                <span class="text-slate-800">{{ $emp?->emp_number ?? '—' }}</span></div>
+        <div class="p-4 flex items-start gap-4">
+            {{-- A signed scorecard should show who it is about. The accessor
+                 falls back to an initials avatar, so the box is never empty. --}}
+            @if($emp)
+            <img src="{{ $emp->avatar_url }}" alt="{{ $emp->full_name }}"
+                 class="w-20 h-20 rounded-lg object-cover border border-slate-200 shrink-0">
+            @endif
+
+            <div class="space-y-2 text-sm min-w-0">
+                <div class="flex"><span class="w-36 font-semibold text-slate-600">Employee's Name:</span>
+                    <span class="text-slate-800">{{ $emp?->full_name ?? '—' }}</span></div>
+                <div class="flex"><span class="w-36 font-semibold text-slate-600">Job Title:</span>
+                    <span class="text-slate-800">{{ $emp?->designation?->title ?? '—' }}</span></div>
+                <div class="flex"><span class="w-36 font-semibold text-slate-600">Employee No.</span>
+                    <span class="text-slate-800">{{ $emp?->emp_number ?? '—' }}</span></div>
+                <div class="flex"><span class="w-36 font-semibold text-slate-600">Department:</span>
+                    <span class="text-slate-800">{{ $emp?->department?->name ?? '—' }}</span></div>
+            </div>
         </div>
         <div class="p-4 space-y-2 text-sm">
             <div class="flex"><span class="w-40 font-semibold text-slate-600">Immediate Manager:</span>
@@ -293,7 +307,7 @@
 </div>
 
 @if($canScore)
-<div class="flex flex-wrap gap-3 mb-6">
+<div class="flex flex-wrap gap-3 mb-6 no-print">
     <button type="submit" class="btn-primary"><i class="fas fa-save mr-1"></i> Save Scores</button>
     <p class="text-xs text-slate-500 self-center">
         Saving recalculates the weighted index and overall rating. Return it when every KPI is rated.
@@ -303,7 +317,7 @@
 </form>
 
 @if($canSelfAssess)
-    <div class="card p-5 mb-5 border-l-4 border-blue-500">
+    <div class="card p-5 mb-5 border-l-4 border-blue-500 no-print">
         <h3 class="font-semibold text-slate-800">Finished?</h3>
         <p class="text-sm text-slate-600 mt-1">
             Submitting sends this to

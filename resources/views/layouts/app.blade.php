@@ -36,6 +36,49 @@
     <style>
         body { font-family: "Inter", sans-serif; }
 
+        /* ── Printing ──────────────────────────────────────────────────
+           The chrome is for working in, not for the page somebody signs.
+           Anything marked .no-print is dropped, the sidebar margin is
+           released, and colours are forced on - a scorecard whose
+           perspective bands and selected ratings print white is unreadable,
+           because the rating IS the colour. */
+        @media print {
+            aside, header, .no-print { display: none !important; }
+
+            body {
+                background: #fff !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            #app-main { margin-left: 0 !important; }
+            main { padding: 0 !important; }
+
+            .card {
+                box-shadow: none !important;
+                border: 1px solid #cbd5e1 !important;
+                break-inside: avoid;
+            }
+
+            /* A form control on paper is just its value. */
+            input, textarea, select {
+                border: none !important;
+                box-shadow: none !important;
+                padding: 0 !important;
+                background: transparent !important;
+                -webkit-appearance: none;
+                appearance: none;
+            }
+
+            table { width: 100% !important; min-width: 0 !important; font-size: 10.5px; }
+            thead { display: table-header-group; }   /* repeat the head on every page */
+            tr, img { break-inside: avoid; }
+
+            a[href]::after { content: none !important; }   /* no URLs after links */
+
+            @page { margin: 12mm; size: A4 landscape; }
+        }
+
         /* Sidebar */
         .sidebar-link { display:flex; align-items:center; gap:0.75rem; padding:0.625rem 1rem; border-radius:0.5rem; font-size:0.875rem; font-weight:500; color:#cbd5e1; text-decoration:none; transition:all 0.15s; }
         .sidebar-link:hover { background:#334155; color:#fff; }
@@ -372,7 +415,7 @@
 </aside>
 
 {{-- MAIN CONTENT --}}
-<div class="transition-all duration-300" style="margin-left:256px" :style="sidebarOpen ? 'margin-left:256px' : 'margin-left:0px'">
+<div id="app-main" class="transition-all duration-300" style="margin-left:256px" :style="sidebarOpen ? 'margin-left:256px' : 'margin-left:0px'">
 
     {{-- TOP NAVIGATION --}}
     <header class="sticky top-0 z-40 flex items-center justify-between h-16 bg-white border-b border-slate-200 px-6 shadow-sm">
