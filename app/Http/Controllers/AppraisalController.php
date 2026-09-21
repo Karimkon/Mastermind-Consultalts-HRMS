@@ -99,7 +99,12 @@ class AppraisalController extends Controller
         abort_unless($this->canSetUp(), 403, 'Only a supervisor, HR or an admin can start an appraisal.');
 
         return view('appraisals.create', [
-            'employees' => Employee::with('user', 'department')->where('status', 'active')
+            // Somebody on approved leave is still on the payroll and still gets
+            // appraised - a two-day absence should not remove them from the
+            // list for the quarter. Only people who have actually left, or are
+            // suspended, are excluded.
+            'employees' => Employee::with('user', 'department')
+                            ->whereIn('status', ['active', 'on_leave'])
                             ->orderBy('first_name')->get(),
             'clients'   => Client::orderBy('company_name')->get(),
             'appraisers'=> $this->appraiserChoices(),
@@ -630,16 +635,32 @@ class AppraisalController extends Controller
 
         $template = AppraisalTemplate::with('kpis')->findOrFail($data['appraisal_template_id']);
 
-        $existing = $appraisal->kpis()->pluck('kra_name')
-            ->map(fn ($n) => mb_strtolower(trim($n)))->all();
+        // Keyed by name so a skipped row can be compared against the template
+        // it came from, not merely counted.
+        $existing = $appraisal->kpis()
+            ->get(['kra_name', 'weightage'])
+            ->keyBy(fn ($k) => mb_strtolower(trim($k->kra_name)));
 
         $order = (int) $appraisal->kpis()->max('sort_order');
         $added = 0;
         $skipped = 0;
 
+        $mismatched = [];
+
         foreach ($template->kpis as $tk) {
-            if (in_array(mb_strtolower(trim($tk->kra_name)), $existing, true)) {
+            $key = mb_strtolower(trim($tk->kra_name));
+
+            if ($existing->has($key)) {
                 $skipped++;
+
+                // A KRA already on the card keeps the weight somebody gave it.
+                // Silently leaving it is how a card imports to 99% and nobody
+                // can see which row is responsible.
+                if (abs((float) $existing[$key]->weightage - (float) $tk->weightage) > 0.001) {
+                    $mismatched[] = sprintf('%s (card %g%%, template %g%%)',
+                        $tk->kra_name, $existing[$key]->weightage, $tk->weightage);
+                }
+
                 continue;
             }
 
@@ -663,11 +684,20 @@ class AppraisalController extends Controller
 
         $total = round($appraisal->totalWeight(), 2);
 
-        return back()->with($added ? 'success' : 'error', $added
+        $message = $added
             ? "Added {$added} KPI(s)"
                 . ($skipped ? ", skipped {$skipped} already on the card" : '')
                 . ". The weights now total {$total}%."
-            : 'Every KPI on that template is already on this card.');
+            : 'Every KPI on that template is already on this card.';
+
+        if ($mismatched && abs($total - 100) > 0.001) {
+            $message .= ' The weights do not total 100% because '
+                . (count($mismatched) === 1 ? 'this KRA already on the card carries a different weight from the template: '
+                                            : 'these KRAs already on the card carry different weights from the template: ')
+                . implode('; ', $mismatched) . '.';
+        }
+
+        return back()->with($added ? 'success' : 'error', $message);
     }
 
     /**
