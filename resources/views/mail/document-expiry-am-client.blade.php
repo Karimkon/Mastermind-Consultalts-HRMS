@@ -22,7 +22,7 @@
 <div style="background:{{ $bgColor }};border:1px solid {{ $bdColor }};border-radius:8px;padding:16px;margin:16px 0;">
     <strong style="font-size:16px;color:#1e293b;">{{ $employee->full_name }}</strong><br>
     <span style="color:#64748b;font-size:14px;">
-        {{ $employee->designation?->name ?? $employee->designation?->title ?? '' }}
+        {{ $employee->designation?->title ?? '' }}
         @if($employee->department) &bull; {{ $employee->department->name }} @endif
     </span><br>
     <span style="color:#64748b;font-size:14px;">Employee #: {{ $employee->emp_number }}</span><br>

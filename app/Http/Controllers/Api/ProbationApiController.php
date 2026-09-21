@@ -125,7 +125,7 @@ class ProbationApiController extends Controller
             'email'                 => $e->email,
             'avatar_url'            => $e->user?->avatar_url ?? null,
             'department'            => $e->department?->name,
-            'designation'           => $e->designation?->name,
+            'designation'           => $e->designation?->title,
             'hire_date'             => $e->hire_date?->toDateString(),
             'probation_end_date'    => $e->probation_end_date?->toDateString(),
             'probation_status'      => $e->probation_status,

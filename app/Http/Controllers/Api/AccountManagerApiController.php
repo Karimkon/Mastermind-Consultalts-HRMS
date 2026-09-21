@@ -62,7 +62,7 @@ class AccountManagerApiController extends Controller
                 'email'       => $emp->user?->email ?? '',
                 'phone'       => $emp->phone ?? '',
                 'department'  => $emp->department?->name ?? '—',
-                'designation' => $emp->designation?->name ?? '—',
+                'designation' => $emp->designation?->title ?? '—',
                 'status'      => $emp->status,
                 'hire_date'   => $emp->hire_date,
                 'avatar_url'  => $emp->avatar_url,

@@ -125,7 +125,7 @@ class BscApiController extends Controller
                     'full_name'   => $emp->full_name,
                     'emp_number'  => $emp->emp_number,
                     'department'  => $emp->department?->name,
-                    'designation' => $emp->designation?->name,
+                    'designation' => $emp->designation?->title,
                 ],
                 'entry_count'     => $entries->count(),
                 'total_kras'      => $totalKras,

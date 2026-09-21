@@ -204,7 +204,7 @@ $banner = match($run->status) {
             <thead class="bg-slate-50">
                 <tr>
                     <th class="table-head px-6 py-3 text-left">Employee</th>
-                    <th class="table-head px-4 py-3 text-left">Department</th>
+                    <th class="table-head px-4 py-3 text-left">Placement</th>
                     <th class="table-head px-4 py-3 text-right">Days</th>
                     <th class="table-head px-4 py-3 text-right">Basic</th>
                     <th class="table-head px-4 py-3 text-right">Gross</th>

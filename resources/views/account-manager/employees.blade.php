@@ -202,7 +202,7 @@
     <thead class="bg-slate-50">
         <tr>
             <th class="table-head px-6 py-3 text-left">Employee</th>
-            <th class="table-head px-4 py-3 text-left">Department</th>
+            <th class="table-head px-4 py-3 text-left">Placement</th>
             @if(!$clientId)<th class="table-head px-4 py-3 text-left">Company</th>@endif
             <th class="table-head px-4 py-3 text-left">Contact</th>
             <th class="table-head px-4 py-3 text-left">Status</th>
@@ -220,7 +220,7 @@
                         <p class="text-sm font-semibold text-slate-800">{{ $emp->full_name }}</p>
                         <p class="text-xs text-slate-400">{{ $emp->emp_number }}</p>
                         @if($emp->designation)
-                        <p class="text-xs text-slate-400">{{ $emp->designation->name }}</p>
+                        <p class="text-xs text-slate-400">{{ $emp->designation->title }}</p>
                         @endif
                     </div>
                 </div>
