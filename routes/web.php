@@ -5,6 +5,7 @@ use App\Http\Controllers\{DashboardController, ProfileController, AjaxController
 use App\Http\Controllers\Admin\{UserController, DepartmentController, SettingController, RoleController, AuditLogController, DocumentationController, AdminClientController, AppraisalTemplateController, BulkUpdateController, ChangeApprovalController};
 use App\Http\Controllers\{ClientController, ClientLeaveController, ClientRecruitmentController, AiRecruitmentController};
 use App\Http\Controllers\Employee\{OnboardingController, ExitController, SelfServiceController};
+use App\Http\Controllers\ChatController;
 use App\Http\Controllers\AccountManagerController;
 use App\Http\Controllers\AmVisitController;
 use App\Http\Controllers\OfficeAttendanceController;
@@ -172,6 +173,20 @@ Route::middleware(['auth','mfa'])->group(function () {
     // names never matched, so implicit binding silently injected an empty
     // LeaveRequest: the detail page rendered "Unknown Employee", no dates and
     // 0 day(s) for every request ever opened.
+    // ── Staff messaging ──────────────────────────────────────────────
+    // All JSON: the chat lives in a panel on whatever page somebody is already
+    // on, so it never navigates away from their work.
+    Route::prefix('chat')->name('chat.')->group(function () {
+        Route::get('/',                      [ChatController::class, 'index'])->name('index');
+        Route::get('/unread',                [ChatController::class, 'unread'])->name('unread');
+        Route::get('/contacts',              [ChatController::class, 'contacts'])->name('contacts');
+        Route::post('/with/{user}',          [ChatController::class, 'withUser'])->name('with');
+        Route::get('/{conversation}/messages', [ChatController::class, 'messages'])->name('messages');
+        Route::post('/{conversation}/send',  [ChatController::class, 'send'])->name('send');
+        Route::get('/attachment/{message}',  [ChatController::class, 'attachment'])->name('attachment');
+        Route::delete('/message/{message}',  [ChatController::class, 'destroy'])->name('message.destroy');
+    });
+
     Route::resource('leaves', LeaveController::class)->parameters(['leaves' => 'leave']);
     Route::post('leaves/{leave}/approve', [LeaveController::class, 'approve'])->name('leaves.approve');
     Route::post('leaves/{leave}/reject', [LeaveController::class, 'reject'])->name('leaves.reject');

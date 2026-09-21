@@ -390,8 +390,11 @@ class AppraisalController extends Controller
             // all - not a rating, not a weight, not a comment.
             'canScore'   => $this->isAdmin()
                             || ($appraisal->status === 'with_appraiser' && auth()->id() === $appraisal->appraiser_id),
-            'canConfirm' => $appraisal->status === 'with_manager'
-                            && auth()->id() === ($appraisal->return_to_id ?? $appraisal->initiated_by),
+            // The manager's step, open to an administrator for the same reason
+            // scoring is: somebody has to be able to move a stuck card.
+            'canConfirm' => $this->isAdmin()
+                            || ($appraisal->status === 'with_manager'
+                                && auth()->id() === ($appraisal->return_to_id ?? $appraisal->initiated_by)),
             'canSelf'    => $appraisal->status === 'with_employee'
                             && auth()->id() === $appraisal->employee?->user_id,
             // The employee's first touch: reporting what they achieved, before
@@ -461,7 +464,10 @@ class AppraisalController extends Controller
     /** Appraiser returns the card — to the initiator, or someone they nominate. */
     public function returnToManager(Request $request, Appraisal $appraisal)
     {
-        abort_unless($appraisal->status === 'with_appraiser' && auth()->id() === $appraisal->appraiser_id, 403);
+        abort_unless(
+            $this->isAdmin()
+                || ($appraisal->status === 'with_appraiser' && auth()->id() === $appraisal->appraiser_id),
+            403, 'This appraisal is not with you to return.');
 
         $data = $request->validate([
             'return_to_id' => 'required|exists:users,id',
@@ -487,8 +493,11 @@ class AppraisalController extends Controller
     /** Line manager confirms, which passes it to the employee. */
     public function confirm(Request $request, Appraisal $appraisal)
     {
-        abort_unless($appraisal->status === 'with_manager'
-            && auth()->id() === ($appraisal->return_to_id ?? $appraisal->initiated_by), 403);
+        abort_unless(
+            $this->isAdmin()
+                || ($appraisal->status === 'with_manager'
+                    && auth()->id() === ($appraisal->return_to_id ?? $appraisal->initiated_by)),
+            403, 'This appraisal is not with you to confirm.');
 
         $data = $request->validate(['manager_comment' => 'nullable|string|max:2000']);
 
@@ -509,8 +518,11 @@ class AppraisalController extends Controller
     /** Send it back to the appraiser for another look. */
     public function sendBack(Request $request, Appraisal $appraisal)
     {
-        abort_unless($appraisal->status === 'with_manager'
-            && auth()->id() === ($appraisal->return_to_id ?? $appraisal->initiated_by), 403);
+        abort_unless(
+            $this->isAdmin()
+                || ($appraisal->status === 'with_manager'
+                    && auth()->id() === ($appraisal->return_to_id ?? $appraisal->initiated_by)),
+            403, 'This appraisal is not with you to send back.');
 
         $data = $request->validate(['comment' => 'required|string|max:500']);
 

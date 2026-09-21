@@ -536,6 +536,14 @@ $(document).ready(function () {
     });
 });
 </script>
+
+{{-- Staff messaging. Included before the scripts stack so the panel's own
+     @push lands after Alpine is available. Signed-in pages only - there is
+     nobody to message from the login screen. --}}
+@auth
+    @include('partials.chat-panel')
+@endauth
+
 @stack("scripts")
 <script>
 if ('serviceWorker' in navigator) {
