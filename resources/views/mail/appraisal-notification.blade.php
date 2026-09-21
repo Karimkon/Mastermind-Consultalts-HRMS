@@ -4,7 +4,7 @@
 
 <p>Dear {{ $recipientName ?: 'Colleague' }},</p>
 
-<p>{{ $message }}</p>
+<p>{{ $intro }}</p>
 
 <table class="info-table">
     <tr><td>Appraisal</td><td>{{ $appraisal->title }}</td></tr>

@@ -110,6 +110,43 @@ class ScorecardFieldsTest extends TestCase
         $this->assertEqualsWithDelta(0.20, (float) $kpi->refresh()->weighted_index, 0.0001);
     }
 
+    // ── The notification email ───────────────────────────────────────────
+
+    /**
+     * Mail views only fail at render time, so this renders one.
+     *
+     * The template variable could not be called $message: Laravel injects its
+     * own Illuminate\Mail\Message into every mail view under that name, which
+     * shadowed the property and made the view try to print an object. The class
+     * was also invisible on the server until the optimised autoloader was
+     * regenerated - both faults appeared only when a real email was attempted.
+     */
+    public function test_the_appraisal_email_renders(): void
+    {
+        $mail = new \App\Mail\AppraisalNotificationMail(
+            $this->appraisal,
+            'Your appraisal is open',
+            'Record what you achieved against each target.',
+            'Akol Deograceous'
+        );
+
+        $html = $mail->render();
+
+        $this->assertStringContainsString('Your appraisal is open', $html);
+        $this->assertStringContainsString('Record what you achieved', $html);
+        $this->assertStringContainsString('Akol Deograceous', $html);
+        $this->assertStringContainsString('appraisals/'.$this->appraisal->id, $html);
+    }
+
+    public function test_the_subject_is_the_heading(): void
+    {
+        $mail = new \App\Mail\AppraisalNotificationMail(
+            $this->appraisal, 'Appraisal ready for scoring', 'Body text.', 'Ian'
+        );
+
+        $this->assertSame('Appraisal ready for scoring', $mail->envelope()->subject);
+    }
+
     // ── Target ───────────────────────────────────────────────────────────
 
     public function test_a_target_can_be_entered_while_scoring(): void

@@ -22,7 +22,10 @@ class AppraisalNotificationMail extends Mailable
     public function __construct(
         public Appraisal $appraisal,
         public string $heading,
-        public string $message,
+        // NOT $message. Laravel injects its own Illuminate\Mail\Message into
+        // every mail view under that name, which shadows the property and makes
+        // the view try to print an object.
+        public string $intro,
         public ?string $recipientName = null,
     ) {}
 
