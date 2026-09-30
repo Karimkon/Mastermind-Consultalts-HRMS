@@ -14,6 +14,14 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(\Illuminate\Http\Middleware\HandleCors::class);
+
+        // Opening a screen clears that screen's menu badge. Appended to the web
+        // group so it runs once the session and authentication are resolved —
+        // it needs to know who is asking.
+        $middleware->web(append: [
+            \App\Http\Middleware\ClearAreaNotifications::class,
+        ]);
+
         $middleware->alias([
             'role'               => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission'         => \Spatie\Permission\Middleware\PermissionMiddleware::class,

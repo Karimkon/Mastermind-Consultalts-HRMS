@@ -26,11 +26,35 @@
                             <span class="text-xs font-mono w-10 text-slate-600">{{ $goal->progress }}%</span>
                             <button class="btn-primary text-xs py-1 px-2">Update</button>
                         </form>
+                        {{-- Evidence. A goal is scored on whether it was met, and
+                             "met" is an assertion until something backs it. --}}
+                        <div class="mt-3 border-t border-slate-100 pt-2">
+                            <p class="text-xs font-semibold text-slate-600 mb-1">Evidence</p>
+
+                            @include('performance.goals.partials.files', ['files' => $goal->attachments, 'goal' => $goal])
+
+                            <form method="POST" action="{{ route('goals.attachments.store', $goal) }}"
+                                  enctype="multipart/form-data" class="grid grid-cols-1 sm:grid-cols-12 gap-2 mt-2">
+                                @csrf
+                                <input type="file" name="file" required accept="{{ \App\Support\Uploads::accept() }}"
+                                       class="form-input text-xs sm:col-span-5"
+                                       accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.png,.jpg,.jpeg,.webp,.zip">
+                                <input type="text" name="note" class="form-input text-xs sm:col-span-5"
+                                       placeholder="What this file shows (optional)">
+                                <button class="btn-secondary text-xs sm:col-span-2" data-loading-label="Uploading…">
+                                    <i class="fas fa-paperclip mr-1"></i> Attach
+                                </button>
+                            </form>
+                            <p class="text-[11px] text-slate-400 mt-1">{{ \App\Support\Uploads::hint() }}</p>
+                        </div>
+
+                        @if(auth()->user()->hasAnyRole(['super-admin','hr-admin','manager','md']))
                         <div class="flex gap-2 mt-2">
                             <form method="POST" action="{{ route('goals.destroy', $goal) }}" onsubmit="return confirm('Delete this goal?')">@csrf @method('DELETE')
                                 <button class="text-xs text-red-500 hover:underline">Delete</button>
                             </form>
                         </div>
+                        @endif
                     </div>
                 </td>
                 <td class="px-4 py-3"><p class="text-sm text-slate-700">{{ $goal->employee->full_name }}</p></td>
@@ -75,7 +99,7 @@
             <div><label class="form-label">Description</label><textarea name="description" class="form-input" rows="2"></textarea></div>
             <div><label class="form-label">Target Date</label><input type="date" name="target_date" class="form-input"></div>
             <div><label class="form-label">Weight (%)</label><input type="number" name="weight" class="form-input" min="0" max="100" value="0"></div>
-            <button type="submit" class="btn-primary w-full justify-center"><i class="fas fa-plus"></i> Add Goal</button>
+            <button type="submit" class="btn-primary w-full justify-center" data-loading-label="Adding &amp; notifying…"><i class="fas fa-plus"></i> Add Goal</button>
         </form>
     </div>
 </div>

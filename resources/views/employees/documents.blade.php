@@ -51,7 +51,7 @@
             <div><label class="form-label">File *</label><input type="file" name="file" class="form-input" required></div>
             <div><label class="form-label">Expiry Date</label><input type="date" name="expiry_date" class="form-input"></div>
             <div><label class="form-label">Notes</label><textarea name="notes" class="form-input" rows="2"></textarea></div>
-            <button type="submit" class="btn-primary w-full justify-center"><i class="fas fa-upload"></i> Upload</button>
+            <button type="submit" class="btn-primary w-full justify-center" data-loading-label="Uploading…"><i class="fas fa-upload"></i> Upload</button>
         </form>
     </div>
 </div>

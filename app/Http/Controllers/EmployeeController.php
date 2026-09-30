@@ -63,7 +63,14 @@ class EmployeeController extends Controller
             'email'             => 'required|email|unique:users,email',
             'department_id'     => 'required|exists:departments,id',
             'designation_id'    => 'required|exists:designations,id',
+            // Required when adding somebody, so no new record joins the 1,243
+            // that arrived with no reporting line. Deliberately NOT required on
+            // update: that would block every edit to those existing records
+            // until somebody picked a supervisor for them.
+            'manager_id'        => 'required|exists:employees,id',
             'hire_date'         => 'required|date',
+        ], [
+            'manager_id.required' => 'Choose the supervisor this employee reports to.',
         ]);
 
         DB::transaction(function () use ($request) {
@@ -352,7 +359,10 @@ class EmployeeController extends Controller
 
     public function storeDocument(Request $request, Employee $employee)
     {
-        $request->validate(['type' => 'required', 'file' => 'required|file|max:10240']);
+        $request->validate(
+            ['type' => 'required', 'file' => \App\Support\Uploads::rules()],
+            \App\Support\Uploads::messages()
+        );
         $path = $request->file('file')->store('employees/documents', 'public');
         $employee->documents()->create(['type' => $request->type, 'file_path' => $path, 'expiry_date' => $request->expiry_date]);
         return back()->with('success', 'Document uploaded.');
@@ -377,5 +387,65 @@ class EmployeeController extends Controller
             'recorded_by'       => auth()->id(),
         ]);
         return back()->with('success', 'History entry added.');
+    }
+
+    /**
+     * Set an employee's login password, or give them a login if they have none.
+     *
+     * There was no way to do this at all: a login created alongside an employee
+     * got a random 32-character password, and the only route back in was the
+     * forgot-password email — which is useless for the client-site staff who
+     * have no working mailbox of their own. HR had no way to hand somebody their
+     * credentials, and no way to sign in as a test account to check a screen.
+     */
+    public function resetPassword(Request $request, Employee $employee)
+    {
+        abort_unless(auth()->user()->hasAnyRole(['super-admin', 'hr-admin']), 403);
+
+        $request->validate([
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'email'    => ['nullable', 'email', 'max:255'],
+        ], [
+            'password.confirmed' => 'The two passwords do not match.',
+            'password.min'       => 'The password must be at least 8 characters.',
+        ]);
+
+        $user  = $employee->user;
+        $email = $request->email ?: $user?->email ?: $employee->personal_email;
+
+        if (! $email) {
+            return back()->with('error', 'Give this employee an email address first — it is what they sign in with.');
+        }
+
+        // An address already in use by somebody else would silently hand this
+        // employee another person's account.
+        $clash = User::where('email', $email)->when($user, fn($q) => $q->where('id', '!=', $user->id))->exists();
+        if ($clash) {
+            return back()->with('error', "{$email} is already the login for another account.");
+        }
+
+        if ($user) {
+            $user->update(['email' => $email, 'password' => Hash::make($request->password)]);
+            $message = "Password updated. {$employee->first_name} can sign in with {$email}.";
+        } else {
+            $user = User::create([
+                'name'     => trim("{$employee->first_name} {$employee->last_name}"),
+                'email'    => $email,
+                'password' => Hash::make($request->password),
+            ]);
+            $user->assignRole('employee');
+            $employee->update(['user_id' => $user->id]);
+            $message = "Login created. {$employee->first_name} can sign in with {$email}.";
+        }
+
+        // Signing somebody else's account in is exactly the sort of thing that
+        // has to be answerable for later.
+        \Illuminate\Support\Facades\Log::info('Employee password set by admin', [
+            'employee_id' => $employee->id,
+            'user_id'     => $user->id,
+            'by'          => auth()->id(),
+        ]);
+
+        return back()->with('success', $message);
     }
 }

@@ -8,6 +8,34 @@ use Illuminate\Support\Facades\Storage;
 
 class SelfServiceController extends Controller
 {
+    /**
+     * An employee's own payslips.
+     *
+     * The web portal had no way at all for the 1,093 people on the employee role
+     * to see their pay: the only payslip route was the PDF, which needed a
+     * payroll-run id and an employee id you had to already know, and nothing in
+     * the menu pointed at it. The phone app had the list; the portal did not.
+     *
+     * Withheld slips are shown rather than hidden — somebody who was not paid
+     * needs to be able to see that, and why.
+     */
+    public function payslips()
+    {
+        $employee = auth()->user()->employee;
+        if (!$employee) return redirect()->route("dashboard")->with("error", "No employee profile found.");
+
+        // Only runs that have actually been released. A slip from a run still
+        // sitting in the approval chain is a draft figure, not somebody's pay.
+        $payslips = \App\Models\Payslip::with('payrollRun')
+            ->where('employee_id', $employee->id)
+            ->whereHas('payrollRun', fn($q) => $q->whereIn('status', ['md_approved', 'approved', 'paid']))
+            ->get()
+            ->sortByDesc(fn($p) => sprintf('%04d%02d', $p->payrollRun->year, $p->payrollRun->month))
+            ->values();
+
+        return view("employee.payslips", compact("employee", "payslips"));
+    }
+
     public function documents()
     {
         $employee = auth()->user()->employee;
@@ -24,7 +52,7 @@ class SelfServiceController extends Controller
         $request->validate([
             "document_type" => "required|string|max:100",
             "title"         => "required|string|max:255",
-            "file"          => "required|file|max:10240|mimes:pdf,jpg,jpeg,png,doc,docx",
+            "file"          => \App\Support\Uploads::rules(),
             "expiry_date"   => "nullable|date|after:today",
             "notes"         => "nullable|string|max:500",
         ]);

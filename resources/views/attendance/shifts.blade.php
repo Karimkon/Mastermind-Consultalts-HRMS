@@ -25,7 +25,7 @@
             <div><label class="form-label">Start Time *</label><input type="time" name="start_time" class="form-input" required></div>
             <div><label class="form-label">End Time *</label><input type="time" name="end_time" class="form-input" required></div>
             <div><label class="form-label">Grace Minutes</label><input type="number" name="grace_minutes" value="15" class="form-input" min="0"></div>
-            <button type="submit" class="btn-primary w-full justify-center">Create Shift</button>
+            <button type="submit" class="btn-primary w-full justify-center" data-loading-label="Creating…">Create Shift</button>
         </form>
     </div>
 </div>

@@ -246,6 +246,108 @@
 @endif
 @endif
 
+{{-- ── Super Admin override ──────────────────────────────────────────────
+     Once a run reached "paid" the screen offered nothing at all: no way to
+     correct a run that went the wrong way, no way to move one whose stage
+     owner has left, no way to delete one created by mistake. This is that
+     way out, and it is deliberately the loudest thing on the page — it
+     walks past HR, Finance and the MD in one click.
+
+     MD accounts are excluded even when they also hold super-admin: the
+     person who gives final approval must not be the person who can grant
+     it without one. That is the same rule the rest of this controller
+     already follows. --}}
+@if(auth()->user()->hasRole('super-admin') && !auth()->user()->hasRole('md'))
+<div x-data="{ open: false }" class="mb-5 border-2 border-dashed border-amber-300 rounded-xl bg-amber-50/60">
+    <button type="button" @click="open = !open"
+            class="w-full flex items-center gap-3 p-4 text-left">
+        <i class="fas fa-user-shield text-amber-600 text-lg"></i>
+        <div class="flex-1">
+            <p class="font-semibold text-amber-900 text-sm">Super Admin override</p>
+            <p class="text-xs text-amber-700">
+                Move this run to any status, lock it, or delete it — outside the approval chain.
+            </p>
+        </div>
+        <i class="fas fa-chevron-down text-amber-600 text-xs transition-transform"
+           :class="{ 'rotate-180': open }"></i>
+    </button>
+
+    <div x-show="open" x-cloak class="px-4 pb-4 space-y-4 border-t border-amber-200 pt-4">
+
+        {{-- Move to any status --}}
+        <form method="POST" action="{{ route('payroll.override-status', $payroll) }}"
+              onsubmit="return confirm('Move this run outside the approval chain? The reason you gave will be recorded against it permanently.')">
+            @csrf
+            <p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Change status</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-xs text-slate-500 mb-1">Move to</label>
+                    <select name="status" class="form-input text-sm" required>
+                        @foreach([
+                            'draft'            => 'Draft — back to the Account Manager',
+                            'processed'        => 'HR Review',
+                            'hr_approved'      => 'Finance Review',
+                            'finance_approved' => 'MD Review',
+                            'md_approved'      => 'MD Approved (locks)',
+                            'paid'             => 'Paid (locks)',
+                        ] as $value => $label)
+                            <option value="{{ $value }}" @selected($payroll->status === $value)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-xs text-slate-500 mb-1">
+                        Reason <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" name="reason" class="form-input text-sm" required minlength="5"
+                           placeholder="e.g. Paid in error by the old AM screen — pulling back to HR to redo">
+                </div>
+            </div>
+            <div class="mt-3 flex items-center gap-3">
+                <button class="btn-primary text-sm" style="background:#d97706;">
+                    <i class="fas fa-shuffle mr-1"></i> Move run
+                </button>
+                <span class="text-xs text-slate-500">
+                    Approvals for stages after the new status are cleared. Earlier ones are left alone —
+                    this never invents an approval that did not happen. Payslip payment status is not changed.
+                </span>
+            </div>
+        </form>
+
+        {{-- Lock / unlock / edit / delete --}}
+        <div class="flex flex-wrap items-center gap-2 pt-3 border-t border-amber-200">
+            @if($payroll->isLocked())
+                <form method="POST" action="{{ route('payroll.unlock', $payroll) }}" class="inline">
+                    @csrf
+                    <button class="btn-secondary text-sm">
+                        <i class="fas fa-lock-open mr-1"></i> Unlock
+                    </button>
+                </form>
+            @else
+                <form method="POST" action="{{ route('payroll.lock', $payroll) }}" class="inline"
+                      onsubmit="return confirm('Lock this run? Every workflow button hides while it is locked. You can unlock it again.')">
+                    @csrf
+                    <button class="btn-secondary text-sm">
+                        <i class="fas fa-lock mr-1"></i> Lock
+                    </button>
+                </form>
+            @endif
+
+            <a href="{{ route('payroll.edit', $payroll) }}" class="btn-secondary text-sm">
+                <i class="fas fa-pen mr-1"></i> Edit details
+            </a>
+
+            <form method="POST" action="{{ route('payroll.destroy', $payroll) }}" class="inline ml-auto"
+                  onsubmit="return confirm('Delete {{ addslashes($payroll->title) }} and all {{ $payroll->payslips->count() }} of its payslips? This cannot be undone. A record of the deletion is kept in the audit log.')">
+                @csrf @method('DELETE')
+                <button class="inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-700">
+                    <i class="fas fa-trash"></i> Delete run
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+@endif
 {{-- Lock warning banner --}}
 @if($payroll->isLocked())
 <div class="mb-5 flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">

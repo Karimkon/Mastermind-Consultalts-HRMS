@@ -7,6 +7,8 @@ use Carbon\Carbon;
 
 class AttendanceController extends Controller
 {
+    use \App\Http\Controllers\Concerns\ChecksWorkSiteLocation;
+
     // =========================================================
     // Haversine distance in metres
     // =========================================================
@@ -24,61 +26,11 @@ class AttendanceController extends Controller
     // =========================================================
     // Legacy global geo-fence (kept for non-client employees)
     // =========================================================
-    private function geoFenceCheck($lat, $lng): ?string
-    {
-        $officeLat = Setting::where('key', 'office_lat')->value('value');
-        $officeLng = Setting::where('key', 'office_lng')->value('value');
-        $radius    = (float)(Setting::where('key', 'geo_radius_meters')->value('value') ?? 100);
-
-        if (!$officeLat || !$officeLng) return null;
-
-        if ($lat === null || $lng === null) {
-            return 'Your location is required to clock in. Please allow location access.';
-        }
-
-        $distance = $this->distanceMetres((float)$lat, (float)$lng, (float)$officeLat, (float)$officeLng);
-        if ($distance > $radius) {
-            return 'You are ' . round($distance) . 'm from the office. Must be within ' . (int)$radius . 'm to clock in/out.';
-        }
-
-        return null;
-    }
 
     // =========================================================
     // Per-client geo-fence for employees assigned to a client
     // Returns an error string on failure, null on pass.
     // =========================================================
-    private function employeeGeoCheck(Employee $employee, $lat, $lng): ?string
-    {
-        // Find the client this employee is assigned to
-        $client = Client::whereHas(
-            'employees',
-            fn($q) => $q->where('employees.id', $employee->id)
-        )->first();
-
-        // No client or no geo-fence configured — fall back to global check
-        if (!$client || !$client->work_site_lat || !$client->work_site_lng) {
-            return $this->geoFenceCheck($lat, $lng);
-        }
-
-        $radius = $client->geo_fence_radius ?? 100;
-
-        // Geo-fence is configured — location is mandatory
-        if ($lat === null || $lng === null) {
-            return 'Your location is required to clock in. Please allow location access in your browser.';
-        }
-
-        $distance = $this->distanceMetres(
-            (float)$lat, (float)$lng,
-            (float)$client->work_site_lat, (float)$client->work_site_lng
-        );
-
-        if ($distance > $radius) {
-            return 'You are ' . round($distance) . 'm from the work site (' . $client->company_name . '). Must be within ' . (int)$radius . 'm to clock in/out.';
-        }
-
-        return null;
-    }
 
     // =========================================================
     // INDEX
@@ -223,24 +175,34 @@ class AttendanceController extends Controller
         $lat = $request->lat !== null ? (float)$request->lat : null;
         $lng = $request->lng !== null ? (float)$request->lng : null;
 
-        $geoError = $this->employeeGeoCheck($employee, $lat, $lng);
-        if ($geoError) {
-            return $request->wantsJson()
-                ? response()->json(['error' => $geoError], 422)
-                : back()->with('error', $geoError);
-        }
+        // The fence records rather than refuses. This used to reject anything
+        // outside the radius, and attendance_logs feeds payroll, so a pin
+        // dropped a couple of hundred metres off cost somebody the whole day
+        // with no way to register that they had turned up. HR now sees the row
+        // with its distance and decides.
+        [$distance, $locationStatus, $site] = $this->assessLocation($client, $lat, $lng);
+        $notice = $this->locationNotice($client, $distance, $locationStatus, $site);
 
         $log->update([
-            'clock_in'  => now(),
-            'status'    => 'present',
-            'lat'       => $lat,
-            'lng'       => $lng,
-            'client_id' => $client?->id,      // resolved above for the enabled check
+            'clock_in'        => now(),
+            'status'          => 'present',
+            'lat'             => $lat,
+            'lng'             => $lng,
+            'distance_metres' => $distance,
+            'location_status' => $locationStatus,
+            'client_id'       => $client?->id,      // resolved above for the enabled check
         ]);
 
+        $message = 'Clocked in at ' . now()->format('H:i') . '.' . ($notice ? ' ' . $notice : '');
+
         return $request->wantsJson()
-            ? response()->json(['time' => now()->format('H:i'), 'message' => 'Clocked in successfully.'])
-            : back()->with('success', 'Clocked in at ' . now()->format('H:i') . '.');
+            ? response()->json([
+                'time'            => now()->format('H:i'),
+                'message'         => $message,
+                'location_notice' => $notice,
+                'off_site'        => $locationStatus === \App\Models\AttendanceLog::LOCATION_OUTSIDE,
+            ])
+            : back()->with($notice ? 'warning' : 'success', $message);
     }
 
     // =========================================================
@@ -262,12 +224,12 @@ class AttendanceController extends Controller
         $lat = $request->lat !== null ? (float)$request->lat : null;
         $lng = $request->lng !== null ? (float)$request->lng : null;
 
-        $geoError = $this->employeeGeoCheck($employee, $lat, $lng);
-        if ($geoError) {
-            return $request->wantsJson()
-                ? response()->json(['error' => $geoError], 422)
-                : back()->with('error', $geoError);
-        }
+        // Never refused: a refused clock-out strands an open row that only HR
+        // can close, and the day's overtime is only written at clock-out, so it
+        // is lost along with it.
+        $client = $this->employeeClient($employee);
+        [$outDistance, $locationStatus, $site] = $this->assessLocation($client, $lat, $lng);
+        $notice = $this->locationNotice($client, $outDistance, $locationStatus, $site);
 
         $hours    = Carbon::parse($log->clock_in)->diffInMinutes(now()) / 60;
         $overtime = max(0, $hours - 8);
@@ -289,9 +251,18 @@ class AttendanceController extends Controller
             'distance_metres' => $distanceMetres,
         ]);
 
+        $message = 'Clocked out at ' . now()->format('H:i') . '. Hours worked: ' . round($hours, 1) . 'h.'
+                 . ($notice ? ' ' . $notice : '');
+
         return $request->wantsJson()
-            ? response()->json(['time' => now()->format('H:i'), 'hours' => round($hours, 1)])
-            : back()->with('success', 'Clocked out at ' . now()->format('H:i') . '. Hours worked: ' . round($hours, 1) . 'h.');
+            ? response()->json([
+                'time'            => now()->format('H:i'),
+                'hours'           => round($hours, 1),
+                'message'         => $message,
+                'location_notice' => $notice,
+                'off_site'        => $locationStatus === \App\Models\AttendanceLog::LOCATION_OUTSIDE,
+            ])
+            : back()->with($notice ? 'warning' : 'success', $message);
     }
 
     // =========================================================

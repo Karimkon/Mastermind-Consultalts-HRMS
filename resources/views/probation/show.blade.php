@@ -193,6 +193,13 @@
                     </p>
                 </div>
             </div>
+            {{-- The reason given at the time. It used to be appended to the
+                 employee's bio, where it showed on their profile; it is kept
+                 with the decision now and shown only here. --}}
+            @if(filled($employee->probation_notes))
+            <p class="mt-3 pt-3 border-t border-{{ $employee->probation_status === 'passed' ? 'green' : 'red' }}-200
+                      text-sm text-slate-700 whitespace-pre-line">{{ $employee->probation_notes }}</p>
+            @endif
         </div>
         @endif
     </div>

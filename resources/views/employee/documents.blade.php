@@ -35,8 +35,8 @@
             </div>
             <div>
                 <label class="form-label">File <span class="text-red-500">*</span></label>
-                <input type="file" name="file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" required>
-                <p class="text-xs text-slate-400 mt-1">PDF, JPG, PNG, DOC — max 10MB</p>
+                <input type="file" name="file" class="form-input" accept="{{ \App\Support\Uploads::accept() }}" required>
+                <p class="text-xs text-slate-400 mt-1">{{ \App\Support\Uploads::hint() }}</p>
             </div>
             <div>
                 <label class="form-label">Expiry Date (optional)</label>

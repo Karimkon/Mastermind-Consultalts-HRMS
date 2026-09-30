@@ -19,7 +19,7 @@
             </select>
         </div>
         <div><label class="form-label">Note</label><textarea name="note" class="form-input" rows="2"></textarea></div>
-        <button type="submit" class="btn-primary"><i class="fas fa-save"></i> Save Attendance</button>
+        <button type="submit" class="btn-primary" data-loading-label="Saving…"><i class="fas fa-save"></i> Save Attendance</button>
     </form>
 </div>
 @endsection

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 use App\Models\{Appraisal, AppraisalAction, AppraisalAttachment, AppraisalKpi,
                 AppraisalTemplate, Client, Employee, Notification, User};
 use Illuminate\Http\Request;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -76,10 +77,29 @@ class AppraisalController extends Controller
             'data'    => ['appraisal_id' => $a->id, 'url' => route('appraisals.show', $a)],
         ]);
 
+        // A failed email must not lose the appraisal action that caused it, so
+        // the reason is logged and discarded here.
+        $this->emailNotice($userId, $title, $body, $a);
+    }
+
+    /**
+     * Email one notification.
+     *
+     * Returns null when it went, or the reason it did not. The caller decides
+     * whether that reason is worth showing: it is noise when the email is a
+     * side effect of somebody else's action, and the whole point when
+     * re-sending is the action.
+     */
+    private function emailNotice(int $userId, string $title, string $body, Appraisal $a): ?string
+    {
         $user = User::find($userId);
 
-        if (! $user?->email) {
-            return;
+        if (! $user) {
+            return 'That account no longer exists.';
+        }
+
+        if (! $user->email) {
+            return $user->name.' has no email address on file.';
         }
 
         try {
@@ -88,10 +108,82 @@ class AppraisalController extends Controller
             // use to anybody.
             \Illuminate\Support\Facades\Mail::to($user->email)
                 ->send(new \App\Mail\AppraisalNotificationMail($a, $title, $body, $user->name));
+
+            return null;
         } catch (\Throwable $e) {
-            // A failed email must not lose the appraisal action that caused it.
             logger()->error('Appraisal email to '.$user->email.' failed: '.$e->getMessage());
+
+            return $e->getMessage();
         }
+    }
+
+    /**
+     * The notification the card's current holder should already have had.
+     *
+     * Deliberately the same wording the step itself sends, so a re-send is the
+     * original message again rather than a second, different one.
+     */
+    private function pendingNotice(Appraisal $a): ?array
+    {
+        $who = $a->currentHolderId();
+
+        if (! $who) {
+            return null;
+        }
+
+        return match ($a->status) {
+            'self_assessment' => [$who, 'Your appraisal is open',
+                "{$a->initiator?->name} has started your appraisal — {$a->title}. "
+                ."Record what you achieved against each target before it goes for scoring."],
+
+            'with_appraiser' => [$who, 'Appraisal ready for scoring',
+                "{$a->employee?->full_name} has completed their self-assessment for {$a->title}."],
+
+            'with_manager' => [$who, 'Appraisal ready for your confirmation',
+                "{$a->appraiser?->name} has completed the appraisal for {$a->employee?->full_name}."],
+
+            'with_employee' => [$who, 'Your appraisal is ready',
+                "Your appraisal for {$a->title} has been confirmed. Please add your own comments and sign it off."],
+
+            // A draft has been told to nobody yet, and a completed card is
+            // waiting on nobody. Neither has a notification to repeat.
+            default => null,
+        };
+    }
+
+    /**
+     * Send the current step's notification again.
+     *
+     * A failed email was written to the log and never retried, so a single SMTP
+     * refusal lost the notification for good and the card sat with somebody who
+     * had no idea it was theirs. The in-app row already exists, so this repeats
+     * the email only.
+     */
+    public function resendNotice(Appraisal $appraisal)
+    {
+        abort_unless($this->isAdmin(), 403, 'Only HR can re-send an appraisal notification.');
+
+        $notice = $this->pendingNotice($appraisal);
+
+        if (! $notice) {
+            return back()->with('error',
+                'This appraisal is not waiting on anybody, so there is no notification to re-send.');
+        }
+
+        [$userId, $title, $body] = $notice;
+        $user = User::find($userId);
+
+        if ($failure = $this->emailNotice($userId, $title, $body, $appraisal)) {
+            return back()->with('error',
+                'Could not email '.($user?->name ?? 'them').' — '.$failure);
+        }
+
+        // Recorded like any other step, so "I never got it" can be answered.
+        $appraisal->log('notification_resent', $appraisal->status,
+            'Notification re-sent to '.$user->name.' at '.$user->email);
+
+        return back()->with('success',
+            'Notification re-sent to '.$user->name.' at '.$user->email.'.');
     }
 
     // ── Listing ──────────────────────────────────────────────────────────
@@ -372,6 +464,35 @@ class AppraisalController extends Controller
                 . (User::find($data['appraiser_id'])?->name ?? 'the appraiser') . ' afterwards.');
     }
 
+    /**
+     * Download the card as a PDF.
+     *
+     * Open to anyone already allowed to view the appraisal - the same four
+     * people authoriseView() lets in, plus administrators. A finished appraisal
+     * is a document people file, sign and send on, and "print the web page" is
+     * not that.
+     */
+    public function exportPdf(Appraisal $appraisal)
+    {
+        $this->authoriseView($appraisal);
+
+        $appraisal->load(['kpis', 'employee.user', 'employee.department', 'employee.designation',
+                          'appraiser', 'initiator', 'ratingScale.bands', 'template.ratingScale']);
+
+        $pdf = Pdf::loadView('appraisals.pdf', [
+            'appraisal' => $appraisal,
+            'grouped'   => $appraisal->kpisByPerspective(),
+            'scale'     => $appraisal->scale(),
+        ])->setPaper('a4', 'landscape');
+
+        // Named so a folder of these sorts by person and period rather than by id.
+        $name = str($appraisal->employee?->full_name ?? 'appraisal')->slug()
+              . '-' . str($appraisal->period ?: $appraisal->year)->slug()
+              . '-scorecard.pdf';
+
+        return $pdf->download($name);
+    }
+
     // ── Viewing / scoring ────────────────────────────────────────────────
 
     public function show(Appraisal $appraisal)
@@ -381,28 +502,48 @@ class AppraisalController extends Controller
                           'history.user', 'employee.user', 'employee.department',
                           'employee.designation', 'client', 'initiator', 'appraiser', 'returnTo']);
 
+        // The person this card is about. Every manager-side control is denied
+        // to them below, however many other hats they wear.
+        $isSubject = auth()->id() === $appraisal->employee?->user_id;
+
+        // Signed off by the employee, so it is a record now rather than a
+        // form. Every control below is denied, administrators included:
+        // scoring, confirming, returning and sending back all stayed live on
+        // a completed card, so a finished appraisal could be reopened and
+        // rewritten by anybody who happened to open it.
+        $isLocked = $appraisal->status === 'completed';
+
         return view('appraisals.show', [
             'appraisal'  => $appraisal,
+            'isSubject'  => $isSubject,
+            'isLocked'   => $isLocked,
             'grouped'    => $appraisal->kpisByPerspective(),
             // An administrator can work the card at any stage. Every control on
             // this screen was gated on being one named person at one named
             // step, so HR looking at a card mid-flight could change nothing at
             // all - not a rating, not a weight, not a comment.
-            'canScore'   => $this->isAdmin()
-                            || ($appraisal->status === 'with_appraiser' && auth()->id() === $appraisal->appraiser_id),
+            // Nobody scores or signs off their own card - not even an
+            // administrator, and not even when they are also named as the
+            // appraiser. The MD is both on his own appraisal, which put
+            // "Confirm & Send to Employee" in front of the employee.
+            'canScore'   => ! $isLocked && ! $isSubject && ($this->isAdmin()
+                            || ($appraisal->status === 'with_appraiser' && auth()->id() === $appraisal->appraiser_id)),
             // The manager's step, open to an administrator for the same reason
             // scoring is: somebody has to be able to move a stuck card.
-            'canConfirm' => $this->isAdmin()
+            'canConfirm' => ! $isLocked && ! $isSubject && ($this->isAdmin()
                             || ($appraisal->status === 'with_manager'
-                                && auth()->id() === ($appraisal->return_to_id ?? $appraisal->initiated_by)),
-            'canSelf'    => $appraisal->status === 'with_employee'
+                                && auth()->id() === ($appraisal->return_to_id ?? $appraisal->initiated_by))),
+            'canSelf'    => ! $isLocked && $appraisal->status === 'with_employee'
                             && auth()->id() === $appraisal->employee?->user_id,
             // The employee's first touch: reporting what they achieved, before
             // anybody rates them. Distinct from canSelf, which is the signature
             // at the far end of the card.
-            'canSelfAssess' => $appraisal->status === 'self_assessment'
+            'canSelfAssess' => ! $isLocked && $appraisal->status === 'self_assessment'
                             && auth()->id() === $appraisal->employee?->user_id,
             'returnees'  => $this->appraiserChoices($appraisal->employee),
+            // Whoever the card is waiting on, so the screen can offer to send
+            // them the step's notification again. Null once it is completed.
+            'holder'     => User::find($appraisal->currentHolderId()),
             // Offered to an administrator so a half-built card can be filled
             // from a template instead of one KRA at a time.
             'templates'  => AppraisalTemplate::withCount('kpis')->where('is_active', true)
@@ -413,6 +554,11 @@ class AppraisalController extends Controller
     /** The appraiser fills in actuals, ratings and evidence notes. */
     public function score(Request $request, Appraisal $appraisal)
     {
+        abort_if($appraisal->status === 'completed', 403,
+            'This appraisal is completed and can no longer be changed.');
+
+        abort_if(auth()->id() === $appraisal->employee?->user_id, 403,
+            'You cannot score or sign off your own appraisal.');
         abort_unless(
             $this->isAdmin()
                 || ($appraisal->status === 'with_appraiser' && auth()->id() === $appraisal->appraiser_id),
@@ -422,8 +568,8 @@ class AppraisalController extends Controller
             'kpi'                    => 'required|array',
             'kpi.*.target'           => 'nullable|string|max:50',
             'kpi.*.actual_achieved'  => 'nullable|string|max:50',
-            'kpi.*.rating'           => 'nullable|integer|min:1|max:5',
-            'kpi.*.self_rating'      => 'nullable|integer|min:1|max:5',
+            'kpi.*.rating'           => 'nullable|integer|min:1|max:' . $appraisal->maxPoints(),
+            'kpi.*.self_rating'      => 'nullable|integer|min:1|max:' . $appraisal->maxPoints(),
             'kpi.*.evidence_note'    => 'nullable|string|max:255',
         ])['kpi'];
 
@@ -464,6 +610,11 @@ class AppraisalController extends Controller
     /** Appraiser returns the card — to the initiator, or someone they nominate. */
     public function returnToManager(Request $request, Appraisal $appraisal)
     {
+        abort_if($appraisal->status === 'completed', 403,
+            'This appraisal is completed and can no longer be changed.');
+
+        abort_if(auth()->id() === $appraisal->employee?->user_id, 403,
+            'You cannot score or sign off your own appraisal.');
         abort_unless(
             $this->isAdmin()
                 || ($appraisal->status === 'with_appraiser' && auth()->id() === $appraisal->appraiser_id),
@@ -493,6 +644,11 @@ class AppraisalController extends Controller
     /** Line manager confirms, which passes it to the employee. */
     public function confirm(Request $request, Appraisal $appraisal)
     {
+        abort_if($appraisal->status === 'completed', 403,
+            'This appraisal is completed and can no longer be changed.');
+
+        abort_if(auth()->id() === $appraisal->employee?->user_id, 403,
+            'You cannot score or sign off your own appraisal.');
         abort_unless(
             $this->isAdmin()
                 || ($appraisal->status === 'with_manager'
@@ -518,6 +674,11 @@ class AppraisalController extends Controller
     /** Send it back to the appraiser for another look. */
     public function sendBack(Request $request, Appraisal $appraisal)
     {
+        abort_if($appraisal->status === 'completed', 403,
+            'This appraisal is completed and can no longer be changed.');
+
+        abort_if(auth()->id() === $appraisal->employee?->user_id, 403,
+            'You cannot score or sign off your own appraisal.');
         abort_unless(
             $this->isAdmin()
                 || ($appraisal->status === 'with_manager'
@@ -562,7 +723,7 @@ class AppraisalController extends Controller
         $rows = $request->validate([
             'kpi'                    => 'required|array',
             'kpi.*.actual_achieved'  => 'nullable|string|max:50',
-            'kpi.*.self_rating'      => 'nullable|integer|min:1|max:5',
+            'kpi.*.self_rating'      => 'nullable|integer|min:1|max:' . $appraisal->maxPoints(),
             'kpi.*.self_note'        => 'nullable|string|max:1000',
         ])['kpi'];
 
@@ -614,6 +775,9 @@ class AppraisalController extends Controller
 
     public function selfAppraise(Request $request, Appraisal $appraisal)
     {
+        abort_if($appraisal->status === 'completed', 403,
+            'This appraisal is completed and can no longer be changed.');
+
         abort_unless($appraisal->status === 'with_employee'
             && auth()->id() === $appraisal->employee?->user_id, 403);
 
@@ -821,7 +985,7 @@ class AppraisalController extends Controller
         $this->authoriseView($appraisal);
 
         $data = $request->validate([
-            'file'             => 'required|file|max:10240|mimes:pdf,doc,docx,xls,xlsx,csv,png,jpg,jpeg,webp',
+            'file'             => \App\Support\Uploads::rules(),
             'label'            => 'nullable|string|max:255',
             'appraisal_kpi_id' => 'nullable|exists:appraisal_kpis,id',
         ]);

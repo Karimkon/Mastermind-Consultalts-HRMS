@@ -15,7 +15,7 @@ class Appraisal extends Model
     protected $fillable = [
         'title', 'employee_id', 'type', 'client_id', 'appraisal_template_id', 'year', 'period',
         'review_from', 'review_to', 'initiated_by', 'appraiser_id', 'return_to_id',
-        'status', 'overall_index', 'overall_percent', 'overall_band',
+        'status', 'rating_scale_id', 'overall_index', 'overall_percent', 'overall_band',
         'employee_comment', 'manager_comment', 'employee_signed_at', 'manager_signed_at',
         'self_assessed_at',
     ];
@@ -104,23 +104,57 @@ class Appraisal extends Model
         return $out;
     }
 
+    public function ratingScale() { return $this->belongsTo(RatingScale::class, 'rating_scale_id'); }
+
+    /**
+     * The scale this card is rated on.
+     *
+     * Its own, the one its template carries, or the system default - in that
+     * order, so an existing card keeps working whatever was or was not chosen
+     * when it was created.
+     */
+    public function scale(): ?RatingScale
+    {
+        return $this->relationLoaded('ratingScale') && $this->ratingScale
+            ? $this->ratingScale
+            : ($this->ratingScale
+                ?? $this->template?->ratingScale
+                ?? RatingScale::default());
+    }
+
+    /** Top of the scale, and the divisor behind the overall percentage. */
+    public function maxPoints(): int
+    {
+        return $this->scale()?->max_points ?: 5;
+    }
+
     /**
      * Roll the KPI rows up into the overall score and persist it.
-     * Overall index is out of 5, so the percentage is index ÷ 5.
+     *
+     * The percentage is the index over full marks. Full marks used to be the
+     * literal 5 written here; it is the scale's own top now, so a card rated
+     * out of 10 does not silently report half the score it earned.
      */
     public function recalculate(): void
     {
         $index   = round((float) $this->kpis()->sum('weighted_index'), 3);
-        $percent = round($index / 5 * 100, 2);
+        $max     = $this->maxPoints();
+        $percent = $max > 0 ? round($index / $max * 100, 2) : 0.0;
 
         $this->update([
             'overall_index'   => $index,
             'overall_percent' => $percent,
-            'overall_band'    => self::bandFor($percent),
+            'overall_band'    => $this->scale()?->bandFor($percent) ?? self::bandFor($percent),
         ]);
     }
 
-    /** Which 1–5 band a percentage falls into. */
+    /**
+     * Which band a percentage falls into, on the fixed 1-5 scale.
+     *
+     * Kept as a fall-back for cards written before scales existed and for the
+     * moment before any scale has been seeded. A card with a scale uses that
+     * scale's own bands instead.
+     */
     public static function bandFor(?float $percent): ?int
     {
         if ($percent === null) return null;
@@ -133,7 +167,10 @@ class Appraisal extends Model
 
     public function bandLabel(): string
     {
-        return $this->overall_band ? self::BANDS[$this->overall_band]['label'] : '—';
+        if (! $this->overall_band) return '—';
+
+        return $this->scale()?->labelFor($this->overall_band)
+            ?? (self::BANDS[$this->overall_band]['label'] ?? '—');
     }
 
     public function statusLabel(): string
@@ -168,6 +205,8 @@ class Appraisal extends Model
     {
         return match ($this->status) {
             'draft'          => $this->initiated_by,
+            // The card is with the employee first, before anybody rates them.
+            'self_assessment' => $this->employee?->user_id,
             'with_appraiser' => $this->appraiser_id,
             'with_manager'   => $this->return_to_id ?? $this->initiated_by,
             'with_employee'  => $this->employee?->user_id,

@@ -28,7 +28,7 @@
             <div><label class="form-label">Name *</label><input type="text" name="name" class="form-input" required></div>
             <div><label class="form-label">Date *</label><input type="date" name="date" class="form-input" required></div>
             <div><label class="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" name="is_recurring" value="1" class="rounded"> Recurring yearly</label></div>
-            <button type="submit" class="btn-primary w-full justify-center"><i class="fas fa-plus"></i> Add Holiday</button>
+            <button type="submit" class="btn-primary w-full justify-center" data-loading-label="Adding…"><i class="fas fa-plus"></i> Add Holiday</button>
         </form>
     </div>
 </div>

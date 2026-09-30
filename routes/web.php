@@ -14,6 +14,7 @@ use App\Http\Controllers\HolidayPayController;
 use App\Http\Controllers\AppraisalController;
 use App\Http\Controllers\BscController;
 use App\Http\Controllers\ProbationController;
+use App\Http\Controllers\OrgStructureController;
 use App\Http\Controllers\CareersController;
 use App\Http\Controllers\Performance\{GoalController, PipController};
 use App\Http\Controllers\Training\AssessmentController;
@@ -80,6 +81,7 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::get('employees/search', [AjaxController::class, 'searchEmployees'])->name('employees.search');
         Route::get('notifications', [AjaxController::class, 'notifications'])->name('notifications');
         Route::post('notifications/read', [AjaxController::class, 'markNotificationsRead'])->name('notifications.read');
+        Route::post('notifications/{notification}/read', [AjaxController::class, 'markNotificationRead'])->name('notifications.read-one');
         Route::get('charts/attendance', [AjaxController::class, 'attendanceChart'])->name('charts.attendance');
         Route::get('charts/headcount', [AjaxController::class, 'headcountChart'])->name('charts.headcount');
     });
@@ -89,6 +91,11 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::resource('employees', EmployeeController::class);
         Route::get('employees/{employee}/documents', [EmployeeController::class, 'documents'])->name('employees.documents');
         Route::post('employees/{employee}/documents', [EmployeeController::class, 'storeDocument'])->name('employees.documents.store');
+        // Setting a login password is HR's and the super-admin's only — the
+        // controller re-checks, because this group is wider than that.
+        Route::post('employees/{employee}/reset-password', [EmployeeController::class, 'resetPassword'])
+            ->name('employees.reset-password')
+            ->middleware('role:super-admin|hr-admin');
         Route::get('employees/{employee}/history', [EmployeeController::class, 'history'])->name('employees.history');
         Route::post('employees/{employee}/history', [EmployeeController::class, 'storeHistory'])->name('employees.history.store');
         // Onboarding
@@ -116,6 +123,7 @@ Route::middleware(['auth','mfa'])->group(function () {
     Route::get('appraisals/create',             [AppraisalController::class, 'create'])->name('appraisals.create');
     Route::post('appraisals',                   [AppraisalController::class, 'store'])->name('appraisals.store');
     Route::get('appraisals/{appraisal}',        [AppraisalController::class, 'show'])->name('appraisals.show');
+    Route::get('appraisals/{appraisal}/pdf',    [AppraisalController::class, 'exportPdf'])->name('appraisals.pdf');
     Route::get('appraisals/{appraisal}/edit',   [AppraisalController::class, 'edit'])->name('appraisals.edit');
 
     Route::post('appraisals/{appraisal}/kpis',              [AppraisalController::class, 'storeKpi'])->name('appraisals.kpis.store');
@@ -136,6 +144,7 @@ Route::middleware(['auth','mfa'])->group(function () {
     // HR and administrators working a card that is not at their step.
     Route::post('appraisals/{appraisal}/import-kpis', [AppraisalController::class, 'importKpis'])->name('appraisals.import-kpis');
     Route::post('appraisals/{appraisal}/comments',    [AppraisalController::class, 'adminComment'])->name('appraisals.comments');
+    Route::post('appraisals/{appraisal}/resend',      [AppraisalController::class, 'resendNotice'])->name('appraisals.resend');
     Route::delete('appraisals/{appraisal}',           [AppraisalController::class, 'destroy'])->name('appraisals.destroy');
 
     Route::post('appraisals/{appraisal}/actions',            [AppraisalController::class, 'storeAction'])->name('appraisals.actions.store');
@@ -181,6 +190,11 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::get('/unread',                [ChatController::class, 'unread'])->name('unread');
         Route::get('/contacts',              [ChatController::class, 'contacts'])->name('contacts');
         Route::post('/with/{user}',          [ChatController::class, 'withUser'])->name('with');
+        // Groups: one message to a whole client site or department, rather
+        // than the same sentence typed into ninety threads.
+        Route::get('/audiences',             [ChatController::class, 'audiences'])->name('audiences');
+        Route::post('/group',                [ChatController::class, 'createGroup'])->name('group');
+        Route::post('/{conversation}/members',[ChatController::class, 'addMembers'])->name('members.add');
         Route::get('/{conversation}/messages', [ChatController::class, 'messages'])->name('messages');
         Route::post('/{conversation}/send',  [ChatController::class, 'send'])->name('send');
         Route::get('/attachment/{message}',  [ChatController::class, 'attachment'])->name('attachment');
@@ -212,6 +226,10 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::get('payroll/{payroll}/md-review',      [PayrollController::class, 'mdReview'])->name('payroll.md-review');
         Route::post('payroll/{payroll}/lock', [PayrollController::class, 'lock'])->name('payroll.lock');
         Route::post('payroll/{payroll}/unlock', [PayrollController::class, 'unlock'])->name('payroll.unlock')->middleware('role:super-admin');
+        // Walks past the whole approval chain, so it is Super Admin only and
+        // the controller re-checks (and still refuses an MD).
+        Route::post('payroll/{payroll}/override-status', [PayrollController::class, 'overrideStatus'])
+            ->name('payroll.override-status')->middleware('role:super-admin');
         Route::get('payroll/{payroll}/export-pdf', [PayrollController::class, 'exportPdf'])->name('payroll.export-pdf');
         Route::get('payroll/{payroll}/export-excel', [PayrollController::class, 'exportExcel'])->name('payroll.export-excel');
         Route::get('payroll/{payroll}/export-nssf', [PayrollController::class, 'exportNssf'])->name('payroll.export-nssf');
@@ -294,6 +312,10 @@ Route::middleware(['auth','mfa'])->group(function () {
     Route::put('goals/{goal}', [GoalController::class, 'update'])->name('goals.update');
     Route::put('goals/{goal}/progress', [GoalController::class, 'updateProgress'])->name('goals.progress');
     Route::delete('goals/{goal}', [GoalController::class, 'destroy'])->name('goals.destroy');
+    // Goal evidence: the deliverable from the employee, the brief from the manager.
+    Route::post('goals/{goal}/attachments', [GoalController::class, 'storeAttachment'])->name('goals.attachments.store');
+    Route::get('goals/{goal}/attachments/{attachment}', [GoalController::class, 'downloadAttachment'])->name('goals.attachments.download');
+    Route::delete('goals/{goal}/attachments/{attachment}', [GoalController::class, 'destroyAttachment'])->name('goals.attachments.destroy');
     // PIPs
     Route::get('pips', [PipController::class, 'index'])->name('pips.index');
     Route::get('pips/create', [PipController::class, 'create'])->name('pips.create');
@@ -301,8 +323,33 @@ Route::middleware(['auth','mfa'])->group(function () {
     Route::get('pips/{pip}', [PipController::class, 'show'])->name('pips.show');
     Route::put('pips/{pip}', [PipController::class, 'update'])->name('pips.update');
     Route::delete('pips/{pip}', [PipController::class, 'destroy'])->name('pips.destroy');
+    // PIP attachments: HR sends documents to work to, the employee sends work back.
+    Route::post('pips/{pip}/attachments', [PipController::class, 'storeAttachment'])->name('pips.attachments.store');
+    Route::get('pips/{pip}/attachments/{attachment}', [PipController::class, 'downloadAttachment'])->name('pips.attachments.download');
+    Route::delete('pips/{pip}/attachments/{attachment}', [PipController::class, 'destroyAttachment'])->name('pips.attachments.destroy');
 
     // Training
+    // ─── Annual Training Plan ────────────────────────────────────────────────
+    // Sits before the resource route: "training/plan" must not be taken for a
+    // course id by training/{training}.
+    Route::prefix('training/plan')->name('training.plan.')->group(function () {
+        Route::get('/',                 [\App\Http\Controllers\Training\TrainingPlanController::class, 'index'])->name('index');
+        Route::get('/create',           [\App\Http\Controllers\Training\TrainingPlanController::class, 'create'])->name('create');
+        Route::post('/',                [\App\Http\Controllers\Training\TrainingPlanController::class, 'store'])->name('store');
+        Route::get('/{session}',        [\App\Http\Controllers\Training\TrainingPlanController::class, 'show'])->name('show');
+        Route::get('/{session}/edit',   [\App\Http\Controllers\Training\TrainingPlanController::class, 'edit'])->name('edit');
+        Route::put('/{session}',        [\App\Http\Controllers\Training\TrainingPlanController::class, 'update'])->name('update');
+
+        Route::post('/{session}/submit',   [\App\Http\Controllers\Training\TrainingPlanController::class, 'submit'])->name('submit');
+        Route::post('/{session}/approve',  [\App\Http\Controllers\Training\TrainingPlanController::class, 'approve'])->name('approve');
+        Route::post('/{session}/reject',   [\App\Http\Controllers\Training\TrainingPlanController::class, 'reject'])->name('reject');
+        Route::post('/{session}/complete', [\App\Http\Controllers\Training\TrainingPlanController::class, 'complete'])->name('complete');
+
+        Route::post('/{session}/participants',              [\App\Http\Controllers\Training\TrainingPlanController::class, 'addParticipant'])->name('participants.add');
+        Route::put('/{session}/participants/{participant}', [\App\Http\Controllers\Training\TrainingPlanController::class, 'updateParticipant'])->name('participants.update');
+        Route::delete('/{session}/participants/{participant}', [\App\Http\Controllers\Training\TrainingPlanController::class, 'removeParticipant'])->name('participants.remove');
+    });
+
     Route::resource('training', TrainingController::class);
     Route::post('training/{training}/enroll', [TrainingController::class, 'enroll'])->name('training.enroll');
     Route::post('training/enrollment/{enrollment}/progress', [TrainingController::class, 'updateProgress'])->name('training.progress');
@@ -359,6 +406,7 @@ Route::middleware(['auth','mfa'])->group(function () {
     // EMPLOYEE SELF-SERVICE
     // =========================================================
     Route::prefix("employee")->name("employee.")->group(function () {
+        Route::get("my-payslips", [SelfServiceController::class, "payslips"])->name("payslips");
         Route::get("my-documents", [SelfServiceController::class, "documents"])->name("documents");
         Route::post("my-documents", [SelfServiceController::class, "storeDocument"])->name("documents.store");
         Route::get("my-documents/{document}/download", [SelfServiceController::class, "downloadDocument"])->name("documents.download");
@@ -386,7 +434,6 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::post("/payroll/{run}/process", [AccountManagerController::class, "processPayroll"])->name("payroll.process");
         Route::get("/payroll/{run}/manual-days-template", [AccountManagerController::class, "manualDaysTemplate"])->name("payroll.manual-days-template");
         Route::post("/payroll/{run}/import-manual-days", [AccountManagerController::class, "importManualDays"])->name("payroll.import-manual-days");
-        Route::post("/payroll/{run}/mark-paid", [AccountManagerController::class, "payrollMarkPaid"])->name("payroll.mark-paid");
         Route::get("/leaves", [AccountManagerController::class, "leaves"])->name("leaves");
         Route::post("/leaves/{leave}/approve", [AccountManagerController::class, "approveLeave"])->name("leaves.approve");
         Route::post("/leaves/{leave}/reject", [AccountManagerController::class, "rejectLeave"])->name("leaves.reject");
@@ -462,8 +509,25 @@ Route::middleware(['auth','mfa'])->group(function () {
     Route::post('probation/{employee}/set-end',[ProbationController::class, 'setProbationEnd'])->name('probation.set-end');
     Route::post('probation/{employee}/confirm',[ProbationController::class, 'confirm'])->name('probation.confirm');
 
+    // ─── Organisational Structure ─────────────────────────────────────────────
+    // Every Mastermind role: knowing who you answer to is not privileged, and
+    // the chart carries no pay or personal data. Clients are left out - they are
+    // external, and the internal chain of command is not theirs to browse.
+    Route::middleware('role:super-admin|hr-admin|manager|employee|account-manager|md|payroll-officer|recruiter')
+        ->group(function () {
+            Route::get('org-structure',            [OrgStructureController::class, 'index'])->name('org-structure.index');
+            Route::get('org-structure/{position}', [OrgStructureController::class, 'show'])->name('org-structure.show');
+        });
     // Admin
     Route::prefix('admin')->name('admin.')->middleware('role:super-admin|hr-admin')->group(function () {
+        // Rating scales: how many points a KPI can score and what each is called.
+        Route::get('rating-scales',                [\App\Http\Controllers\Admin\RatingScaleController::class, 'index'])->name('rating-scales.index');
+        Route::get('rating-scales/create',         [\App\Http\Controllers\Admin\RatingScaleController::class, 'create'])->name('rating-scales.create');
+        Route::post('rating-scales',               [\App\Http\Controllers\Admin\RatingScaleController::class, 'store'])->name('rating-scales.store');
+        Route::get('rating-scales/{ratingScale}/edit', [\App\Http\Controllers\Admin\RatingScaleController::class, 'edit'])->name('rating-scales.edit');
+        Route::put('rating-scales/{ratingScale}',  [\App\Http\Controllers\Admin\RatingScaleController::class, 'update'])->name('rating-scales.update');
+        Route::post('rating-scales/{ratingScale}/default', [\App\Http\Controllers\Admin\RatingScaleController::class, 'makeDefault'])->name('rating-scales.default');
+        Route::delete('rating-scales/{ratingScale}', [\App\Http\Controllers\Admin\RatingScaleController::class, 'destroy'])->name('rating-scales.destroy');
         Route::resource('users', UserController::class);
         Route::get('departments', [DepartmentController::class, 'index'])->name('departments.index');
         Route::post('departments', [DepartmentController::class, 'store'])->name('departments.store');

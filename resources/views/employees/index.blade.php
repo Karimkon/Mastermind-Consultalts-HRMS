@@ -67,6 +67,14 @@
                     <div>
                         <p class="text-sm font-medium text-slate-800">{{ $employee->full_name }}</p>
                         <p class="text-xs text-slate-500">{{ $employee->user?->email }}</p>
+                        {{-- Shown rather than left silent: a supervisor is now
+                             required for new starters, and the gap on an older
+                             record is the thing somebody has to go and fix. --}}
+                        @unless($employee->manager_id)
+                            <p class="text-xs text-amber-600 mt-0.5">
+                                <i class="fas fa-circle-exclamation"></i> No supervisor assigned
+                            </p>
+                        @endunless
                     </div>
                 </div>
             </td>

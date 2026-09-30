@@ -85,7 +85,10 @@
                        class="btn-xs btn-blue"><i class="fas fa-eye"></i></a>
 
                     @if(!$run->isLocked() && in_array($run->status, ['draft','processing']))
-                    <form method="POST" action="{{ route('payroll.process', $run) }}" class="inline">
+                    <form method="POST" action="{{ route('payroll.process', $run) }}" class="inline"
+                          data-loading-overlay
+                          data-loading-label="Processing payroll…"
+                          data-loading-sub="Working through every payslip on this run.">
                         @csrf
                         <button class="btn-xs btn-green" title="Process"><i class="fas fa-play"></i></button>
                     </form>

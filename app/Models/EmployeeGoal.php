@@ -9,4 +9,9 @@ class EmployeeGoal extends Model
 
     public function employee() { return $this->belongsTo(Employee::class); }
     public function cycle()    { return $this->belongsTo(PerformanceCycle::class); }
+
+    public function attachments()
+    {
+        return $this->hasMany(GoalAttachment::class, 'employee_goal_id')->with('uploader')->latest('id');
+    }
 }

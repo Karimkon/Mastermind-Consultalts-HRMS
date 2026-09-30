@@ -94,27 +94,50 @@ class AttendanceLocationTest extends TestCase
         $this->assertNotNull($log->distance_metres);
     }
 
-    public function test_a_clock_in_outside_the_fence_is_still_refused(): void
+    /**
+     * Recorded and flagged, not refused.
+     *
+     * This used to return 422 and store nothing. attendance_logs feeds payroll,
+     * so a pin dropped a couple of hundred metres off, or a poor fix under a
+     * factory roof, cost somebody the whole day and left them no way to register
+     * that they had turned up. The row now carries the distance and HR decides.
+     */
+    public function test_a_clock_in_outside_the_fence_is_recorded_and_flagged(): void
     {
         $client = $this->client(self::SITE_LAT, self::SITE_LNG);
         $user = $this->staff($client);
 
         // Roughly 11 km north — well outside a 100 m radius.
         $this->clockIn($user, self::SITE_LAT + 0.1, self::SITE_LNG)
-            ->assertStatus(422)
-            ->assertJsonPath('geo_error', true);
+            ->assertCreated()
+            ->assertJsonPath('off_site', true);
 
-        $this->assertSame(0, AttendanceLog::count(), 'Nothing should be recorded for a refused clock-in.');
+        $log = AttendanceLog::latest('id')->first();
+        $this->assertNotNull($log, 'The arrival still has to be on the record.');
+        $this->assertSame(AttendanceLog::LOCATION_OUTSIDE, $log->location_status);
+        $this->assertGreaterThan(1000, $log->distance_metres, 'HR needs the distance to judge it.');
     }
 
-    /** With a fence configured, a device that gives no fix is refused. */
-    public function test_a_fenced_client_requires_a_location(): void
+    /** The notice says how far off, so it can be acted on rather than guessed at. */
+    public function test_an_off_site_clock_in_says_how_far_away_it_was(): void
+    {
+        $client = $this->client(self::SITE_LAT, self::SITE_LNG);
+
+        $notice = $this->clockIn($this->staff($client), self::SITE_LAT + 0.1, self::SITE_LNG)
+            ->json('location_notice');
+
+        $this->assertStringContainsString('flagged for HR', $notice);
+    }
+
+    /** With a fence configured, a device that gives no fix is recorded as no_fix. */
+    public function test_a_fenced_client_still_records_a_clock_in_with_no_fix(): void
     {
         $client = $this->client(self::SITE_LAT, self::SITE_LNG);
         $user = $this->staff($client);
 
-        $this->clockIn($user, null, null)->assertStatus(422);
-        $this->assertSame(0, AttendanceLog::count());
+        $this->clockIn($user, null, null)->assertCreated();
+
+        $this->assertSame(AttendanceLog::LOCATION_NO_FIX, AttendanceLog::latest('id')->first()->location_status);
     }
 
     // ── When it cannot ───────────────────────────────────────────────────

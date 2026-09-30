@@ -42,6 +42,7 @@
                        class="form-input text-sm py-1.5 w-80">
             </div>
             <button type="submit" onclick="return confirmApprove()"
+                    data-loading-label="Approving…" data-loading-overlay
                     class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white whitespace-nowrap"
                     style="background:#059669;">
                 <i class="fas fa-stamp"></i> MD Final Approval

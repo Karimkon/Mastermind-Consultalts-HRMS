@@ -14,10 +14,20 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class PayrollController extends Controller
 {
-    /** MD role can only view payroll and give final approval — block everything else. */
+    /**
+     * MD role can only view payroll and give final approval — block everything else.
+     *
+     * The super-admin exemption that used to sit here has gone. The CEO now holds
+     * super-admin as well, so that he can see the whole system; with the exemption
+     * in place that would have quietly made the person who gives final approval
+     * also the person able to build and alter the run he is approving. Holding
+     * `md` is the statement "this person approves payroll", and it stays true
+     * however many other roles that person collects.
+     */
     private function denyMd(): void
     {
-        abort_if(auth()->user()->hasRole('md') && !auth()->user()->hasRole('super-admin'), 403, 'MD accounts can only view payroll and give final approval.');
+        abort_if(auth()->user()->hasRole('md'), 403,
+            'MD accounts can only view payroll and give final approval.');
     }
 
     public function index(Request $request)
@@ -151,6 +161,14 @@ class PayrollController extends Controller
         if ($payroll->isLocked()) {
             return back()->with('error', 'This payroll is locked. Only a Super Admin can unlock it.');
         }
+        $request->validate([
+            'month'  => 'sometimes|integer|min:1|max:12',
+            'year'   => 'sometimes|integer|min:2020',
+            // Unvalidated before, so any string at all could be written into the
+            // column the whole approval chain reads.
+            'status' => 'sometimes|in:' . implode(',', self::STATUSES),
+        ]);
+
         $payroll->update($request->only('month', 'year', 'status', 'client_id', 'notes'));
         return redirect()->route('payroll.show', $payroll)->with('success', 'Updated.');
     }
@@ -158,11 +176,193 @@ class PayrollController extends Controller
     public function destroy(PayrollRun $payroll)
     {
         $this->denyMd();
-        if ($payroll->isLocked()) {
+
+        // A locked run is closed to everybody but a Super Admin, who is the one
+        // person able to unlock it anyway — refusing them here only meant two
+        // clicks instead of one.
+        if ($payroll->isLocked() && !auth()->user()->hasRole('super-admin')) {
             return back()->with('error', 'Cannot delete a locked payroll run.');
         }
+
+        // The run and its payslips are about to stop existing, so the record of
+        // the deletion has to live somewhere else.
+        \App\Models\AuditLog::create([
+            'user_id'    => auth()->id(),
+            'action'     => 'payroll.deleted',
+            'model_type' => PayrollRun::class,
+            'model_id'   => $payroll->id,
+            'old_values' => [
+                'title'    => $payroll->title,
+                'status'   => $payroll->status,
+                'month'    => $payroll->month,
+                'year'     => $payroll->year,
+                'payslips' => $payroll->payslips()->count(),
+                'net_total'=> (float) $payroll->payslips()->sum('net_salary'),
+            ],
+            'new_values' => null,
+            'ip_address' => request()->ip(),
+            'user_agent' => substr((string) request()->userAgent(), 0, 500),
+        ]);
+
         $payroll->delete();
-        return redirect()->route('payroll.index')->with('success', 'Deleted.');
+        return redirect()->route('payroll.index')->with('success', 'Payroll run deleted.');
+    }
+
+    /**
+     * Who may read a given employee's payslip.
+     *
+     * Payroll staff see everyone. An Account Manager sees the employees of the
+     * clients they manage, and nobody else's. Everyone else sees their own slip
+     * and only their own.
+     */
+    private function authorisePayslipAccess(Employee $employee): void
+    {
+        $user = auth()->user();
+
+        if ($user->hasAnyRole(['super-admin', 'hr-admin', 'payroll-officer', 'manager', 'md'])) {
+            return;
+        }
+
+        if ($user->hasRole('account-manager')) {
+            $clientIds = \App\Models\Client::where('account_manager_id', $user->id)->pluck('id');
+            $manages   = $employee->clients()->whereIn('clients.id', $clientIds)->exists();
+            abort_unless($manages, 403, 'That employee is not on your client list.');
+            return;
+        }
+
+        abort_unless(
+            $user->employee && $user->employee->id === $employee->id,
+            403,
+            'You can only open your own payslip.'
+        );
+    }
+
+    /**
+     * Tell the next stage of the chain that the run is now theirs.
+     *
+     * Notification failure must never undo an approval that has already been
+     * written, so this swallows and reports rather than throws.
+     */
+    private function handOver(PayrollRun $payroll, string $stage): void
+    {
+        try {
+            app(NotificationService::class)->payrollAwaitingStage($payroll, $stage);
+            // Nothing drains the queue on a schedule here, so push it along now.
+            \App\Services\QueueRunner::kick();
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /** Every status a run can be put into, in chain order. */
+    public const STATUSES = ['draft', 'processing', 'processed', 'hr_approved', 'finance_approved', 'md_approved', 'paid'];
+
+    /**
+     * Only a Super Admin, and never an MD.
+     *
+     * This walks past the whole approval chain, so it is the one place where
+     * "who is allowed" has to be narrowest. denyMd() applies for the same
+     * reason it applies everywhere else in this controller: the CEO holds
+     * super-admin as well, and the person who gives final approval must not
+     * also be the person who can move a run to "approved" without one.
+     */
+    private function denyUnlessOverrideAllowed(): void
+    {
+        $this->denyMd();
+        abort_unless(auth()->user()->hasRole('super-admin'), 403,
+            'Only a Super Admin can override a payroll run.');
+    }
+
+    /**
+     * Put a run into any status, bypassing the chain.
+     *
+     * For correcting a run that went the wrong way — one paid without its
+     * approvals, one stuck at a stage whose owner has left, one that needs
+     * pulling back to be redone. There was no way to do any of that: after
+     * "paid" the screen offered nothing at all.
+     *
+     * Deliberately does NOT fabricate approvals. Stamps for stages after the
+     * new status are cleared; stamps before it are left exactly as they are,
+     * because they either happened or they did not and this must not pretend
+     * otherwise. The reason is required and lands in the same comment trail
+     * the send-backs use, so the run carries its own history.
+     */
+    public function overrideStatus(Request $request, PayrollRun $payroll)
+    {
+        $this->denyUnlessOverrideAllowed();
+
+        $data = $request->validate([
+            'status' => 'required|in:' . implode(',', self::STATUSES),
+            'reason' => 'required|string|min:5|max:1000',
+        ], [
+            'reason.required' => 'Say why this run is being moved — it is the only record of it.',
+            'reason.min'      => 'Give a reason somebody reading this later can understand.',
+        ]);
+
+        $from = $payroll->status;
+        $to   = $data['status'];
+
+        if ($from === $to) {
+            return back()->with('error', 'That run is already at ' . $this->statusLabel($to) . '.');
+        }
+
+        $reached = array_search($to, self::STATUSES, true);
+
+        // Clear the stamps for every stage the run is no longer past.
+        $clear = [];
+        if ($reached < array_search('hr_approved', self::STATUSES, true))      $clear += ['hr_approved_by' => null, 'hr_approved_at' => null];
+        if ($reached < array_search('finance_approved', self::STATUSES, true)) $clear += ['finance_approved_by' => null, 'finance_approved_at' => null];
+        if ($reached < array_search('md_approved', self::STATUSES, true))      $clear += ['md_approved_by' => null, 'md_approved_at' => null, 'approved_by' => null, 'approved_at' => null];
+        if ($to !== 'paid')                                                    $clear += ['paid_by' => null, 'paid_at' => null, 'payment_date' => null];
+
+        // Locking follows the same rule as the normal path, so nothing
+        // downstream has to special-case an overridden run.
+        $lock = in_array($to, ['md_approved', 'approved', 'paid'], true)
+            ? ['locked_at' => now(), 'locked_by' => auth()->id()]
+            : ['locked_at' => null,  'locked_by' => null];
+
+        $payroll->update(['status' => $to] + $clear + $lock);
+
+        PayrollComment::create([
+            'payroll_run_id' => $payroll->id,
+            'user_id'        => auth()->id(),
+            'action'         => 'override',
+            'from_status'    => $from,
+            'to_status'      => $to,
+            'comment'        => $data['reason'],
+        ]);
+
+        \App\Models\AuditLog::create([
+            'user_id'    => auth()->id(),
+            'action'     => 'payroll.override_status',
+            'model_type' => PayrollRun::class,
+            'model_id'   => $payroll->id,
+            'old_values' => ['status' => $from],
+            'new_values' => ['status' => $to, 'reason' => $data['reason']],
+            'ip_address' => $request->ip(),
+            'user_agent' => substr((string) $request->userAgent(), 0, 500),
+        ]);
+
+        return back()->with('success', sprintf(
+            'Moved from %s to %s. The reason has been recorded against this run. '
+            . 'Payslip payment status was not changed.',
+            $this->statusLabel($from), $this->statusLabel($to)
+        ));
+    }
+
+    private function statusLabel(string $status): string
+    {
+        return match ($status) {
+            'draft'            => 'Draft',
+            'processing'       => 'Processing',
+            'processed'        => 'HR Review',
+            'hr_approved'      => 'Finance Review',
+            'finance_approved' => 'MD Review',
+            'md_approved',
+            'approved'         => 'MD Approved',
+            'paid'             => 'Paid',
+            default            => ucfirst(str_replace('_', ' ', $status)),
+        };
     }
 
     /**
@@ -181,7 +381,8 @@ class PayrollController extends Controller
             'processed_by' => auth()->id(),
             'processed_at' => now(),
         ]);
-        return back()->with('success', 'Payroll processed and submitted to HR for approval.');
+        $this->handOver($payroll, 'hr');
+        return back()->with('success', 'Payroll processed and submitted to HR for approval. HR has been notified.');
     }
 
     /**
@@ -228,8 +429,9 @@ class PayrollController extends Controller
             'hr_approved_by' => auth()->id(),
             'hr_approved_at' => now(),
         ]);
+        $this->handOver($payroll, 'finance');
 
-        $msg = 'HR approved. Payroll submitted to Finance.';
+        $msg = 'HR approved. Payroll submitted to Finance, who have been notified.';
         if ($withheld) $msg .= " {$withheld} employee(s) withheld from payment.";
         return redirect()->route('payroll.show', $payroll)->with('success', $msg);
     }
@@ -280,8 +482,9 @@ class PayrollController extends Controller
             'finance_approved_by' => auth()->id(),
             'finance_approved_at' => now(),
         ]);
+        $this->handOver($payroll, 'md');
 
-        $msg = 'Finance approved. Payroll submitted to MD for final approval.';
+        $msg = 'Finance approved. Payroll submitted to MD for final approval. The MD has been notified.';
         if ($withheld) $msg .= " {$withheld} employee(s) withheld.";
         return redirect()->route('payroll.show', $payroll)->with('success', $msg);
     }
@@ -334,8 +537,9 @@ class PayrollController extends Controller
             'locked_at'     => now(),
             'locked_by'     => auth()->id(),
         ]);
+        $this->handOver($payroll, 'payment');
 
-        $msg = 'MD approved. Payroll is now locked. Finance can proceed to Mark as Paid.';
+        $msg = 'MD approved. Payroll is now locked and Finance has been notified to proceed to Mark as Paid.';
         if ($withheld) $msg .= " {$withheld} employee(s) withheld.";
         return redirect()->route('payroll.show', $payroll)->with('success', $msg);
     }
@@ -386,6 +590,16 @@ class PayrollController extends Controller
         };
 
         $payroll->update(array_merge(['status' => $toStatus], $clearFields));
+
+        // Whoever the run has just landed back on has to be told, or it simply
+        // sits at the earlier stage exactly as it sat at the later one.
+        $backTo = ['draft' => 'am', 'processed' => 'hr', 'hr_approved' => 'finance', 'finance_approved' => 'md'][$toStatus] ?? 'am';
+        try {
+            app(NotificationService::class)->payrollSentBack($payroll, $backTo, $request->comment, $user->name);
+            \App\Services\QueueRunner::kick();
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         $stageLabels = [
             'draft'            => 'Draft (Account Manager)',
@@ -450,7 +664,11 @@ class PayrollController extends Controller
         $this->denyMd();
         if ($payroll->isLocked()) return back()->with('error', 'Already locked.');
 
-        if (!in_array($payroll->status, ['md_approved', 'approved', 'paid'])) {
+        // Everyone else is stopped here because locking early strands the run:
+        // every approval button hides while locked. A Super Admin can unlock it
+        // again, so for them it is a freeze, not a trap.
+        if (!in_array($payroll->status, ['md_approved', 'approved', 'paid'])
+            && !auth()->user()->hasRole('super-admin')) {
             return back()->with('error',
                 'A payroll run can only be locked after MD approval — locking it now would block the remaining approvals. It locks itself automatically once the MD approves.');
         }
@@ -617,6 +835,13 @@ class PayrollController extends Controller
 
     public function payslipPdf(PayrollRun $payroll, Employee $employee)
     {
+        // This route sits outside the payroll role group so that an employee can
+        // fetch their own slip. It carried a comment claiming the controller
+        // scoped by employee_id — it did not, and both ids come straight from the
+        // URL, so any signed-in user could read any of the 1,247 employees' pay
+        // by editing the number. The scoping the comment promised now exists.
+        $this->authorisePayslipAccess($employee);
+
         $payslip     = Payslip::where('payroll_run_id', $payroll->id)->where('employee_id', $employee->id)->firstOrFail();
         $payslip->load('employee.department', 'employee.designation', 'employee.user');
         $payroll->load('client');

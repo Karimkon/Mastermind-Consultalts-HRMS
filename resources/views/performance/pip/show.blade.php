@@ -18,15 +18,72 @@
             </div>
             @if($pip->objectives)
             <h4 class="font-semibold text-slate-700 mb-2">Objectives</h4>
-            <ul class="space-y-1 mb-4">
-                @foreach($pip->objectives as $obj)
-                <li class="flex items-start gap-2 text-sm text-slate-700"><i class="fas fa-circle text-blue-400 text-xs mt-1.5"></i>{{ $obj }}</li>
+
+            {{-- Each objective carries its own thread of files, so a reply sits
+                 against the thing it answers rather than in one undifferentiated
+                 pile at the bottom of the plan. --}}
+            <div class="space-y-3 mb-4">
+                @foreach($pip->objectives as $i => $obj)
+                    @php $files = $pip->attachments->where('objective_index', $i); @endphp
+                    <div class="border border-slate-200 rounded-lg p-3" x-data="{ adding: false }">
+                        <div class="flex items-start justify-between gap-3">
+                            <p class="flex items-start gap-2 text-sm text-slate-700">
+                                <i class="fas fa-circle text-blue-400 text-xs mt-1.5"></i>{{ $obj }}
+                            </p>
+                            <button type="button" @click="adding = !adding"
+                                    class="text-xs text-blue-600 hover:underline shrink-0">
+                                <i class="fas fa-paperclip"></i>
+                                <span x-text="adding ? 'Cancel' : 'Attach'"></span>
+                            </button>
+                        </div>
+
+                        @include('performance.pip.partials.files', ['files' => $files, 'pip' => $pip])
+
+                        <form method="POST" action="{{ route('pips.attachments.store', $pip) }}"
+                              enctype="multipart/form-data" x-show="adding" x-cloak
+                              class="mt-3 grid grid-cols-1 sm:grid-cols-12 gap-2">
+                            @csrf
+                            <input type="hidden" name="objective_index" value="{{ $i }}">
+                            <input type="file" name="file" required accept="{{ \App\Support\Uploads::accept() }}"
+                                   class="form-input text-xs sm:col-span-5" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.png,.jpg,.jpeg,.webp,.zip">
+                            <input type="text" name="note" class="form-input text-xs sm:col-span-5"
+                                   placeholder="A note with this file (optional)">
+                            <button class="btn-primary text-xs sm:col-span-2" data-loading-label="Uploading…">
+                                <i class="fas fa-upload mr-1"></i> Send
+                            </button>
+                        </form>
+                    </div>
                 @endforeach
-            </ul>
+            </div>
             @endif
+
+            {{-- Anything belonging to the plan as a whole: the HR manual sent at
+                 the start, or the closing pack sent with the outcome. --}}
+            @php $general = $pip->attachments->whereNull('objective_index'); @endphp
+            <div class="border-t border-slate-100 pt-4">
+                <h4 class="font-semibold text-slate-700 mb-1">Documents for the whole plan</h4>
+                <p class="text-xs text-slate-500 mb-2">
+                    Reference material, or everything sent together at the end.
+                </p>
+
+                @include('performance.pip.partials.files', ['files' => $general, 'pip' => $pip])
+
+                <form method="POST" action="{{ route('pips.attachments.store', $pip) }}"
+                      enctype="multipart/form-data" class="mt-3 grid grid-cols-1 sm:grid-cols-12 gap-2">
+                    @csrf
+                    <input type="file" name="file" required accept="{{ \App\Support\Uploads::accept() }}"
+                           class="form-input text-xs sm:col-span-5" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.png,.jpg,.jpeg,.webp,.zip">
+                    <input type="text" name="note" class="form-input text-xs sm:col-span-5"
+                           placeholder="e.g. HR manual to work to">
+                    <button class="btn-secondary text-xs sm:col-span-2" data-loading-label="Uploading…">
+                        <i class="fas fa-upload mr-1"></i> Attach
+                    </button>
+                </form>
+                <p class="text-xs text-slate-400 mt-2">{{ \App\Support\Uploads::hint() }}</p>
+            </div>
         </div>
 
-        <form method="POST" action="{{ route('pips.update', $pip) }}" class="card p-6 space-y-4">@csrf @method('PUT')
+        <form method="POST" action="{{ route('pips.update', $pip) }}" enctype="multipart/form-data" class="card p-6 space-y-4">@csrf @method('PUT')
             <h3 class="font-semibold text-slate-800">Update PIP</h3>
             <div><label class="form-label">Status</label>
                 <select name="status" class="form-select">
@@ -36,7 +93,18 @@
                 </select>
             </div>
             <div><label class="form-label">Outcome / Notes</label><textarea name="outcome" class="form-input" rows="3">{{ $pip->outcome }}</textarea></div>
-            <button type="submit" class="btn-primary"><i class="fas fa-save"></i> Update</button>
+
+            {{-- Closing a plan is usually one act: the outcome and the paperwork
+                 that supports it go together, so they are sent together rather
+                 than as two separate trips. --}}
+            <div>
+                <label class="form-label">Attach a document with this update <span class="text-slate-400 font-normal">(optional)</span></label>
+                <input type="file" name="file" class="form-input text-sm" accept="{{ \App\Support\Uploads::accept() }}"
+                       accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.png,.jpg,.jpeg,.webp,.zip">
+                <p class="text-xs text-slate-400 mt-1">Filed against the whole plan · {{ \App\Support\Uploads::hint() }}</p>
+            </div>
+
+            <button type="submit" class="btn-primary" data-loading-label="Saving &amp; sending…"><i class="fas fa-save"></i> Update</button>
         </form>
     </div>
     <div class="card p-6">

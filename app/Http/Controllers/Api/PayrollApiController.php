@@ -56,6 +56,22 @@ class PayrollApiController extends Controller
         ]);
     }
 
+    /**
+     * Tell the next stage of the chain that the run is now theirs.
+     *
+     * Mirrors PayrollController::handOver — a control, or a courtesy, that exists
+     * on one client and not the other is one that cannot be relied on.
+     */
+    private function handOver(PayrollRun $payroll, string $stage): void
+    {
+        try {
+            app(\App\Services\NotificationService::class)->payrollAwaitingStage($payroll, $stage);
+            \App\Services\QueueRunner::kick();
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
     public function process(PayrollRun $payroll)
     {
         if (!request()->user()->hasRole(['super-admin','hr-admin','payroll-officer'])) abort(403);
@@ -63,6 +79,7 @@ class PayrollApiController extends Controller
             return response()->json(['message' => 'Already processed.'], 422);
         }
         app(PayrollService::class)->processRun($payroll);
+        $this->handOver($payroll, 'hr');
         return response()->json(['data' => ['id' => $payroll->id, 'status' => $payroll->fresh()->status]]);
     }
 
@@ -99,6 +116,8 @@ class PayrollApiController extends Controller
             'hr_approved_at'  => now(),
         ]);
 
+        $this->handOver($payroll, 'finance');
+
         return response()->json(['data' => ['status' => 'hr_approved']]);
     }
 
@@ -120,6 +139,8 @@ class PayrollApiController extends Controller
             'finance_approved_by'  => request()->user()->id,
             'finance_approved_at'  => now(),
         ]);
+
+        $this->handOver($payroll, 'md');
 
         return response()->json(['data' => ['status' => 'finance_approved']]);
     }
@@ -156,6 +177,8 @@ class PayrollApiController extends Controller
             'locked_at'      => now(),
             'locked_by'      => request()->user()->id,
         ]);
+
+        $this->handOver($payroll, 'payment');
 
         return response()->json(['data' => ['status' => 'md_approved']]);
     }

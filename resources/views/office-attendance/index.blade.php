@@ -62,7 +62,7 @@
                 <form method="POST" action="{{ route('office-attendance.clock-in') }}" @submit="attachLocation($event)">
                     @csrf
                     <input type="hidden" name="lat" x-ref="lat"><input type="hidden" name="lng" x-ref="lng">
-                    <button class="btn-primary"><i class="fas fa-right-to-bracket mr-1"></i> Clock In at Office</button>
+                    <button class="btn-primary" data-loading-label="Clocking in…"><i class="fas fa-right-to-bracket mr-1"></i> Clock In at Office</button>
                 </form>
             @elseif(!$myLog->clock_out)
                 <form method="POST" action="{{ route('office-attendance.clock-out') }}" @submit="attachLocation($event)">

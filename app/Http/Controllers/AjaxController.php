@@ -58,8 +58,36 @@ class AjaxController extends Controller
     {
         $notifications = Notification::where('user_id', auth()->id())
             ->latest()->limit(10)->get();
-        $unread = $notifications->whereNull('read_at')->count();
-        return response()->json(['unread' => $unread, 'notifications' => $notifications]);
+
+        // Counted across everything, not across the ten just fetched. The count
+        // was taken from that slice, so somebody holding thirty unread saw
+        // "10" and the number stopped moving however many more arrived.
+        $unread = Notification::where('user_id', auth()->id())
+            ->whereNull('read_at')->count();
+
+        return response()->json([
+            'unread'        => $unread,
+            'notifications' => $notifications,
+            // So the menu badges can follow along without a page reload.
+            'areas'         => Notification::unreadCountsFor(auth()->user()),
+        ]);
+    }
+
+    /**
+     * Mark one notification read - the one being opened.
+     *
+     * Reading a single notice should not clear the rest, which is what the
+     * bulk endpoint did when it was wired to merely opening the panel.
+     */
+    public function markNotificationRead(Notification $notification)
+    {
+        abort_unless($notification->user_id === auth()->id(), 403);
+
+        if (! $notification->read_at) {
+            $notification->update(['read_at' => now()]);
+        }
+
+        return response()->json(['ok' => true]);
     }
 
     public function markNotificationsRead()

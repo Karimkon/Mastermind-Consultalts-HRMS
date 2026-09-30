@@ -167,7 +167,9 @@
         </button>
     </div>
 
-    @php($sites = $client->sites()->orderByDesc('is_active')->orderBy('name')->get())
+    @php
+        $sites = $client->sites()->orderByDesc('is_active')->orderBy('name')->get();
+    @endphp
 
     @if($sites->isEmpty())
         <div class="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600">

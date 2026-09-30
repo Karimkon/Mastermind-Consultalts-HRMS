@@ -34,6 +34,10 @@
         <th class="table-head px-4 py-3 text-left">From</th>
         <th class="table-head px-4 py-3 text-left">To</th>
         <th class="table-head px-4 py-3 text-center">Days</th>
+        {{-- Taken, awaiting approval, and what is left of the entitlement.
+             A decision about this request is a decision about that balance,
+             and it used to mean opening every row to see it. --}}
+        <th class="table-head px-4 py-3 text-center">Leave Balance</th>
         <th class="table-head px-4 py-3 text-left">Applied</th>
         <th class="table-head px-4 py-3 text-left">Status</th>
         <th class="table-head px-4 py-3 text-left">Actions</th>
@@ -46,6 +50,34 @@
             <td class="px-4 py-3 text-sm text-slate-600">{{ $leave->from_date->format('M d, Y') }}</td>
             <td class="px-4 py-3 text-sm text-slate-600">{{ $leave->to_date->format('M d, Y') }}</td>
             <td class="px-4 py-3 text-center text-sm font-semibold text-slate-800">{{ $leave->days_count }}</td>
+            @php($bal = ($balances ?? [])[$leave->employee_id . ':' . $leave->leave_type_id] ?? null)
+            <td class="px-4 py-3 text-center whitespace-nowrap">
+                @if($bal)
+                    @php($trim = fn($v) => rtrim(rtrim(number_format($v, 2), '0'), '.'))
+                    <div class="inline-flex items-center gap-2 text-xs">
+                        <span class="text-slate-500" title="Taken so far">
+                            <span class="font-semibold text-slate-700">{{ $trim($bal['used']) }}</span> taken
+                        </span>
+                        <span class="text-slate-300">·</span>
+                        <span class="{{ $bal['pending'] > 0 ? 'text-amber-700' : 'text-slate-400' }}"
+                              title="Days already requested and awaiting approval">
+                            <span class="font-semibold">{{ $trim($bal['pending']) }}</span> pending
+                        </span>
+                        <span class="text-slate-300">·</span>
+                        <span class="{{ $bal['remaining'] > 0 ? 'text-green-700' : 'text-rose-700' }}"
+                              title="Left of {{ $trim($bal['entitled']) }} day(s) entitlement">
+                            <span class="font-semibold">{{ $trim($bal['remaining']) }}</span> left
+                        </span>
+                    </div>
+                    @if(! $bal['seeded'])
+                        {{-- No row has been opened for this person this year, so the
+                             entitlement shown is the leave type default. --}}
+                        <p class="text-[10px] text-amber-600 mt-0.5">default entitlement</p>
+                    @endif
+                @else
+                    <span class="text-xs text-slate-300">—</span>
+                @endif
+            </td>
             <td class="px-4 py-3 text-sm text-slate-500">{{ $leave->created_at->format('M d') }}</td>
             <td class="px-4 py-3">{!! $leave->status_badge !!}</td>
             <td class="px-4 py-3">
@@ -73,7 +105,7 @@
         <h3 class="font-semibold text-slate-800 mb-4">Reject Leave Request</h3>
         <form id="rejectForm" method="POST">@csrf
             <div><label class="form-label">Reason for Rejection *</label><textarea name="rejection_reason" class="form-input" rows="3" required></textarea></div>
-            <div class="flex gap-3 mt-4"><button type="submit" class="btn-danger"><i class="fas fa-times"></i> Reject</button><button type="button" onclick="document.getElementById('rejectModal').classList.add('hidden')" class="btn-secondary">Cancel</button></div>
+            <div class="flex gap-3 mt-4"><button type="submit" class="btn-danger" data-loading-label="Rejecting…"><i class="fas fa-times"></i> Reject</button><button type="button" onclick="document.getElementById('rejectModal').classList.add('hidden')" class="btn-secondary">Cancel</button></div>
         </form>
     </div>
 </div>

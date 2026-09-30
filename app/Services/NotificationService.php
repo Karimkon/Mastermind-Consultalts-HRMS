@@ -89,6 +89,101 @@ class NotificationService
         }
     }
 
+    /**
+     * Roles that own each stage of the payroll approval chain.
+     *
+     * super-admin sits on every stage because it can act at any of them, and a
+     * run that nobody is told about is a run that stops moving.
+     */
+    private const PAYROLL_STAGE_ROLES = [
+        'hr'      => ['hr-admin', 'super-admin'],
+        'finance' => ['payroll-officer', 'super-admin'],
+        'md'      => ['md', 'super-admin'],
+        'payment' => ['payroll-officer', 'super-admin'],
+        'am'      => ['account-manager', 'super-admin'],
+    ];
+
+    private const PAYROLL_STAGE_COPY = [
+        'hr'      => ['Payroll awaiting HR approval',      'has been processed and is waiting for HR to review the employees and approve it.'],
+        'finance' => ['Payroll awaiting Finance approval', 'has been approved by HR and is waiting for Finance to review and approve it.'],
+        'md'      => ['Payroll awaiting MD approval',      'has been approved by Finance and is waiting for the MD to give final approval.'],
+        'payment' => ['Payroll approved — ready to pay',   'has been given final approval by the MD and is locked. Finance can now mark it as paid.'],
+        'am'      => ['Payroll sent back to you',          'has been sent back for correction.'],
+    ];
+
+    /**
+     * Payroll reached a new stage → tell whoever has to act on it next.
+     *
+     * @param string $stage one of the keys in self::PAYROLL_STAGE_ROLES
+     */
+    public function payrollAwaitingStage(\App\Models\PayrollRun $run, string $stage): void
+    {
+        [$heading, $tail] = self::PAYROLL_STAGE_COPY[$stage] ?? [null, null];
+        if (! $heading) return;
+
+        $action = "\"{$run->title}\" {$tail}";
+
+        $this->notifyPayrollRoles($run, self::PAYROLL_STAGE_ROLES[$stage], $heading, $action);
+    }
+
+    /**
+     * A run was pushed back down the chain → tell the stage that now owns it,
+     * carrying the reason so the correction can actually be made.
+     */
+    public function payrollSentBack(\App\Models\PayrollRun $run, string $stage, string $comment, ?string $byName = null): void
+    {
+        $heading = 'Payroll sent back for correction';
+        $action  = "\"{$run->title}\" has been sent back to you" . ($byName ? " by {$byName}" : '') . '.';
+
+        $this->notifyPayrollRoles(
+            $run,
+            self::PAYROLL_STAGE_ROLES[$stage] ?? self::PAYROLL_STAGE_ROLES['am'],
+            $heading,
+            $action,
+            $comment,
+            $byName,
+        );
+    }
+
+    /**
+     * Shared delivery for the payroll chain: a bell for everyone who can act,
+     * plus an email, because approvers are not sitting in the system all day.
+     */
+    private function notifyPayrollRoles(
+        \App\Models\PayrollRun $run,
+        array $roles,
+        string $heading,
+        string $action,
+        ?string $comment = null,
+        ?string $byName = null,
+    ): void {
+        // Spatie throws if any name in the list is not a real role, which would
+        // take the whole handover down with it. A role nobody has created yet is
+        // simply a stage with no holders — the others must still be told.
+        $roles = \Spatie\Permission\Models\Role::whereIn('name', $roles)->pluck('name')->all();
+        if (! $roles) return;
+
+        User::role($roles)->get()->unique('id')->each(function (User $u) use ($run, $heading, $action, $comment, $byName) {
+            Notification::create([
+                'user_id' => $u->id,
+                'type'    => 'payroll_stage',
+                'title'   => $heading,
+                'body'    => $action . ($comment ? " Reason: {$comment}" : ''),
+                'data'    => ['payroll_run_id' => $run->id],
+            ]);
+
+            // One approver's mail server being down must not roll back the
+            // approval that has already been recorded.
+            if ($u->email) {
+                try {
+                    Mail::to($u->email)->queue(new \App\Mail\PayrollStageMail($run, $heading, $action, $comment, $byName));
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+        });
+    }
+
     // ──────────────────────────────────────────────
     // MEETINGS
     // ──────────────────────────────────────────────

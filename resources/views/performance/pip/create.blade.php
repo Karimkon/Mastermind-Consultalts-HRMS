@@ -32,7 +32,7 @@
             </div>
             <button type="button" onclick="document.getElementById('objectives').insertAdjacentHTML('beforeend','<input type=text name=objectives[] class=form-input placeholder=Add objective...>')" class="text-xs text-blue-600 mt-2">+ Add objective</button>
         </div>
-        <button type="submit" class="btn-primary"><i class="fas fa-save"></i> Create PIP</button>
+        <button type="submit" class="btn-primary" data-loading-label="Creating &amp; notifying…"><i class="fas fa-save"></i> Create PIP</button>
     </form>
 </div>
 @endsection

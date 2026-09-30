@@ -10,4 +10,9 @@ class Pip extends Model
 
     public function employee() { return $this->belongsTo(Employee::class); }
     public function cycle()    { return $this->belongsTo(PerformanceCycle::class); }
+
+    public function attachments()
+    {
+        return $this->hasMany(PipAttachment::class)->with('uploader')->latest('id');
+    }
 }

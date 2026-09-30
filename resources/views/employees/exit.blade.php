@@ -46,7 +46,7 @@
                     @endforeach
                 </select>
             </div>
-            <button type="submit" class="btn-primary"><i class="fas fa-save"></i> Update</button>
+            <button type="submit" class="btn-primary" data-loading-label="Saving…"><i class="fas fa-save"></i> Update</button>
         </form>
     </div>
 
@@ -82,7 +82,7 @@
         <div class="bg-red-50 border border-red-200 rounded-lg p-3">
             <p class="text-sm text-red-700"><i class="fas fa-exclamation-triangle mr-2"></i>This will set the employee's status to <strong>Terminated</strong>.</p>
         </div>
-        <button type="submit" class="btn-danger"><i class="fas fa-door-open"></i> Initiate Exit</button>
+        <button type="submit" class="btn-danger" data-loading-label="Initiating exit…"><i class="fas fa-door-open"></i> Initiate Exit</button>
     </form>
 </div>
 @endisset

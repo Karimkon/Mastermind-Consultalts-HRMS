@@ -23,8 +23,16 @@
     <div class="flex items-center gap-4">
         <div class="text-4xl font-bold text-slate-900 tabular-nums" x-text="time"></div>
         <div class="flex gap-3">
-            <button @click="clockIn()" class="btn-primary px-6"><i class="fas fa-sign-in-alt"></i> Clock In</button>
-            <button @click="clockOut()" class="btn-secondary px-6"><i class="fas fa-sign-out-alt"></i> Clock Out</button>
+            <button @click="clockIn()" :disabled="loading" class="btn-primary px-6 disabled:opacity-70">
+                <span x-show="loading" class="hrms-spinner"></span>
+                <i class="fas fa-sign-in-alt" x-show="!loading"></i>
+                <span x-text="loading ? 'Clocking in…' : 'Clock In'"></span>
+            </button>
+            <button @click="clockOut()" :disabled="loading" class="btn-secondary px-6 disabled:opacity-70">
+                <span x-show="loading" class="hrms-spinner"></span>
+                <i class="fas fa-sign-out-alt" x-show="!loading"></i>
+                <span x-text="loading ? 'Clocking out…' : 'Clock Out'"></span>
+            </button>
         </div>
         <p x-text="message" class="text-sm text-slate-600"></p>
     </div>

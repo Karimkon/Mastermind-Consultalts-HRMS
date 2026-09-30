@@ -18,10 +18,124 @@ class ChatController extends Controller
 {
     public function __construct(private ChatService $chat) {}
 
+    /**
+     * Open a group and put people in it.
+     *
+     * The point of the thing: an Account Manager writes one message and every
+     * guard on their client's site gets it, instead of the same sentence typed
+     * into ninety separate threads.
+     */
+    public function createGroup(Request $request)
+    {
+        $me = $request->user();
+
+        abort_unless($this->chat->canCreateGroups($me), 403,
+            'Your role cannot start a group. Ask HR or your manager to open one.');
+
+        $data = $request->validate([
+            'name'       => 'required|string|max:120',
+            'user_ids'   => 'required|array|min:1',
+            'user_ids.*' => 'integer|exists:users,id',
+        ], [
+            'name.required'     => 'Give the group a name, so people know what it is.',
+            'user_ids.required' => 'Choose at least one person to put in it.',
+        ]);
+
+        $conversation = $this->chat->createGroup($me, $data['name'], $data['user_ids']);
+        $count        = $conversation->participants()->count();
+
+        return response()->json([
+            'conversation_id' => $conversation->id,
+            'title'           => $conversation->name,
+            'members'         => $count,
+            'message'         => "\"{$conversation->name}\" created with {$count} member(s).",
+        ], 201);
+    }
+
+    /** Add more people to a group that already exists. */
+    public function addMembers(Request $request, Conversation $conversation)
+    {
+        $me = $request->user();
+
+        abort_unless($this->chat->isMember($conversation, $me), 403);
+        abort_unless($this->chat->canCreateGroups($me), 403, 'Your role cannot change who is in a group.');
+        abort_unless($conversation->type === Conversation::GROUP, 422, 'That is not a group.');
+
+        $data = $request->validate([
+            'user_ids'   => 'required|array|min:1',
+            'user_ids.*' => 'integer|exists:users,id',
+        ]);
+
+        $added = $this->chat->addToGroup($conversation, $data['user_ids']);
+
+        return response()->json([
+            'added'   => $added,
+            'members' => $conversation->participants()->count(),
+            'message' => $added ? "{$added} person(s) added." : 'Everybody chosen was already in the group.',
+        ]);
+    }
+
+    /**
+     * The ready-made lists somebody would otherwise tick one by one.
+     *
+     * An Account Manager's are their clients; HR's are the departments. Picking
+     * ninety people out of 1,247 by hand is how a feature like this goes unused.
+     */
+    public function audiences(Request $request)
+    {
+        $me = $request->user();
+        abort_unless($this->chat->canCreateGroups($me), 403);
+
+        $out = [];
+
+        $memberIds = fn ($callback) => User::where('status', 'active')
+            ->where('id', '!=', $me->id)
+            ->whereHas('employee', $callback)
+            ->pluck('id');
+
+        // Clients this person manages — or all of them, for HR and admin.
+        $clients = \App\Models\Client::query()
+            ->when(
+                $me->hasRole('account-manager') && ! $me->hasAnyRole(['super-admin', 'hr-admin']),
+                fn ($q) => $q->where('account_manager_id', $me->id)
+            )
+            ->orderBy('company_name')->get();
+
+        foreach ($clients as $client) {
+            $ids = $memberIds(fn ($q) => $q->whereHas('clients', fn ($c) => $c->where('clients.id', $client->id)));
+            if ($ids->isNotEmpty()) {
+                $out[] = ['key' => 'client:' . $client->id, 'group' => 'Clients',
+                          'label' => $client->company_name, 'count' => $ids->count(), 'ids' => $ids];
+            }
+        }
+
+        if ($me->hasAnyRole(['super-admin', 'hr-admin', 'md', 'manager'])) {
+            foreach (\App\Models\Department::orderBy('name')->get() as $department) {
+                $ids = $memberIds(fn ($q) => $q->where('department_id', $department->id));
+                if ($ids->isNotEmpty()) {
+                    $out[] = ['key' => 'department:' . $department->id, 'group' => 'Departments',
+                              'label' => $department->name, 'count' => $ids->count(), 'ids' => $ids];
+                }
+            }
+        }
+
+        // Whoever reports to this person, however far down the line.
+        if ($me->employee) {
+            $ids = $memberIds(fn ($q) => $q->whereIn('id', $me->employee->descendantIds()));
+            if ($ids->isNotEmpty()) {
+                $out[] = ['key' => 'my-team', 'group' => 'My team',
+                          'label' => 'Everyone reporting to me', 'count' => $ids->count(), 'ids' => $ids];
+            }
+        }
+
+        return response()->json(['audiences' => $out]);
+    }
+
     /** Threads, with unread counts, for the panel. */
     public function index(Request $request)
     {
         $me = $request->user();
+        $this->chat->touchDelivery($me);
 
         $conversations = $this->chat->conversationsFor($me)->map(fn (Conversation $c) => [
             'id'         => $c->id,
@@ -45,6 +159,10 @@ class ChatController extends Controller
     /** Just the badge, for the poll that runs on every page. */
     public function unread(Request $request)
     {
+        // This one runs on every page, so it is the poll that most often proves
+        // somebody is online and able to receive.
+        $this->chat->touchDelivery($request->user());
+
         return response()->json(['unread' => $this->chat->unreadTotal($request->user())]);
     }
 
@@ -58,6 +176,8 @@ class ChatController extends Controller
         // like an open and marked everything read without anybody seeing it.
         $after = $request->has('after') ? (int) $request->query('after') : null;
 
+        $this->chat->touchDelivery($me);
+
         $messages = $this->chat->messages($conversation, $after);
 
         // Opening a thread marks it read; polling for new lines does not, or a
@@ -69,6 +189,9 @@ class ChatController extends Controller
 
         return response()->json([
             'title'    => $conversation->titleFor($me->id),
+            // How far the others have got, so the panel can redraw every tick
+            // it is already showing and not just the new lines.
+            'marks'    => $this->chat->receiptMarks($conversation, $me->id),
             'messages' => $messages->map(fn (Message $m) => $this->shape($m, $me->id))->values(),
         ]);
     }
@@ -82,6 +205,9 @@ class ChatController extends Controller
             'body'       => 'nullable|string|max:5000',
             'attachment' => 'nullable|file|max:65536',   // 64MB, the video ceiling
             'duration'   => 'nullable|integer|min:0|max:86400',
+            // What the panel believes it captured. Only consulted when the
+            // container alone cannot say.
+            'kind'       => 'nullable|in:audio,video,image,file',
         ]);
 
         try {
@@ -90,7 +216,8 @@ class ChatController extends Controller
                 $me,
                 $request->input('body'),
                 $request->file('attachment'),
-                $request->integer('duration') ?: null
+                $request->integer('duration') ?: null,
+                $request->input('kind')
             );
         } catch (\RuntimeException $e) {
             // Size and type refusals are the user's business, not a 500.
@@ -101,7 +228,10 @@ class ChatController extends Controller
             return response()->json(['message' => 'Nothing to send.'], 422);
         }
 
-        return response()->json(['message' => $this->shape($message, $me->id)], 201);
+        return response()->json([
+            'message' => $this->shape($message, $me->id),
+            'marks'   => $this->chat->receiptMarks($conversation, $me->id),
+        ], 201);
     }
 
     /** Start, or reopen, a one-to-one thread. */
@@ -181,6 +311,9 @@ class ChatController extends Controller
         return [
             'id'        => $m->id,
             'mine'      => $m->user_id === $meId,
+            // Compared against the watermarks to draw the tick. Seconds, not a
+            // formatted time, so the comparison is not a parsing exercise.
+            'ts'        => $m->created_at?->getTimestamp(),
             'sender'    => $m->sender?->name,
             'avatar'    => $m->sender?->avatar_url,
             'type'      => $m->type,

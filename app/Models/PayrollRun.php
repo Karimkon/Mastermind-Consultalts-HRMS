@@ -54,6 +54,40 @@ class PayrollRun extends Model {
     }
 
     /**
+     * The statuses a given role is the one holding up.
+     *
+     * Finance appears twice on purpose: it approves after HR, and it is also the
+     * stage that pays once the MD has signed off.
+     */
+    private const STAGE_OWNERS = [
+        'hr-admin'        => ['processed'],
+        'payroll-officer' => ['hr_approved', 'md_approved', 'approved'],
+        'md'              => ['finance_approved'],
+        'account-manager' => ['draft'],
+        'super-admin'     => ['processed', 'hr_approved', 'finance_approved', 'md_approved', 'approved'],
+    ];
+
+    /**
+     * How many runs are waiting on this user right now.
+     *
+     * Approvers were never told a run had reached them, so runs queued up
+     * invisibly — eighteen of them at the HR step alone. This drives the badge
+     * that makes the queue visible from any page.
+     */
+    public static function awaitingCountFor(?\App\Models\User $user): int
+    {
+        if (! $user) return 0;
+
+        $statuses = collect(self::STAGE_OWNERS)
+            ->filter(fn($_, $role) => $user->hasRole($role))
+            ->flatten()->unique();
+
+        if ($statuses->isEmpty()) return 0;
+
+        return static::whereIn('status', $statuses)->count();
+    }
+
+    /**
      * The payslips that belong in a bank/mobile-money payment instruction file.
      *
      * Withheld slips are excluded here rather than in each export: a slip that HR,

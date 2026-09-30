@@ -152,7 +152,7 @@
     </div>
 
     <div class="flex items-center gap-3">
-        <button type="submit" class="btn-primary px-8"><i class="fas fa-save"></i> Create Employee</button>
+        <button type="submit" class="btn-primary px-8" data-loading-label="Creating employee…"><i class="fas fa-save"></i> Create Employee</button>
         <a href="{{ route('employees.index') }}" class="btn-secondary">Cancel</a>
     </div>
 </form>

@@ -143,7 +143,7 @@ class AppraisalApiController extends Controller
         $rows = $request->validate([
             'kpi' => 'required|array',
             'kpi.*.actual_achieved' => 'nullable|string|max:50',
-            'kpi.*.self_rating' => 'nullable|integer|min:1|max:5',
+            'kpi.*.self_rating' => 'nullable|integer|min:1|max:' . $appraisal->maxPoints(),
             'kpi.*.self_note' => 'nullable|string|max:1000',
         ])['kpi'];
 
@@ -224,7 +224,7 @@ class AppraisalApiController extends Controller
         $rows = $request->validate([
             'kpi' => 'required|array',
             'kpi.*.actual_achieved' => 'nullable|string|max:50',
-            'kpi.*.rating' => 'nullable|integer|min:1|max:5',
+            'kpi.*.rating' => 'nullable|integer|min:1|max:' . $appraisal->maxPoints(),
             'kpi.*.evidence_note' => 'nullable|string|max:255',
         ])['kpi'];
 

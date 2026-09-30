@@ -52,7 +52,7 @@
                 <textarea name="notes" class="form-input" rows="3" placeholder="Optional notes for this payroll run...">{{ old('notes') }}</textarea>
             </div>
 
-            <button type="submit" class="btn-primary w-full">
+            <button type="submit" class="btn-primary w-full" data-loading-label="Creating run…">
                 <i class="fas fa-plus mr-1"></i> Create Payroll Run
             </button>
         </form>

@@ -3,6 +3,8 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\{
     AuthApiController,
+    ChangeApprovalApiController,
+    ChatApiController,
     DashboardApiController,
     EmployeeApiController,
     AttendanceApiController,
@@ -50,6 +52,22 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Dashboard
     Route::get('dashboard', [DashboardApiController::class, 'index']);
+
+    // Staff messaging. The same threads, service and rules as the web panel -
+    // only the way the caller proves who they are differs, and the attachment
+    // URL with it, because a bearer token cannot be used against a route that
+    // expects a session cookie.
+    Route::prefix('chat')->group(function () {
+        Route::get('/',                       [ChatApiController::class, 'index']);
+        Route::get('unread',                  [ChatApiController::class, 'unread']);
+        Route::get('contacts',                [ChatApiController::class, 'contacts']);
+        Route::post('with/{user}',            [ChatApiController::class, 'withUser']);
+        Route::get('attachments/{message}',   [ChatApiController::class, 'attachment']);
+        Route::delete('messages/{message}',   [ChatApiController::class, 'destroy']);
+        // Last, so 'unread' and 'contacts' are not swallowed by {conversation}.
+        Route::get('{conversation}/messages', [ChatApiController::class, 'messages']);
+        Route::post('{conversation}/send',    [ChatApiController::class, 'send']);
+    });
 
     // Profile
     Route::get('profile',           [ProfileApiController::class, 'show']);
@@ -136,6 +154,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('goals',               [PerformanceApiController::class, 'storeGoal']);
     Route::put('goals/{goal}',         [PerformanceApiController::class, 'updateGoal']);
     Route::delete('goals/{goal}',      [PerformanceApiController::class, 'destroyGoal']);
+
+    // Change approvals — HR's queue of edits account managers have proposed.
+    // Same role gate as the web screen; the controller re-checks.
+    Route::get('change-approvals',                    [ChangeApprovalApiController::class, 'index']);
+    Route::get('change-approvals/{change}',           [ChangeApprovalApiController::class, 'show']);
+    Route::post('change-approvals/{change}/approve',  [ChangeApprovalApiController::class, 'approve']);
+    Route::post('change-approvals/{change}/reject',   [ChangeApprovalApiController::class, 'reject']);
 
     // Training
     Route::get('training',                          [TrainingApiController::class, 'index']);

@@ -59,6 +59,37 @@ class Message extends Model
     }
 
     /** Which kind of message a file makes, from what the browser said it is. */
+    /**
+     * Containers that carry either sound alone or sound with pictures.
+     *
+     * The bytes cannot tell the two apart without reading the track list, so
+     * for these the sender's own word is better evidence than the sniffer's.
+     */
+    public const AMBIGUOUS = [
+        'video/webm', 'audio/webm',
+        'video/mp4', 'audio/mp4',
+        'video/ogg', 'audio/ogg', 'application/ogg',
+        'video/x-matroska', 'video/3gpp', 'audio/3gpp',
+    ];
+
+    public static function containerIsAmbiguous(?string $mime): bool
+    {
+        return $mime !== null && in_array(strtolower(explode(';', $mime)[0]), self::AMBIGUOUS, true);
+    }
+
+    /** Re-badge a container's mime for the kind of thing it turned out to hold. */
+    public static function mimeAs(string $mime, string $type): string
+    {
+        $bare = explode(';', $mime)[0];
+        $tail = explode('/', $bare)[1] ?? 'webm';
+
+        return match ($type) {
+            self::AUDIO => 'audio/'.$tail,
+            self::VIDEO => 'video/'.$tail,
+            default     => $bare,
+        };
+    }
+
     public static function typeForMime(?string $mime): string
     {
         if (! $mime) {

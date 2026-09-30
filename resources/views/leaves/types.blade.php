@@ -35,7 +35,7 @@
                 <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" name="is_paid" value="1" checked class="rounded"> Paid</label>
                 <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" name="carry_forward" value="1" class="rounded"> Carry Forward</label>
             </div>
-            <button type="submit" class="btn-primary w-full justify-center"><i class="fas fa-plus"></i> Create Type</button>
+            <button type="submit" class="btn-primary w-full justify-center" data-loading-label="Creating…"><i class="fas fa-plus"></i> Create Type</button>
         </form>
     </div>
 </div>

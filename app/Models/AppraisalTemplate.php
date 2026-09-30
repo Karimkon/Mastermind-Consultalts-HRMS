@@ -12,8 +12,11 @@ class AppraisalTemplate extends Model
     protected $fillable = [
         'name', 'description', 'job_title',
         'financial_weight', 'customer_weight', 'internal_process_weight', 'learning_growth_weight',
-        'is_active', 'created_by',
+        'is_active', 'created_by', 'rating_scale_id',
     ];
+
+    /** Cards built from this template inherit its scale. */
+    public function ratingScale() { return $this->belongsTo(RatingScale::class, 'rating_scale_id'); }
 
     protected $casts = [
         'financial_weight'        => 'float',

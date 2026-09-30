@@ -110,7 +110,7 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn-primary w-full">
+            <button type="submit" class="btn-primary w-full" data-loading-label="Submitting…">
                 <i class="fas fa-paper-plane mr-1"></i> Submit Leave Request
             </button>
 

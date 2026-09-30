@@ -93,7 +93,7 @@ class Client extends Model
         return $nearest === null ? null : [$nearest, $best];
     }
     protected $fillable = [
-        'user_id', 'account_manager_id', 'company_name', 'contact_person',
+        'user_id', 'account_manager_id', 'supervisor_employee_id', 'company_name', 'contact_person',
         'phone', 'email',
         'industry', 'address', 'deployment_area', 'work_area', 'status', 'notes',
         'payment_day', 'work_site_address', 'work_site_lat', 'work_site_lng', 'geo_fence_radius',
@@ -127,6 +127,7 @@ class Client extends Model
 
     public function user()           { return $this->belongsTo(User::class); }
     public function accountManager() { return $this->belongsTo(User::class, 'account_manager_id'); }
+    public function supervisor()     { return $this->belongsTo(Employee::class, 'supervisor_employee_id'); }
 
     public function employees()
     {

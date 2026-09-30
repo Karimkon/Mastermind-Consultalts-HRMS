@@ -114,16 +114,18 @@ class ClientSiteFenceTest extends TestCase
      * The old behaviour, stated as a test so it cannot come back: with only one
      * of the two sites configured, half the workforce is refused.
      */
-    public function test_with_only_one_site_the_other_workforce_is_refused(): void
+    public function test_with_only_one_site_the_other_workforce_is_flagged(): void
     {
         $client = $this->client();
         $this->site($client, 'Lubowa', self::LUBOWA);
 
         $this->clockIn($this->staff($client), self::INDUSTRIAL)
-            ->assertStatus(422)
-            ->assertJsonPath('geo_error', true);
+            ->assertCreated()
+            ->assertJsonPath('off_site', true);
 
-        $this->assertSame(0, AttendanceLog::count());
+        // Still on the record: the half of the workforce whose site nobody has
+        // mapped yet must not lose their day over it.
+        $this->assertSame(AttendanceLog::LOCATION_OUTSIDE, AttendanceLog::latest('id')->first()->location_status);
     }
 
     /** Measured against the nearest site, not the first one created. */
@@ -144,15 +146,17 @@ class ClientSiteFenceTest extends TestCase
         );
     }
 
-    /** The refusal names the site, because the client name alone is baffling. */
-    public function test_a_refusal_names_the_site_it_measured_against(): void
+    /** The notice names the site, because the client name alone is baffling. */
+    public function test_the_notice_names_the_site_it_measured_against(): void
     {
         $client = $this->client();
         $this->site($client, 'Lubowa', self::LUBOWA);
 
-        $response = $this->clockIn($this->staff($client), self::INDUSTRIAL)->assertStatus(422);
+        $response = $this->clockIn($this->staff($client), self::INDUSTRIAL)->assertCreated();
 
-        $this->assertStringContainsString('Lubowa', $response->json('message'));
+        // "9km from Lubowa" is actionable where "9km from Roofings Uganda
+        // Limited" means nothing to somebody standing at Industrial Area.
+        $this->assertStringContainsString('Lubowa', $response->json('location_notice'));
     }
 
     /** Each site carries its own radius: a factory compound is not a front desk. */
@@ -174,14 +178,20 @@ class ClientSiteFenceTest extends TestCase
         );
     }
 
-    /** A retired site stops being a way in. */
-    public function test_an_inactive_site_does_not_admit_anybody(): void
+    /** A retired site stops counting as being on site. */
+    public function test_an_inactive_site_does_not_verify_anybody(): void
     {
         $client = $this->client();
         $this->site($client, 'Lubowa', self::LUBOWA);
         $this->site($client, 'Old depot', self::INDUSTRIAL)->update(['is_active' => false]);
 
-        $this->clockIn($this->staff($client), self::INDUSTRIAL)->assertStatus(422);
+        $this->clockIn($this->staff($client), self::INDUSTRIAL)->assertCreated();
+
+        $this->assertSame(
+            AttendanceLog::LOCATION_OUTSIDE,
+            AttendanceLog::latest('id')->first()->location_status,
+            'Standing at a retired depot is not standing at a work site.'
+        );
     }
 
     // ── Not breaking what already worked ─────────────────────────────────
@@ -204,11 +214,13 @@ class ClientSiteFenceTest extends TestCase
         );
     }
 
-    public function test_the_fallback_still_refuses_somebody_far_away(): void
+    public function test_the_fallback_still_flags_somebody_far_away(): void
     {
         $client = $this->client(legacyLat: self::LUBOWA[0], legacyLng: self::LUBOWA[1]);
 
-        $this->clockIn($this->staff($client), self::INDUSTRIAL)->assertStatus(422);
+        $this->clockIn($this->staff($client), self::INDUSTRIAL)->assertCreated();
+
+        $this->assertSame(AttendanceLog::LOCATION_OUTSIDE, AttendanceLog::latest('id')->first()->location_status);
     }
 
     /** Sites win over the legacy pair once any exist. */
@@ -218,8 +230,10 @@ class ClientSiteFenceTest extends TestCase
         $this->site($client, 'Industrial Area', self::INDUSTRIAL);
 
         // Lubowa is now only the retired legacy point, and is not a site.
-        $this->clockIn($this->staff($client), self::LUBOWA)->assertStatus(422);
-        $this->clockIn($this->staff($client), self::INDUSTRIAL)->assertCreated();
+        $this->clockIn($this->staff($client), self::LUBOWA)
+            ->assertCreated()->assertJsonPath('off_site', true);
+        $this->clockIn($this->staff($client), self::INDUSTRIAL)
+            ->assertCreated()->assertJsonPath('off_site', false);
     }
 
     /** Nothing configured at all is still permitted, and still says so. */

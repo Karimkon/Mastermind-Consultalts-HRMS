@@ -8,6 +8,8 @@ use Carbon\Carbon;
 
 class AttendanceApiController extends Controller
 {
+    use \App\Http\Controllers\Concerns\ChecksWorkSiteLocation;
+
     public function index(Request $request)
     {
         $user  = $request->user();
@@ -36,7 +38,7 @@ class AttendanceApiController extends Controller
 
         $log    = AttendanceLog::where('employee_id', $employee->id)
             ->whereDate('date', Carbon::today())->latest()->first();
-        $client = $this->getEmployeeClient($employee);
+        $client = $this->employeeClient($employee);
 
         return response()->json([
             'data'      => $log ? $this->format($log) : null,
@@ -63,17 +65,14 @@ class AttendanceApiController extends Controller
 
         if ($existing) return response()->json(['message' => 'Already clocked in.'], 422);
 
-        // Per-client geo-fence enforcement
-        $client   = $this->getEmployeeClient($employee);
-        $geoError = $this->employeeGeoCheck($client, $request->latitude, $request->longitude);
-        if ($geoError) return response()->json(['message' => $geoError, 'geo_error' => true], 422);
-
         // What could actually be established about where this person was. The
-        // fence blocks when it can; when it cannot, the row says so rather than
-        // looking identical to a verified one.
-        [$distance, $locationStatus] = $this->assessLocation(
+        // fence records rather than refuses: attendance feeds payroll, so a pin
+        // dropped slightly off used to cost somebody the whole day.
+        $client = $this->employeeClient($employee);
+        [$distance, $locationStatus, $site] = $this->assessLocation(
             $client, $request->latitude, $request->longitude
         );
+        $notice = $this->locationNotice($client, $distance, $locationStatus, $site);
 
         $log = AttendanceLog::create([
             'employee_id'       => $employee->id,
@@ -87,7 +86,12 @@ class AttendanceApiController extends Controller
             'status'            => 'present',
         ]);
 
-        return response()->json(['data' => $this->format($log), 'message' => 'Clocked in successfully.'], 201);
+        return response()->json([
+            'data'            => $this->format($log),
+            'message'         => $notice ?: 'Clocked in successfully.',
+            'location_notice' => $notice,
+            'off_site'        => $locationStatus === AttendanceLog::LOCATION_OUTSIDE,
+        ], 201);
     }
 
     public function clockOut(Request $request)
@@ -102,19 +106,18 @@ class AttendanceApiController extends Controller
 
         if (!$log) return response()->json(['message' => 'No active clock-in found.'], 422);
 
-        // Per-client geo-fence enforcement
-        $client   = $this->getEmployeeClient($employee);
-        $geoError = $this->employeeGeoCheck($client, $request->latitude, $request->longitude);
-        if ($geoError) return response()->json(['message' => $geoError, 'geo_error' => true], 422);
+        // Recorded and flagged, never refused — refusing the clock-out strands
+        // an open row that only HR can close, and every hour of overtime for
+        // that day is written at clock-out, so it is lost with it.
+        $client = $this->employeeClient($employee);
+        [$distance, $locationStatus, $site] = $this->assessLocation(
+            $client, $request->latitude, $request->longitude
+        );
+        $notice = $this->locationNotice($client, $distance, $locationStatus, $site);
 
         $clockIn  = Carbon::parse($log->clock_in);
         $hours    = $clockIn->diffInMinutes(now()) / 60;
         $overtime = max(0, $hours - 8);
-
-        $distance = ($client && $request->latitude && $request->longitude) ? $this->distanceMetres(
-            (float)$request->latitude, (float)$request->longitude,
-            (float)$client->work_site_lat, (float)$client->work_site_lng
-        ) : null;
 
         $log->update([
             'clock_out'         => now(),
@@ -124,9 +127,11 @@ class AttendanceApiController extends Controller
         ]);
 
         return response()->json([
-            'data'    => $this->format($log->fresh()),
-            'message' => 'Clocked out successfully.',
-            'hours'   => round($hours, 1),
+            'data'            => $this->format($log->fresh()),
+            'message'         => $notice ?: 'Clocked out successfully.',
+            'location_notice' => $notice,
+            'off_site'        => $locationStatus === AttendanceLog::LOCATION_OUTSIDE,
+            'hours'           => round($hours, 1),
         ]);
     }
 
@@ -150,86 +155,6 @@ class AttendanceApiController extends Controller
 
     // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-    private function getEmployeeClient(Employee $employee): ?Client
-    {
-        return Client::whereHas('employees', fn($q) => $q->where('employees.id', $employee->id))->first();
-    }
-
-    /**
-     * Distance from the work site, and what that distance is worth.
-     *
-     * Returns [distance in metres or null, one of verified|outside|unfenced|no_fix].
-     *
-     * The distance was previously computed as
-     *
-     *     $client ? $this->distanceMetres($lat, $lng, (float)$client->work_site_lat, ...)
-     *
-     * which casts a NULL work_site_lat to 0.0. For an unmapped client that
-     * measured the distance to Null Island — roughly three thousand kilometres
-     * off the coast of Ghana — and stored it as though it meant something. It
-     * only ever came out null because the device was not sending a fix either.
-     *
-     * @return array{float|null, string}
-     */
-    private function assessLocation(?Client $client, $lat, $lng): array
-    {
-        $hasFix = $lat !== null && $lng !== null && $lat !== '' && $lng !== '';
-
-        if (! $hasFix) {
-            return [null, AttendanceLog::LOCATION_NO_FIX];
-        }
-
-        // Nearest of however many premises this client has. A client with one
-        // site behaves exactly as before; a client with two stops measuring
-        // Industrial Area staff against Lubowa.
-        $nearest = $client?->nearestSite((float) $lat, (float) $lng);
-
-        if ($nearest === null) {
-            // A fix was given and there is nothing to measure it against. The
-            // coordinates are still stored; the status says they prove nothing.
-            return [null, AttendanceLog::LOCATION_UNFENCED];
-        }
-
-        [$site, $distance] = $nearest;
-
-        return [
-            round($distance, 2),
-            $distance <= $site->geo_fence_radius
-                ? AttendanceLog::LOCATION_VERIFIED
-                : AttendanceLog::LOCATION_OUTSIDE,
-        ];
-    }
-
-    private function employeeGeoCheck(?Client $client, $lat, $lng): ?string
-    {
-        // Nothing configured: the clock-in is allowed and the row records that it
-        // could not be checked. Blocking here would stop attendance for every
-        // client that has no coordinates yet, which is most of them.
-        if (! $client || ! $client->hasGeoFence()) {
-            return null;
-        }
-
-        if ($lat === null || $lng === null) {
-            return 'Your location is required to clock in/out. Please enable GPS.';
-        }
-
-        [$site, $distance] = $client->nearestSite((float) $lat, (float) $lng);
-
-        if ($distance > $site->geo_fence_radius) {
-            // Names the site, not just the client. "You are 9km from Lubowa" is
-            // actionable where "9km from Roofings Uganda Limited" is baffling to
-            // somebody standing at Industrial Area.
-            return sprintf(
-                'You are %dm from %s (%s). Must be within %dm.',
-                round($distance),
-                $site->name,
-                $client->company_name,
-                $site->geo_fence_radius,
-            );
-        }
-
-        return null;
-    }
 
     private function distanceMetres(float $lat1, float $lng1, float $lat2, float $lng2): float
     {

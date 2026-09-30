@@ -50,6 +50,83 @@ class ChatService
     }
 
     /**
+     * Roles that may open a group.
+     *
+     * Anybody can be put in one, but starting a thread that writes to a hundred
+     * phones at once is a different act from messaging a colleague, so it sits
+     * with the people who already carry responsibility for a group of staff.
+     */
+    public const CAN_CREATE_GROUPS = [
+        'super-admin', 'hr-admin', 'md', 'payroll-officer', 'manager', 'account-manager',
+    ];
+
+    public function canCreateGroups(User $user): bool
+    {
+        return $user->hasAnyRole(self::CAN_CREATE_GROUPS);
+    }
+
+    /**
+     * Open a group and put people in it.
+     *
+     * One message reaches everybody, instead of the same sentence typed into
+     * ninety separate threads. The creator is always a member — a group you
+     * cannot see is a group you cannot follow up.
+     *
+     * @param  array<int,int>  $userIds
+     */
+    public function createGroup(User $creator, string $name, array $userIds): Conversation
+    {
+        $wanted = collect($userIds)->map(fn ($id) => (int) $id)->push($creator->id)->unique();
+
+        // Only real, active accounts. A participant row pointing at nobody
+        // leaves a group whose member count never matches who can read it.
+        $members = User::whereIn('id', $wanted)->where('status', 'active')->pluck('id');
+
+        $conversation = Conversation::create([
+            'type'       => Conversation::GROUP,
+            'name'       => trim($name),
+            'created_by' => $creator->id,
+        ]);
+
+        $this->attach($conversation, $members);
+
+        return $conversation->fresh();
+    }
+
+    /**
+     * Add people to a group, skipping anybody already in it.
+     *
+     * @param  array<int,int>  $userIds
+     * @return int  how many were actually added
+     */
+    public function addToGroup(Conversation $c, array $userIds): int
+    {
+        if ($c->type !== Conversation::GROUP) return 0;
+
+        $toAdd = User::whereIn('id', $userIds)
+            ->where('status', 'active')
+            ->whereNotIn('id', $c->participants()->pluck('user_id'))
+            ->pluck('id');
+
+        $this->attach($c, $toAdd);
+
+        return $toAdd->count();
+    }
+
+    private function attach(Conversation $c, $userIds): void
+    {
+        if ($userIds->isEmpty()) return;
+
+        $now = now();
+        ConversationParticipant::insert($userIds->map(fn ($id) => [
+            'conversation_id' => $c->id,
+            'user_id'         => $id,
+            'created_at'      => $now,
+            'updated_at'      => $now,
+        ])->all());
+    }
+
+    /**
      * Messages in a thread.
      *
      * `after` returns only what has arrived since, which is what polling asks
@@ -73,7 +150,7 @@ class ChatService
      *
      * A message with neither words nor a file is not a message.
      */
-    public function send(Conversation $c, User $sender, ?string $body, ?UploadedFile $file = null, ?int $duration = null): ?Message
+    public function send(Conversation $c, User $sender, ?string $body, ?UploadedFile $file = null, ?int $duration = null, ?string $kind = null): ?Message
     {
         $body = trim((string) $body) ?: null;
 
@@ -89,7 +166,19 @@ class ChatService
         ];
 
         if ($file) {
-            $type = Message::typeForMime($file->getMimeType());
+            $mime = $file->getMimeType() ?: $file->getClientMimeType();
+            $type = Message::typeForMime($mime);
+
+            // A recording is a WebM or MP4 container holding only sound. The
+            // bytes look exactly like a video to the sniffer, so where the
+            // container is ambiguous the panel's own word decides - it knows
+            // whether it opened a microphone or a camera.
+            if ($kind && Message::containerIsAmbiguous($mime)
+                && in_array($kind, [Message::AUDIO, Message::VIDEO], true)) {
+                $type = $kind;
+                $mime = Message::mimeAs($mime, $type);
+            }
+
             $limit = Message::LIMITS[$type] ?? Message::LIMITS[Message::FILE];
 
             if ($file->getSize() > $limit['bytes']) {
@@ -114,7 +203,7 @@ class ChatService
                 'type'            => $type,
                 'attachment_path' => $path,
                 'attachment_name' => mb_substr($file->getClientOriginalName(), 0, 180),
-                'attachment_mime' => $file->getMimeType(),
+                'attachment_mime' => $mime,
                 'attachment_size' => $file->getSize(),
                 'duration'        => $duration,
             ]);
@@ -141,7 +230,54 @@ class ChatService
     {
         ConversationParticipant::where('conversation_id', $c->id)
             ->where('user_id', $user->id)
-            ->update(['last_read_at' => now()]);
+            ->update(['last_read_at' => now(), 'last_delivered_at' => now()]);
+    }
+
+    /**
+     * Note that this person's client is listening.
+     *
+     * Called on every chat poll, across all their threads at once: if their
+     * browser is asking for messages now, then everything sent before now has
+     * reached them, whichever thread it was in. Without a websocket this is the
+     * only honest meaning "delivered" can carry.
+     */
+    public function touchDelivery(User $user): void
+    {
+        ConversationParticipant::where('user_id', $user->id)
+            ->update(['last_delivered_at' => now()]);
+    }
+
+    /**
+     * The two watermarks a receipt is read off.
+     *
+     * Worked out once per request rather than once per message: a thread of
+     * fifty lines would otherwise ask the same question fifty times.
+     *
+     * Both are the *earliest* across everybody else, so in a group the second
+     * tick waits for the last person to receive it and the blue one for the
+     * last person to read it - which is what two ticks are taken to mean.
+     */
+    public function receiptMarks(Conversation $c, int $meId): array
+    {
+        $others = $c->participants()->where('user_id', '!=', $meId)->get();
+
+        if ($others->isEmpty()) {
+            return ['delivered' => null, 'read' => null];
+        }
+
+        // Somebody who has read a thread has plainly received it, whatever the
+        // delivery column says - it is only ever written by a poll.
+        $delivered = $others->map(fn ($p) => max(
+            $p->last_delivered_at?->getTimestamp() ?? 0,
+            $p->last_read_at?->getTimestamp() ?? 0
+        ));
+
+        $read = $others->map(fn ($p) => $p->last_read_at?->getTimestamp() ?? 0);
+
+        return [
+            'delivered' => $delivered->min() ?: null,
+            'read'      => $read->min() ?: null,
+        ];
     }
 
     /**

@@ -37,3 +37,7 @@ Schedule::command('blog:publish-scheduled')
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->runInBackground();
+
+// Probation — daily at 08:45. Warns HR 45 days before a probation period ends
+// and flags reviews already past their end date.
+Schedule::command('hrms:probation-alerts')->dailyAt('08:45');

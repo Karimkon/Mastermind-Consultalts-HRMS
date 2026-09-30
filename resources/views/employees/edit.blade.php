@@ -43,7 +43,9 @@
                 'statutory'   => ['fa-shield-alt', 'Statutory'],
                 'salary'      => ['fa-coins',       'Salary & Funds'],
                 'status'      => ['fa-flag',        'Status & Flags'],
-            ] as $key => [$icon, $label])
+            ] + (auth()->user()->hasAnyRole(['super-admin','hr-admin'])
+                    ? ['login' => ['fa-key', 'Login Access']]
+                    : []) as $key => [$icon, $label])
             <button type="button" @click="tab='{{ $key }}'"
                 :class="tab==='{{ $key }}' ? 'bg-blue-50 text-blue-700 font-semibold border-r-2 border-blue-600' : 'text-slate-600 hover:bg-slate-50'"
                 class="w-full text-left px-4 py-2.5 flex items-center gap-2 transition-colors">
@@ -54,13 +56,14 @@
     </div>
 
     {{-- ── Main form ───────────────────────────────────────────── --}}
-    <form method="POST" action="{{ route('employees.update', $employee) }}" enctype="multipart/form-data" class="flex-1 min-w-0" id="employee-edit-form">
+    <form method="POST" action="{{ route('employees.update', $employee) }}" enctype="multipart/form-data"
+          x-show="tab!=='login'" class="flex-1 min-w-0" id="employee-edit-form">
         @csrf @method('PUT')
         <input type="hidden" name="_tab" :value="tab">
         {{-- Sticky save bar at top --}}
         <div class="sticky top-0 z-20 bg-white border border-slate-200 rounded-lg px-4 py-2 mb-4 flex items-center justify-between shadow-sm">
             <span class="text-sm text-slate-500">Editing: <strong class="text-slate-700">{{ $employee->full_name }}</strong> ({{ $employee->emp_number }})</span>
-            <button type="submit" class="btn-primary text-sm py-1.5 px-4">
+            <button type="submit" class="btn-primary text-sm py-1.5 px-4" data-loading-label="Saving…">
                 <i class="fas fa-save mr-1"></i> Save Changes
             </button>
         </div>
@@ -232,7 +235,7 @@
                                 <label class="form-label">{{ $existingContract ? 'Replace Contract Document' : 'Upload Contract Document' }}</label>
                                 <input type="file" name="contract_file" class="form-input text-sm"
                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                                <p class="text-xs text-slate-400 mt-1">Accepted: PDF, Word, JPG, PNG — Max 10MB</p>
+                                <p class="text-xs text-slate-400 mt-1">Accepted: {{ \App\Support\Uploads::hint() }}</p>
                             </div>
 
                             {{-- Notes --}}
@@ -255,7 +258,7 @@
             </div>
 
             <div class="flex justify-end gap-3">
-                <button type="submit" class="btn-primary"><i class="fas fa-save mr-1"></i> Save Changes</button>
+                <button type="submit" class="btn-primary" data-loading-label="Saving…"><i class="fas fa-save mr-1"></i> Save Changes</button>
             </div>
         </div>
 
@@ -330,7 +333,7 @@
                 </div>
             </div>
             <div class="flex justify-end gap-3">
-                <button type="submit" class="btn-primary"><i class="fas fa-save mr-1"></i> Save Changes</button>
+                <button type="submit" class="btn-primary" data-loading-label="Saving…"><i class="fas fa-save mr-1"></i> Save Changes</button>
             </div>
         </div>
 
@@ -473,7 +476,7 @@
             </div>
 
             <div class="flex justify-end gap-3">
-                <button type="submit" class="btn-primary"><i class="fas fa-save mr-1"></i> Save Changes</button>
+                <button type="submit" class="btn-primary" data-loading-label="Saving…"><i class="fas fa-save mr-1"></i> Save Changes</button>
             </div>
         </div>
 
@@ -613,7 +616,7 @@
             </div>
 
             <div class="flex justify-end gap-3">
-                <button type="submit" class="btn-primary"><i class="fas fa-save mr-1"></i> Save Changes</button>
+                <button type="submit" class="btn-primary" data-loading-label="Saving…"><i class="fas fa-save mr-1"></i> Save Changes</button>
             </div>
         </div>
 
@@ -839,7 +842,7 @@
             </div>
 
             <div class="flex justify-end gap-3">
-                <button type="submit" class="btn-primary"><i class="fas fa-save mr-1"></i> Save Changes</button>
+                <button type="submit" class="btn-primary" data-loading-label="Saving…"><i class="fas fa-save mr-1"></i> Save Changes</button>
             </div>
         </div>
 
@@ -972,11 +975,84 @@
 
             <div class="flex justify-end gap-3">
                 <a href="{{ route('employees.show', $employee) }}" class="btn-secondary">Cancel</a>
-                <button type="submit" class="btn-primary"><i class="fas fa-save mr-1"></i> Save Changes</button>
+                <button type="submit" class="btn-primary" data-loading-label="Saving…"><i class="fas fa-save mr-1"></i> Save Changes</button>
             </div>
         </div>
 
     </form>
+
+    {{-- ── Login Access ──────────────────────────────────────────────────
+         Outside the form above, because HTML has no nested forms, and inside
+         the x-data wrapper, so the tab still switches it. --}}
+    @role('super-admin|hr-admin')
+    <div x-show="tab==='login'" x-cloak class="flex-1 min-w-0 space-y-5">
+        <div class="card p-6">
+            <h3 class="section-title"><i class="fas fa-key text-blue-500"></i> Login Access</h3>
+            <p class="text-xs text-slate-400 mt-1 mb-4">
+                Set the password this employee signs in with. Use it to hand somebody
+                their credentials, or to sign in as them yourself to check a screen.
+            </p>
+
+            @if($employee->user)
+                <div class="flex flex-wrap items-center gap-3 mb-5 text-sm">
+                    <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">
+                        Has a login
+                    </span>
+                    <span class="text-slate-500">Signs in as</span>
+                    <strong class="text-slate-800">{{ $employee->user->email }}</strong>
+                    <span class="text-slate-400">·</span>
+                    <span class="text-slate-500">Role</span>
+                    <strong class="text-slate-800">{{ $employee->user->getRoleNames()->implode(', ') ?: 'none' }}</strong>
+                </div>
+            @else
+                <div class="mb-5 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                    <i class="fas fa-triangle-exclamation mr-1"></i>
+                    This employee has no login yet. Saving a password below creates one
+                    and gives them the <strong>employee</strong> role.
+                </div>
+            @endif
+
+            <form method="POST" action="{{ route('employees.reset-password', $employee) }}"
+                  x-data="{ pw: '', show: false }"
+                  onsubmit="return confirm('Set a new password for this employee? Their current password stops working immediately.')">
+                @csrf
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="form-label">Login Email</label>
+                        <input type="email" name="email" class="form-input"
+                               value="{{ old('email', $employee->user?->email ?? $employee->personal_email) }}"
+                               placeholder="name@example.com">
+                        <p class="text-xs text-slate-400 mt-1">This is the username they type.</p>
+                    </div>
+                    <div>
+                        <label class="form-label">New Password <span class="text-red-500">*</span></label>
+                        <input :type="show ? 'text' : 'password'" name="password" x-model="pw"
+                               class="form-input" minlength="8" required autocomplete="new-password">
+                        <label class="flex items-center gap-1.5 text-xs text-slate-500 mt-1 cursor-pointer">
+                            <input type="checkbox" x-model="show" class="rounded"> Show password
+                        </label>
+                    </div>
+                    <div>
+                        <label class="form-label">Confirm Password <span class="text-red-500">*</span></label>
+                        <input :type="show ? 'text' : 'password'" name="password_confirmation"
+                               class="form-input" minlength="8" required autocomplete="new-password">
+                        <p class="text-xs mt-1" x-show="pw.length > 0 && pw.length < 8" x-cloak
+                           style="color:#b45309">At least 8 characters.</p>
+                    </div>
+                </div>
+                <div class="mt-5 flex items-center gap-3">
+                    <button type="submit" class="btn-primary">
+                        <i class="fas fa-key mr-1"></i>
+                        {{ $employee->user ? 'Set Password' : 'Create Login' }}
+                    </button>
+                    <span class="text-xs text-slate-400">
+                        Write it down before you save — it is stored hashed and cannot be read back.
+                    </span>
+                </div>
+            </form>
+        </div>
+    </div>
+    @endrole
 </div>
 
 @push('styles')

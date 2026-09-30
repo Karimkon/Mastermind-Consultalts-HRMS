@@ -45,6 +45,7 @@
                        class="form-input text-sm py-1.5 w-80">
             </div>
             <button type="submit" onclick="return confirmApprove()"
+                    data-loading-label="Approving…" data-loading-overlay
                     class="btn-primary flex items-center gap-2 whitespace-nowrap">
                 <i class="fas fa-check-double"></i> Approve &amp; Submit to Finance
             </button>

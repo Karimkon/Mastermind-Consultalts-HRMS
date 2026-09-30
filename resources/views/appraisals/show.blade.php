@@ -4,12 +4,26 @@
 
 @php
     $emp   = $appraisal->employee;
-    $bands = \App\Models\Appraisal::BANDS;
+    $scale = $appraisal->scale();
+    $max   = $appraisal->maxPoints();
+    // Shaped like the old BANDS constant so the markup below did not have to
+    // change: number => label + printed range.
+    $bands = $scale
+        ? $scale->bands->mapWithKeys(fn($b) => [$b->points => [
+              'label' => $b->label,
+              'range' => $b->range_label ?: ($b->min_percent . '%+'),
+          ]])->all()
+        : \App\Models\Appraisal::BANDS;
     $isAdmin = auth()->user()->hasAnyRole(['super-admin', 'hr-admin']);
     $scoredCount = $appraisal->kpis->whereNotNull('rating')->count();
 @endphp
 
 <x-page-header title="Individual Balanced Score Card" subtitle="{{ $appraisal->title }}">
+    {{-- A finished card gets filed, signed and sent on, so it needs to leave
+         the system as a document rather than as a printed web page. --}}
+    <a href="{{ route('appraisals.pdf', $appraisal) }}" class="btn-secondary no-print">
+        <i class="fas fa-file-pdf mr-1"></i> Export PDF
+    </a>
     <button type="button" onclick="window.print()" class="btn-secondary no-print">
         <i class="fas fa-print mr-1"></i> Print
     </button>
@@ -24,6 +38,19 @@
     </div>
     @endif
 @endforeach
+
+{{-- Says why the card is read-only, rather than leaving somebody hunting for
+     buttons that are no longer there. --}}
+@if($isLocked)
+<div class="card p-4 mb-5 bg-slate-50 border-slate-300 no-print">
+    <p class="text-sm text-slate-700 flex items-center gap-2">
+        <i class="fas fa-lock text-slate-400"></i>
+        <span><strong>This appraisal is complete and locked.</strong>
+              It was signed off by the employee, so it is a record now and cannot be
+              scored, returned or sent back.</span>
+    </p>
+</div>
+@endif
 
 @if($isAdmin)
 {{-- An administrator is not at any one step of this card, so the things only
@@ -41,13 +68,29 @@
             </p>
         </div>
 
-        <form method="POST" action="{{ route('appraisals.destroy', $appraisal) }}"
-              onsubmit="return confirm('Delete this appraisal for good? This cannot be undone.')">
-            @csrf @method('DELETE')
-            <button class="btn-secondary text-rose-600 text-sm">
-                <i class="fas fa-trash mr-1"></i> Delete appraisal
-            </button>
-        </form>
+        <div class="flex flex-wrap items-center gap-2">
+            {{-- Offered only while somebody is actually holding the card. The
+                 in-app notification is already there; this repeats the email,
+                 which is the half that can fail silently. --}}
+            @if($holder)
+            <form method="POST" action="{{ route('appraisals.resend', $appraisal) }}">
+                @csrf
+                <button class="btn-secondary text-sm"
+                        title="Email {{ $holder->email ?: 'them' }} again">
+                    <i class="fas fa-paper-plane mr-1"></i>
+                    Resend notification
+                </button>
+            </form>
+            @endif
+
+            <form method="POST" action="{{ route('appraisals.destroy', $appraisal) }}"
+                  onsubmit="return confirm('Delete this appraisal for good? This cannot be undone.')">
+                @csrf @method('DELETE')
+                <button class="btn-secondary text-rose-600 text-sm">
+                    <i class="fas fa-trash mr-1"></i> Delete appraisal
+                </button>
+            </form>
+        </div>
     </div>
 
     {{-- Adds what is missing rather than replacing what somebody has tuned:
@@ -65,7 +108,7 @@
                 @endforeach
             </select>
         </div>
-        <button class="btn-primary"><i class="fas fa-file-import mr-1"></i> Import</button>
+        <button class="btn-primary" data-loading-label="Importing…"><i class="fas fa-file-import mr-1"></i> Import</button>
         <p class="basis-full text-xs text-slate-500">
             KRAs already on this card are skipped, not duplicated.
         </p>
@@ -128,13 +171,13 @@
         : route('appraisals.score', $appraisal) }}">
 @csrf
 <div class="card overflow-x-auto mb-5">
-    <table class="w-full text-sm" style="min-width:1100px">
+    <table class="w-full text-sm" style="min-width:1180px">
         <thead>
             <tr class="bg-slate-100 text-slate-700">
                 <th class="px-3 py-2 text-left w-64">Key Result Area</th>
                 <th class="px-3 py-2 text-left w-72">Performance Measures</th>
-                <th class="px-3 py-2 text-center w-24">Target</th>
-                <th class="px-3 py-2 text-center w-28">Actual Achieved</th>
+                <th class="px-3 py-2 text-center" style="width:9.5rem">Target</th>
+                <th class="px-3 py-2 text-center" style="width:9.5rem">Actual Achieved</th>
                 <th class="px-3 py-2 text-center w-28">% Target Achieved</th>
                 {{-- Shown from the moment the employee submits, so the appraiser
                      scores with their account in view rather than after it. --}}
@@ -146,14 +189,38 @@
             </tr>
         </thead>
         <tbody>
+        @php
+            /* Orange, green, blue, yellow - one per perspective, used for the
+               band and for the rating chips beneath it. Written out in full
+               rather than built from a stem because Tailwind only ships the
+               class names it can actually see. */
+            $hues = [
+                'financial'        => ['band' => 'bg-orange-200',
+                                       'on'   => 'peer-checked:bg-orange-500 peer-checked:border-orange-500 peer-checked:text-white',
+                                       'set'  => 'bg-orange-500 border-orange-500 text-white'],
+                'customer'         => ['band' => 'bg-green-200',
+                                       'on'   => 'peer-checked:bg-green-600 peer-checked:border-green-600 peer-checked:text-white',
+                                       'set'  => 'bg-green-600 border-green-600 text-white'],
+                'internal_process' => ['band' => 'bg-blue-200',
+                                       'on'   => 'peer-checked:bg-blue-600 peer-checked:border-blue-600 peer-checked:text-white',
+                                       'set'  => 'bg-blue-600 border-blue-600 text-white'],
+                'learning_growth'  => ['band' => 'bg-yellow-200',
+                                       'on'   => 'peer-checked:bg-yellow-400 peer-checked:border-yellow-500 peer-checked:text-slate-900',
+                                       'set'  => 'bg-yellow-400 border-yellow-500 text-slate-900'],
+            ];
+            $noHue = ['band' => 'bg-slate-200',
+                         'on'   => 'peer-checked:bg-slate-600 peer-checked:border-slate-600 peer-checked:text-white',
+                         'set'  => 'bg-slate-600 border-slate-600 text-white'];
+        @endphp
         @foreach($grouped as $key => $group)
-            <tr class="bg-yellow-200">
+            @php($hue = $hues[$key] ?? $noHue)
+            <tr class="{{ $hue['band'] }}">
                 <td colspan="10" class="px-3 py-2 font-bold text-slate-900">
                     {{ $loop->iteration }}. {{ strtoupper($group['label']) }} — {{ rtrim(rtrim(number_format($group['weight'], 2), '0'), '.') }}%
                 </td>
             </tr>
             @forelse($group['rows'] as $kpi)
-            <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <tr class="border-b border-slate-100 hover:bg-slate-50" data-kpi-row data-perspective="{{ $key }}" data-weight="{{ (float) $kpi->weightage }}">
                 <td class="px-3 py-2 align-top text-slate-800">{{ $kpi->kra_name }}</td>
                 <td class="px-3 py-2 align-top text-slate-600 text-xs">{{ $kpi->performance_measure }}</td>
                 <td class="px-3 py-2 align-top text-center text-slate-700">
@@ -163,9 +230,9 @@
                          stayed empty too. The scorer sets it; the employee does
                          not, because a target is set for you, not by you. --}}
                     @if($canScore)
-                        <input type="text" name="kpi[{{ $kpi->id }}][target]"
-                               value="{{ $kpi->target }}" class="form-input text-center py-1 text-sm"
-                               placeholder="e.g. 30">
+                        <input type="text" name="kpi[{{ $kpi->id }}][target]" data-numeric
+                               value="{{ $kpi->target }}" class="form-input text-center py-1 px-1.5 text-sm"
+                               style="min-width:8.5rem" placeholder="e.g. 100,000">
                     @else
                         {{ $kpi->target ?: '—' }}
                     @endif
@@ -175,13 +242,26 @@
                          afterwards: it is a fact about the period, not an opinion,
                          so it is corrected rather than duplicated. --}}
                     @if($canScore || $canSelfAssess)
-                        <input type="text" name="kpi[{{ $kpi->id }}][actual_achieved]"
-                               value="{{ $kpi->actual_achieved }}" class="form-input text-center py-1 text-sm">
+                        <input type="text" name="kpi[{{ $kpi->id }}][actual_achieved]" data-numeric
+                               value="{{ $kpi->actual_achieved }}" class="form-input text-center py-1 px-1.5 text-sm"
+                               style="min-width:8.5rem">
                     @else
                         {{ $kpi->actual_achieved ?? '—' }}
                     @endif
                 </td>
 
+                <td class="px-3 py-2 align-top text-center" data-cell="percent">
+                    {{-- actual ÷ target × 100, worked out from the two columns to
+                         the left. Derived and never typed: if it could be keyed
+                         in it could disagree with the figures it comes from. --}}
+                    @if($kpi->target_percent !== null)
+                        <span class="font-semibold {{ $kpi->target_percent >= 100 ? 'text-green-700' : ($kpi->target_percent >= 70 ? 'text-amber-600' : 'text-red-600') }}">
+                            {{ rtrim(rtrim(number_format($kpi->target_percent, 1), '0'), '.') }}%
+                        </span>
+                    @else
+                        <span class="text-slate-300">—</span>
+                    @endif
+                </td>
                 <td class="px-3 py-2 align-top text-center">
                     {{-- The employee normally writes this at their own step. An
                          administrator can record it as well - often they are
@@ -190,15 +270,14 @@
                          else's self-rating is not scoring, it is inventing. --}}
                     @if($canSelfAssess || $isAdmin)
                         <div class="flex justify-center gap-1">
-                            @for($r = 1; $r <= 5; $r++)
+                            @for($r = 1; $r <= $max; $r++)
                                 <label class="cursor-pointer">
                                     <input type="radio" class="sr-only peer"
                                            name="kpi[{{ $kpi->id }}][self_rating]" value="{{ $r }}"
                                            @checked((int) $kpi->self_rating === $r)>
                                     <span class="inline-flex h-7 w-7 items-center justify-center rounded border
                                                  border-slate-300 text-xs text-slate-600
-                                                 peer-checked:bg-blue-600 peer-checked:text-white
-                                                 peer-checked:border-blue-600">{{ $r }}</span>
+                                                 {{ $hue['on'] }}">{{ $r }}</span>
                                 </label>
                             @endfor
                         </div>
@@ -217,20 +296,17 @@
                         <span class="text-slate-300">—</span>
                     @endif
                 </td>
-                <td class="px-3 py-2 align-top text-center text-slate-700">
-                    {{ $kpi->target_percent !== null ? number_format($kpi->target_percent, 0) . '%' : '—' }}
-                </td>
                 <td class="px-3 py-2 align-top">
                     @if($canScore)
                         {{-- 1–5 across, exactly like the five rating columns in the sheet --}}
                         <div class="flex justify-center gap-1">
-                            @for($r = 1; $r <= 5; $r++)
+                            @for($r = 1; $r <= $max; $r++)
                             <label class="cursor-pointer">
                                 <input type="radio" name="kpi[{{ $kpi->id }}][rating]" value="{{ $r }}"
                                        class="sr-only peer" {{ (int) $kpi->rating === $r ? 'checked' : '' }}>
                                 <span class="inline-flex w-7 h-7 items-center justify-center rounded border border-slate-300
                                              text-xs font-semibold text-slate-600
-                                             peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600">
+                                             {{ $hue['on'] }}">
                                     {{ $r }}
                                 </span>
                             </label>
@@ -238,9 +314,9 @@
                         </div>
                     @else
                         <div class="flex justify-center gap-1">
-                            @for($r = 1; $r <= 5; $r++)
+                            @for($r = 1; $r <= $max; $r++)
                             <span class="inline-flex w-7 h-7 items-center justify-center rounded border text-xs font-semibold
-                                {{ (int) $kpi->rating === $r ? 'bg-blue-600 text-white border-blue-600' : 'border-slate-200 text-slate-300' }}">
+                                {{ (int) $kpi->rating === $r ? $hue['set'] : 'border-slate-200 text-slate-300' }}">
                                 {{ (int) $kpi->rating === $r ? $r : '' }}
                             </span>
                             @endfor
@@ -250,7 +326,7 @@
                 <td class="px-3 py-2 align-top text-center font-medium text-slate-700">
                     {{ rtrim(rtrim(number_format($kpi->weightage, 2), '0'), '.') }}%
                 </td>
-                <td class="px-3 py-2 align-top text-center font-semibold text-slate-800">
+                <td class="px-3 py-2 align-top text-center font-semibold text-slate-800" data-cell="index">
                     {{ $kpi->weighted_index !== null ? number_format($kpi->weighted_index, 2) : '—' }}
                 </td>
                 <td class="px-3 py-2 align-top text-xs text-slate-500">
@@ -275,7 +351,7 @@
             <tr class="bg-slate-100 font-semibold text-slate-800">
                 <td class="px-3 py-2" colspan="7">Total Rating</td>
                 <td class="px-3 py-2 text-center text-red-600">{{ rtrim(rtrim(number_format($group['weight'], 2), '0'), '.') }}%</td>
-                <td class="px-3 py-2 text-center">{{ number_format($group['index'], 2) }}</td>
+                <td class="px-3 py-2 text-center" data-total="{{ $key }}">{{ number_format($group['index'], 2) }}</td>
                 <td></td>
             </tr>
         @endforeach
@@ -285,8 +361,8 @@
                 <td class="px-3 py-3" colspan="6">OVERALL PERFORMANCE RATING</td>
                 <td class="px-3 py-3 text-right">OVERALL RATING</td>
                 <td class="px-3 py-3 text-center">{{ rtrim(rtrim(number_format($appraisal->totalWeight(), 2), '0'), '.') }}%</td>
-                <td class="px-3 py-3 text-center text-lg">{{ number_format($appraisal->overall_index ?? 0, 2) }}</td>
-                <td class="px-3 py-3 text-center text-lg">{{ number_format($appraisal->overall_percent ?? 0, 0) }}%</td>
+                <td class="px-3 py-3 text-center text-lg" data-total="overall">{{ number_format($appraisal->overall_index ?? 0, 2) }}</td>
+                <td class="px-3 py-3 text-center text-lg" data-cell="overall-percent">{{ number_format($appraisal->overall_percent ?? 0, 2) }}%</td>
             </tr>
         </tbody>
     </table>
@@ -308,7 +384,7 @@
 
 @if($canScore)
 <div class="flex flex-wrap gap-3 mb-6 no-print">
-    <button type="submit" class="btn-primary"><i class="fas fa-save mr-1"></i> Save Scores</button>
+    <button type="submit" class="btn-primary" data-loading-label="Saving…"><i class="fas fa-save mr-1"></i> Save Scores</button>
     <p class="text-xs text-slate-500 self-center">
         Saving recalculates the weighted index and overall rating. Return it when every KPI is rated.
     </p>
@@ -339,7 +415,7 @@
               class="mt-4"
               onsubmit="return confirm('Send this to your appraiser? You will not be able to change it afterwards.')">
             @csrf
-            <button class="btn-primary" @disabled($unrated > 0)>
+            <button class="btn-primary" data-loading-label="Sending…" @disabled($unrated > 0)>
                 <i class="fas fa-paper-plane mr-1"></i> Submit for scoring
             </button>
         </form>
@@ -447,7 +523,7 @@
     <form method="POST" action="{{ route('appraisals.attachments.store', $appraisal) }}"
           enctype="multipart/form-data" class="grid grid-cols-1 md:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
         @csrf
-        <input type="file" name="file" class="form-input md:col-span-1" required>
+        <input type="file" name="file" class="form-input md:col-span-1" required accept="{{ \App\Support\Uploads::accept() }}">
         <input type="text" name="label" class="form-input" placeholder="Label, e.g. Q1 customer survey">
         <select name="appraisal_kpi_id" class="form-select">
             <option value="">Whole appraisal</option>
@@ -455,7 +531,7 @@
                 <option value="{{ $kpi->id }}">{{ Str::limit($kpi->kra_name, 40) }}</option>
             @endforeach
         </select>
-        <button class="btn-secondary"><i class="fas fa-upload mr-1"></i> Attach</button>
+        <button class="btn-secondary" data-loading-label="Uploading…"><i class="fas fa-upload mr-1"></i> Attach</button>
     </form>
 </div>
 
@@ -468,7 +544,7 @@
             @csrf
             <textarea name="employee_comment" rows="5" class="form-input" required
                       placeholder="Your own view of this review period…">{{ $appraisal->employee_comment }}</textarea>
-            <button class="btn-primary mt-3"><i class="fas fa-signature mr-1"></i> Submit &amp; Sign Off</button>
+            <button class="btn-primary mt-3" data-loading-label="Submitting…"><i class="fas fa-signature mr-1"></i> Submit &amp; Sign Off</button>
         </form>
         @elseif($isAdmin)
         {{-- The employee writes this at their own step. An administrator
@@ -477,7 +553,7 @@
             @csrf
             <textarea name="employee_comment" rows="5" class="form-input"
                       placeholder="The employee's own view of this review period…">{{ $appraisal->employee_comment }}</textarea>
-            <button class="btn-secondary mt-3 text-sm"><i class="fas fa-pen mr-1"></i> Save comment</button>
+            <button class="btn-secondary mt-3 text-sm" data-loading-label="Saving…"><i class="fas fa-pen mr-1"></i> Save comment</button>
         </form>
             @if($appraisal->employee_signed_at)
                 <p class="text-xs text-slate-400 mt-3">
@@ -502,14 +578,14 @@
             @csrf
             <textarea name="manager_comment" rows="5" class="form-input"
                       placeholder="Your comment on the overall performance…">{{ $appraisal->manager_comment }}</textarea>
-            <button class="btn-primary mt-3"><i class="fas fa-check mr-1"></i> Confirm &amp; Send to Employee</button>
+            <button class="btn-primary mt-3" data-loading-label="Sending to employee…"><i class="fas fa-check mr-1"></i> Confirm &amp; Send to Employee</button>
         </form>
         @elseif($isAdmin)
         <form method="POST" action="{{ route('appraisals.comments', $appraisal) }}">
             @csrf
             <textarea name="manager_comment" rows="5" class="form-input"
                       placeholder="Comment on the overall performance…">{{ $appraisal->manager_comment }}</textarea>
-            <button class="btn-secondary mt-3 text-sm"><i class="fas fa-pen mr-1"></i> Save comment</button>
+            <button class="btn-secondary mt-3 text-sm" data-loading-label="Saving…"><i class="fas fa-pen mr-1"></i> Save comment</button>
         </form>
             @if($appraisal->manager_signed_at)
                 <p class="text-xs text-slate-400 mt-3">
@@ -529,15 +605,49 @@
     </div>
 </div>
 
-{{-- ── Workflow actions ── --}}
-@if($canScore)
-<div class="card p-5 mb-5">
-    <h3 class="font-semibold text-slate-800 mb-1">Return this appraisal</h3>
-    <p class="text-xs text-slate-500 mb-3">
-        It goes back to whoever started it by default, but you can send it to someone else —
-        HR or the MD, for instance.
-    </p>
-    <form method="POST" action="{{ route('appraisals.return', $appraisal) }}"
+{{-- ── Workflow actions ──
+
+     "Not satisfied?" leads, because it is the question being answered. Returning
+     the appraisal is what you do once the answer is no, so it stays folded away
+     until then rather than sitting open beside an accepted card and inviting a
+     step nobody meant to take.
+
+     Where there is no "Not satisfied?" section to open it - somebody who can
+     return a card but not send it back - the return block simply starts open. --}}
+@if($canConfirm || $canScore)
+<div x-data="{ notSatisfied: {{ $canConfirm ? 'false' : 'true' }} }">
+
+    @if($canConfirm)
+    <div class="card p-5 mb-5">
+        <h3 class="font-semibold text-slate-800 mb-3">Not satisfied?</h3>
+        <form method="POST" action="{{ route('appraisals.send-back', $appraisal) }}"
+          class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        @csrf
+        <input type="text" name="comment" class="form-input md:col-span-2" required
+               placeholder="What needs revisiting?">
+        <button data-loading-label="Sending back…" class="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-sm font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100">
+            <i class="fas fa-undo"></i> Send Back to Appraiser
+        </button>
+    </form>
+
+        @if($canScore)
+        <button type="button" @click="notSatisfied = !notSatisfied"
+                class="mt-3 text-xs text-blue-600 hover:underline">
+            <i class="fas" :class="notSatisfied ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+            <span x-text="notSatisfied ? 'Hide' : 'Or return this appraisal to someone else'"></span>
+        </button>
+        @endif
+    </div>
+    @endif
+
+    @if($canScore)
+    <div class="card p-5 mb-5" x-show="notSatisfied" x-cloak x-transition>
+        <h3 class="font-semibold text-slate-800 mb-1">Return this appraisal</h3>
+        <p class="text-xs text-slate-500 mb-3">
+            It goes back to whoever started it by default, but you can send it to someone else —
+            HR or the MD, for instance.
+        </p>
+        <form method="POST" action="{{ route('appraisals.return', $appraisal) }}"
           class="grid grid-cols-1 md:grid-cols-3 gap-3">
         @csrf
         <select name="return_to_id" class="form-select select2" required>
@@ -548,23 +658,11 @@
             @endforeach
         </select>
         <input type="text" name="comment" class="form-input" placeholder="Note (optional)">
-        <button class="btn-primary"><i class="fas fa-paper-plane mr-1"></i> Return Appraisal</button>
+        <button class="btn-primary" data-loading-label="Returning…"><i class="fas fa-paper-plane mr-1"></i> Return Appraisal</button>
     </form>
-</div>
-@endif
+    </div>
+    @endif
 
-@if($canConfirm)
-<div class="card p-5 mb-5">
-    <h3 class="font-semibold text-slate-800 mb-3">Not satisfied?</h3>
-    <form method="POST" action="{{ route('appraisals.send-back', $appraisal) }}"
-          class="grid grid-cols-1 md:grid-cols-3 gap-3">
-        @csrf
-        <input type="text" name="comment" class="form-input md:col-span-2" required
-               placeholder="What needs revisiting?">
-        <button class="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-sm font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100">
-            <i class="fas fa-undo"></i> Send Back to Appraiser
-        </button>
-    </form>
 </div>
 @endif
 
@@ -591,3 +689,135 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+/*
+ * The scorecard's arithmetic, run in the page as the numbers are typed.
+ *
+ * A preview only. The server recalculates every one of these on save and its
+ * answer is the record; this exists so that entering an actual does not leave
+ * the person staring at a dash wondering what they did wrong.
+ */
+(function () {
+    const card = document.querySelector('[data-kpi-row]')?.closest('table');
+    if (!card) return;
+
+    /* "100%", "UGX 3,000" and "3" all have to yield a number, exactly as the
+       server's own parser does - otherwise the preview and the saved figure
+       would disagree over the same text. */
+    // Full marks on this card's scale, handed to the browser so the live
+    // percentage matches what the server will store on save.
+    const MAX_POINTS = {{ (int) $max }};
+
+    function numeric(raw) {
+        if (raw === null || raw === undefined) return null;
+        const clean = String(raw).replace(/[^0-9.\-]/g, '');
+        if (clean === '' || clean === '-' || clean === '.') return null;
+        const n = parseFloat(clean);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    /* "100,000" is read at a glance where "100000" has to be counted out, so
+       plain numbers are grouped once the field is left. Cosmetic only: numeric()
+       above and AppraisalKpi::numeric() on the server both strip the separators
+       before anything is divided by them. */
+    function group(raw) {
+        const s = String(raw).trim().replace(/,/g, '');
+        // Anything that is not a plain number is left exactly as typed - the
+        // punctuation in "85%" or "1=75%, 2=50%" is part of what it means.
+        if (!/^-?\d+(\.\d+)?$/.test(s)) return String(raw).trim();
+        const neg = s.charAt(0) === '-';
+        const parts = s.replace('-', '').split('.');
+        return (neg ? '-' : '')
+             + parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+             + (parts.length > 1 ? '.' + parts[1] : '');
+    }
+
+    function trim(n, places) {
+        return n.toFixed(places).replace(/\.?0+$/, '') || '0';
+    }
+
+    function paintPercent(cell, percent) {
+        if (percent === null) {
+            cell.innerHTML = '<span class="text-slate-300">—</span>';
+            return;
+        }
+
+        const tone = percent >= 100 ? 'text-green-700'
+                   : (percent >= 70 ? 'text-amber-600' : 'text-red-600');
+
+        cell.innerHTML = '<span class="font-semibold ' + tone + '">'
+                       + trim(percent, 1) + '%</span>';
+    }
+
+    function recalculate() {
+        const totals = {};
+        let overall = 0;
+
+        card.querySelectorAll('[data-kpi-row]').forEach(function (row) {
+            const weight = parseFloat(row.dataset.weight) || 0;
+
+            const target = numeric(row.querySelector('[name*="[target]"]')?.value);
+            const actual = numeric(row.querySelector('[name*="[actual_achieved]"]')?.value);
+
+            const percentCell = row.querySelector('[data-cell="percent"]');
+            if (percentCell) {
+                paintPercent(percentCell,
+                    (target !== null && actual !== null && target !== 0)
+                        ? (actual / target) * 100
+                        : null);
+            }
+
+            const chosen = row.querySelector('[name*="[rating]"]:checked');
+            const rating = chosen ? parseInt(chosen.value, 10) : null;
+            const index = rating === null ? null : rating * (weight / 100);
+
+            const indexCell = row.querySelector('[data-cell="index"]');
+            if (indexCell) {
+                indexCell.textContent = index === null ? '—' : index.toFixed(2);
+            }
+
+            if (index !== null) {
+                const p = row.dataset.perspective;
+                totals[p] = (totals[p] || 0) + index;
+                overall += index;
+            }
+        });
+
+        // A perspective nobody has scored yet reads 0.00, not a stale figure
+        // left over from the page load.
+        document.querySelectorAll('[data-total]').forEach(function (cell) {
+            const key = cell.dataset.total;
+            if (key === 'overall') return;
+            cell.textContent = (totals[key] || 0).toFixed(2);
+        });
+
+        const overallCell = document.querySelector('[data-total="overall"]');
+        if (overallCell) overallCell.textContent = overall.toFixed(2);
+
+        const percentCell = document.querySelector('[data-cell="overall-percent"]');
+        if (percentCell) percentCell.textContent = (overall / MAX_POINTS * 100).toFixed(2) + '%';
+    }
+
+    // Typing, pasting and clicking a rating all change the answer.
+    card.addEventListener('input', function (e) {
+        if (e.target.matches('[name*="[target]"], [name*="[actual_achieved]"]')) recalculate();
+    });
+
+    card.addEventListener('change', function (e) {
+        if (e.target.matches('[name*="[rating]"]')) recalculate();
+    });
+
+    card.addEventListener('focusout', function (e) {
+        if (e.target.matches('[data-numeric]')) e.target.value = group(e.target.value);
+    });
+
+    card.querySelectorAll('[data-numeric]').forEach(function (el) {
+        el.value = group(el.value);
+    });
+
+    recalculate();
+})();
+</script>
+@endpush

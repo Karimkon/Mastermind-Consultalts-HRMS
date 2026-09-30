@@ -545,31 +545,21 @@ class AccountManagerController extends Controller
         return view('account-manager.payroll', compact('runs', 'clients', 'activeClient', 'clientId', 'empType', 'statusF', 'stats'));
     }
 
+    /**
+     * Account Managers do not mark payroll as paid.
+     *
+     * This used to accept a run at status "processed" and flip it straight to
+     * "paid", which walked past HR, Finance and the MD in a single click — that
+     * is how the June, July and August runs ended up paid with no approver
+     * recorded against any of the three stages. Payment is Finance's step and it
+     * only opens once the MD has approved, in PayrollController::markPaid().
+     *
+     * Kept as an explicit refusal rather than deleted so that re-adding a route
+     * to it fails loudly instead of quietly reopening the hole.
+     */
     public function payrollMarkPaid(Request $request, PayrollRun $run)
     {
-        $clientIds = $this->managedClients()->pluck('id')->toArray();
-        abort_unless(is_null($run->client_id) || in_array($run->client_id, $clientIds), 403);
-
-        if (!in_array($run->status, ['approved', 'processed', 'md_approved'])) {
-            return back()->with('error', 'Payroll must be approved before marking as paid.');
-        }
-
-        $request->validate([
-            'payment_method'    => 'required|in:bank_transfer,mobile_money,cash,cheque',
-            'payment_reference' => 'nullable|string|max:255',
-            'payment_date'      => 'nullable|date',
-        ]);
-
-        $run->update([
-            'status'             => 'paid',
-            'payment_method'     => $request->payment_method,
-            'payment_reference'  => $request->payment_reference,
-            'payment_date'       => $request->payment_date ?: today(),
-            'paid_by'            => auth()->id(),
-            'paid_at'            => now(),
-        ]);
-
-        return back()->with('success', 'Payroll marked as paid. Reference: ' . ($request->payment_reference ?: 'N/A'));
+        abort(403, 'Payroll is marked as paid by Finance, after the MD has approved it.');
     }
 
     public function payrollShow(PayrollRun $run)
@@ -612,8 +602,17 @@ class AccountManagerController extends Controller
             'processed_at' => now(),
         ]);
 
+        // Before this the handover was silent and runs simply waited: HR had no
+        // way of knowing a run was on their desk short of opening the list.
+        try {
+            app(\App\Services\NotificationService::class)->payrollAwaitingStage($run, 'hr');
+            \App\Services\QueueRunner::kick();
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         $count = $run->payslips()->count();
-        return back()->with('success', "Payroll processed for {$count} employees and submitted to HR for review.");
+        return back()->with('success', "Payroll processed for {$count} employees and submitted to HR for review. HR has been notified.");
     }
 
     public function manualDaysTemplate(PayrollRun $run)

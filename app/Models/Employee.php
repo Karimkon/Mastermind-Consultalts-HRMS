@@ -11,7 +11,7 @@ class Employee extends Model
         // Identity
         'user_id','emp_number','payroll_number','title','first_name','middle_name','last_name',
         // Job
-        'department_id','designation_id','manager_id','hire_date','end_date',
+        'department_id','designation_id','org_position_id','manager_id','hire_date','end_date',
         'employment_type','status','salary_grade',
         // Job Profile
         'week_off_type','week_off_day','holiday_calendar','contract_applicable','is_expatriate',
@@ -52,6 +52,7 @@ class Employee extends Model
         'termination_reason','retirement_date','retirement_reason',
         // Probation
         'probation_end_date','probation_status','probation_confirmed_at','probation_confirmed_by',
+        'probation_notes','probation_alert_sent_at',
     ];
 
     protected $casts = [
@@ -67,6 +68,7 @@ class Employee extends Model
         'hold_end_date'          => 'date',
         'probation_end_date'     => 'date',
         'probation_confirmed_at' => 'datetime',
+        'probation_alert_sent_at' => 'datetime',
         'contract_applicable'         => 'boolean',
         'is_expatriate'               => 'boolean',
         'insurance_relief'            => 'boolean',
@@ -93,7 +95,44 @@ class Employee extends Model
     public function department()  { return $this->belongsTo(Department::class); }
     public function designation() { return $this->belongsTo(Designation::class); }
     public function manager()     { return $this->belongsTo(Employee::class, 'manager_id'); }
+    public function orgPosition() { return $this->belongsTo(OrgPosition::class, 'org_position_id'); }
     public function subordinates(){ return $this->hasMany(Employee::class, 'manager_id'); }
+
+    /**
+     * Everybody below this person in the reporting line, however deep.
+     *
+     * A line manager needs their whole branch, not only direct reports —
+     * otherwise a supervisor two rungs up cannot see a leave request they are
+     * accountable for.
+     *
+     * One query for the tree, then walked in memory: 1,200-odd rows of
+     * (id, manager_id) is nothing, and the recursive alternative is a query per
+     * level. Cycles are guarded, because a reporting line that loops back on
+     * itself would otherwise spin here forever and the data is hand-entered.
+     *
+     * @return array<int,int>
+     */
+    public function descendantIds(): array
+    {
+        $childrenOf = [];
+        foreach (static::query()->whereNotNull('manager_id')->pluck('manager_id', 'id') as $childId => $managerId) {
+            $childrenOf[$managerId][] = $childId;
+        }
+
+        $found   = [];
+        $pending = [$this->id];
+
+        while ($pending) {
+            foreach ($childrenOf[array_pop($pending)] ?? [] as $childId) {
+                if ($childId === $this->id || isset($found[$childId])) continue;
+                $found[$childId] = true;
+                $pending[] = $childId;
+            }
+        }
+
+        return array_keys($found);
+    }
+
     public function documents()   { return $this->hasMany(EmployeeDocument::class); }
     public function history()           { return $this->hasMany(EmploymentHistory::class)->orderByDesc('start_date'); }
     public function employmentHistory() { return $this->hasMany(EmploymentHistory::class)->orderByDesc('start_date'); }

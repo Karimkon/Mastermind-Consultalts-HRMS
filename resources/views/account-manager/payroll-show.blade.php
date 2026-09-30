@@ -144,48 +144,61 @@ $banner = match($run->status) {
     </div>
 </div>
 
-{{-- ── Mark as Paid form ────────────────────────────────────────────── --}}
-@if(in_array($run->status, ['approved', 'processed', 'md_approved']))
-<div class="bg-white border border-emerald-200 rounded-xl p-5 mb-6" x-data="{ open: false }">
-    <button @click="open = !open"
-            class="flex items-center gap-2 text-emerald-700 font-semibold text-sm hover:text-emerald-900">
-        <i class="fas fa-money-bill-wave text-emerald-500"></i>
-        Mark as Paid
-        <i class="fas fa-chevron-down text-xs" :class="{ 'rotate-180': open }"></i>
-    </button>
-    <div x-show="open" x-transition class="mt-4">
-        <form method="POST" action="{{ route('account-manager.payroll.mark-paid', $run) }}">
-            @csrf
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Payment Method *</label>
-                    <select name="payment_method" class="form-input" required>
-                        <option value="">— Select —</option>
-                        <option value="bank_transfer">Bank Transfer</option>
-                        <option value="mobile_money">Mobile Money</option>
-                        <option value="cash">Cash</option>
-                        <option value="cheque">Cheque</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Reference</label>
-                    <input type="text" name="payment_reference" class="form-input" placeholder="TXN-20260501-001">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Payment Date</label>
-                    <input type="date" name="payment_date" class="form-input" value="{{ today()->format('Y-m-d') }}">
-                </div>
-            </div>
-            <div class="mt-4">
-                <button type="submit" class="btn-primary"
-                        onclick="return confirm('Confirm marking this payroll as PAID? This cannot be undone.')">
-                    <i class="fas fa-check mr-1"></i> Confirm Payment
-                </button>
-            </div>
-        </form>
+{{-- ── Where this run has got to ────────────────────────────────────────
+     Account Managers start payroll and then wait on it, so the one thing
+     they need from this page is an honest answer to "who is holding it".
+     They do not mark it paid: that is Finance's step, after the MD. --}}
+@php
+    $chain = [
+        ['key' => 'draft',            'label' => 'Created',         'who' => 'Account Manager'],
+        ['key' => 'processed',        'label' => 'HR review',       'who' => 'HR'],
+        ['key' => 'hr_approved',      'label' => 'Finance review',  'who' => 'Finance'],
+        ['key' => 'finance_approved', 'label' => 'MD approval',     'who' => 'Managing Director'],
+        ['key' => 'md_approved',      'label' => 'Payment',         'who' => 'Finance'],
+        ['key' => 'paid',             'label' => 'Paid',            'who' => ''],
+    ];
+    $order   = array_column($chain, 'key');
+    $current = array_search($run->status === 'approved' ? 'md_approved' : $run->status, $order);
+    $current = $current === false ? 0 : $current;
+@endphp
+<div class="bg-white border border-slate-200 rounded-xl p-5 mb-6">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="font-semibold text-slate-800 text-sm">Approval progress</h2>
+        @if($run->status !== 'paid')
+            <span class="text-xs text-slate-500">
+                Waiting on <strong class="text-slate-700">{{ $chain[$current]['who'] ?: '—' }}</strong>
+            </span>
+        @endif
     </div>
+    <div class="flex flex-wrap gap-2">
+        @foreach($chain as $i => $step)
+            <div class="flex items-center gap-2">
+                <span class="px-3 py-1.5 rounded-lg text-xs font-semibold
+                    {{ $i < $current ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                       : ($i === $current ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-400 border border-slate-200') }}">
+                    @if($i < $current)<i class="fas fa-check mr-1"></i>@endif
+                    {{ $step['label'] }}
+                </span>
+                @if(!$loop->last)<i class="fas fa-chevron-right text-[10px] text-slate-300"></i>@endif
+            </div>
+        @endforeach
+    </div>
+    @if($run->status === 'draft')
+        <p class="text-xs text-slate-500 mt-4">
+            Upload manual days if this run needs them, then press
+            <strong>Run &amp; Submit to HR</strong>. HR is notified automatically.
+        </p>
+    @elseif($run->status === 'paid')
+        <p class="text-xs text-emerald-700 mt-4">
+            <i class="fas fa-check-circle mr-1"></i>
+            Paid{{ $run->payment_date ? ' on ' . \Carbon\Carbon::parse($run->payment_date)->format('d M Y') : '' }}.
+        </p>
+    @else
+        <p class="text-xs text-slate-500 mt-4">
+            This run has left your desk. You will be notified if it is sent back to you for correction.
+        </p>
+    @endif
 </div>
-@endif
 
 {{-- ── Payslips Table ───────────────────────────────────────────────── --}}
 <div class="card overflow-hidden">

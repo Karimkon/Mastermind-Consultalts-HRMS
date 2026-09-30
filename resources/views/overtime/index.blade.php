@@ -99,10 +99,12 @@
                            value="{{ number_format(min($log->overtime_hours, $dailyCap), 2, '.', '') }}"
                            class="form-input w-20 text-sm" title="Hours to approve">
                     <button form="ot-{{ $log->id }}" formaction="{{ route('overtime.approve', $log) }}"
+                            data-loading-label="Approving…"
                             class="px-2 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700">
                         Approve
                     </button>
                     <button form="ot-{{ $log->id }}" formaction="{{ route('overtime.reject', $log) }}"
+                            data-loading-label="Rejecting…"
                             class="px-2 py-1.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold hover:bg-rose-100">
                         Reject
                     </button>
@@ -124,7 +126,7 @@
 
 @if($logs->where('overtime_status','pending')->count())
 <div class="mt-4">
-    <button class="btn-primary"><i class="fas fa-check-double mr-1"></i>
+    <button class="btn-primary" data-loading-label="Approving overtime…" data-loading-overlay><i class="fas fa-check-double mr-1"></i>
         Approve Ticked at {{ $dailyCap }}h Cap
     </button>
 </div>

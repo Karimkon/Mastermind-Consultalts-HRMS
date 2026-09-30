@@ -38,7 +38,7 @@ class SelfServiceApiController extends Controller
 
         $request->validate([
             'document_type' => 'required|string',
-            'file'          => 'required|file|max:10240',
+            'file'          => \App\Support\Uploads::rules(),
         ]);
 
         $path = $request->file('file')->store("employee-documents/{$emp->id}", 'local');

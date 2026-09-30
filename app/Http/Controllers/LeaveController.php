@@ -20,8 +20,17 @@ class LeaveController extends Controller
         $employee = $user->employee;
         $isAdmin  = $user->hasAnyRole(['super-admin','hr-admin','manager']);
 
+        // A line manager sees their whole branch, not just themselves: the
+        // person who has to cover the absence is the one who needs to see it
+        // coming. Everybody in the chain above an employee is included, however
+        // many rungs up they sit.
+        $visibleIds = [];
+        if (!$isAdmin && $employee) {
+            $visibleIds = array_merge([$employee->id], $employee->descendantIds());
+        }
+
         $query = LeaveRequest::with(['employee.department', 'leaveType'])
-            ->when(!$isAdmin && $employee, fn($q) => $q->where('employee_id', $employee->id))
+            ->when(!$isAdmin && $employee, fn($q) => $q->whereIn('employee_id', $visibleIds))
             ->when($isAdmin && $request->employee_id, fn($q) => $q->where('employee_id', $request->employee_id))
             ->when($isAdmin && $request->department_id, fn($q) => $q->whereHas('employee', fn($e) => $e->where('department_id', $request->department_id)))
             ->when($request->leave_type_id, fn($q) => $q->where('leave_type_id', $request->leave_type_id))
@@ -32,7 +41,14 @@ class LeaveController extends Controller
         $requests   = $query->paginate(25);
         $leaveTypes = LeaveType::all();
         $departments = Department::orderBy('name')->get();
-        return view('leaves.index', compact('requests', 'leaveTypes', 'departments'));
+
+        // Taken, reserved and what is left, beside each request — so a decision
+        // is made against the balance instead of by opening every row. Built
+        // from two queries for the whole page rather than the two per row that
+        // calling balanceFor() in the view would cost.
+        $balances = $this->balancesForPage($requests->getCollection());
+
+        return view('leaves.index', compact('requests', 'leaveTypes', 'departments', 'balances'));
     }
 
     public function create()
@@ -194,6 +210,20 @@ class LeaveController extends Controller
 
     public function show(LeaveRequest $leave)
     {
+        // There was no check here at all: any signed-in user could read anybody's
+        // leave request, with its reason, by changing the number in the URL.
+        $user    = auth()->user();
+        $mine    = $user->employee;
+        $isAdmin = $user->hasAnyRole(['super-admin', 'hr-admin', 'manager']);
+
+        if (! $isAdmin) {
+            $allowed = $mine
+                ? array_merge([$mine->id], $mine->descendantIds())
+                : [];
+            abort_unless(in_array($leave->employee_id, $allowed, true), 403,
+                'That leave request is not yours or your team\'s.');
+        }
+
         $leave->load(['employee.user', 'employee.clients', 'employee.department',
                       'employee.designation', 'leaveType', 'approver', 'recaller']);
 
@@ -296,6 +326,54 @@ class LeaveController extends Controller
             $now > $was ? 'Extended' : ($now < $was ? 'Shortened' : 'Unchanged'),
             round($was, 2), round($now, 2)
         ));
+    }
+
+    /**
+     * Balances for every (employee, leave type) pair on this page, keyed
+     * "employeeId:typeId".
+     *
+     * The entitlement falls back to the leave type's allowance when nobody has
+     * opened a balance row yet, which is what balanceFor() does one at a time.
+     *
+     * @return array<string,array{entitled:float,used:float,pending:float,remaining:float,seeded:bool}>
+     */
+    private function balancesForPage($requests): array
+    {
+        if ($requests->isEmpty()) return [];
+
+        $year        = (int) now()->year;
+        $employeeIds = $requests->pluck('employee_id')->filter()->unique();
+        $typeIds     = $requests->pluck('leave_type_id')->filter()->unique();
+
+        $rows = \App\Models\LeaveBalance::whereIn('employee_id', $employeeIds)
+            ->whereIn('leave_type_id', $typeIds)
+            ->where('year', $year)->get()
+            ->keyBy(fn($b) => $b->employee_id . ':' . $b->leave_type_id);
+
+        $allowances = LeaveType::whereIn('id', $typeIds)->pluck('days_allowed', 'id');
+
+        $out = [];
+        foreach ($requests as $leave) {
+            if (! $leave->employee_id || ! $leave->leave_type_id) continue;
+
+            $key = $leave->employee_id . ':' . $leave->leave_type_id;
+            if (isset($out[$key])) continue;
+
+            $row      = $rows->get($key);
+            $entitled = (float) ($row->total_days ?? $allowances[$leave->leave_type_id] ?? 0);
+            $used     = (float) ($row->used_days ?? 0);
+            $pending  = (float) ($row->pending_days ?? 0);
+
+            $out[$key] = [
+                'entitled'  => $entitled,
+                'used'      => $used,
+                'pending'   => $pending,
+                'remaining' => round($entitled - $used - $pending, 2),
+                'seeded'    => (bool) $row,
+            ];
+        }
+
+        return $out;
     }
 
     private function authoriseManage(): void
