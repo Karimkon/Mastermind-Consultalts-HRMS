@@ -154,11 +154,16 @@
                 @csrf
                 <div class="mb-3">
                     <label class="block text-xs font-medium text-slate-600 mb-1">Shortlist top</label>
-                    <select name="top_n" class="form-input w-full">
-                        @foreach([3, 5, 10, 15, 20, 25, 30] as $n)
-                        <option value="{{ $n }}" {{ $n == $criteria->top_n ? 'selected' : '' }}>{{ $n }} candidates</option>
-                        @endforeach
-                    </select>
+                    <div class="flex items-center gap-2">
+                        <input type="number" name="top_n" value="{{ $criteria->top_n }}"
+                               min="1" max="1000" step="1" required
+                               class="form-input w-24 text-center font-semibold">
+                        <span class="text-xs text-slate-500">candidates</span>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-1">
+                        {{ $withResponses->count() }} {{ Str::plural('candidate', $withResponses->count()) }}
+                        completed the screening.
+                    </p>
                 </div>
                 <button type="submit" class="btn-primary w-full justify-center text-sm" {{ $withResponses->isEmpty() ? 'disabled' : '' }}>
                     <i class="fas fa-bolt mr-1"></i> Run Auto-Shortlist

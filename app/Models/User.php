@@ -43,6 +43,19 @@ class User extends Authenticatable
         return $this->notifications()->whereNull('read_at');
     }
 
+    /**
+     * Which guard this model's roles belong to.
+     *
+     * Every role and permission in this system was created on the web guard.
+     * Spatie otherwise works the guard out from auth.defaults.guard, and
+     * Laravel rewrites that to 'sanctum' on every authenticated API request
+     * (Authenticate::authenticate calls shouldUse). The moment the sanctum
+     * guard names a provider, Spatie starts looking for roles on a 'sanctum'
+     * guard that has none, and every role check on the API fails.
+     *
+     * Saying it here fixes the answer regardless of who is asking.
+     */
+    protected $guard_name = 'web';
     protected $fillable = ['name', 'email', 'password', 'avatar', 'status', 'mfa_secret', 'mfa_enabled', 'mfa_confirmed_at'];
     protected $hidden   = ['password', 'remember_token', 'mfa_secret'];
     protected $appends  = ['avatar_url'];

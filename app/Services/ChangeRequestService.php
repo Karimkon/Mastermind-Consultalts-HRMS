@@ -176,7 +176,11 @@ class ChangeRequestService
         $who = $pending->requester?->name ?? 'An account manager';
         $count = count($pending->payload);
 
-        User::role(['hr-admin', 'super-admin'])->each(function (User $u) use ($what, $who, $count, $pending) {
+        // Spatie throws on a role name this installation does not have.
+        $roles = \Spatie\Permission\Models\Role::whereIn('name', ['hr-admin', 'super-admin'])->pluck('name')->all();
+        if (! $roles) return;
+
+        User::role($roles)->get()->unique('id')->each(function (User $u) use ($what, $who, $count, $pending) {
             Notification::create([
                 'user_id' => $u->id,
                 'type'    => 'change_requested',

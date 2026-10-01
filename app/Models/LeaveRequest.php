@@ -28,6 +28,27 @@ class LeaveRequest extends Model
 
     public function recaller() { return $this->belongsTo(User::class, 'recalled_by'); }
 
+    /**
+     * Is this somebody deciding their own leave?
+     *
+     * HR approves everybody's leave, which quietly included their own: every
+     * check asked what role you hold, never whose request it is. The HR Manager
+     * granted himself two days and it was recorded as an ordinary approval,
+     * with his own name in the approver column.
+     *
+     * Deliberately has no exemption, super-admin included. This is a separation
+     * of duties rather than a question of rank — the point is that a second
+     * person looks at it, and the most senior account is where that matters
+     * most. Payroll already works this way: an MD cannot build the run he signs
+     * off.
+     */
+    public function isOwnRequestOf(?User $user): bool
+    {
+        $employeeId = $user?->employee?->id;
+
+        return $employeeId !== null && $employeeId === $this->employee_id;
+    }
+
     /** Cut short or extended after it was granted. */
     public function wasAdjusted(): bool
     {

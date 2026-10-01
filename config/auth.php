@@ -42,6 +42,31 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        /*
+         * External job seekers on the careers app. A separate guard over a
+         * separate table, so a token issued to somebody who downloaded the
+         * app to apply for a cleaning job can never satisfy auth:sanctum on
+         * an HR endpoint, and has no Spatie role to check in the first place.
+         */
+        'job_seeker' => [
+            'driver' => 'sanctum',
+            'provider' => 'job_seekers',
+        ],
+
+        /*
+         * Sanctum registers this guard itself, with no provider - and with no
+         * provider it accepts a token belonging to ANY model that issues
+         * tokens. A job seeker token was therefore accepted on auth:sanctum,
+         * and /api/employees answered it with the employee list.
+         *
+         * Naming the provider is the fix: Sanctum merges this over its own
+         * defaults and then checks the token's owner really is a User.
+         */
+        'sanctum' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
     ],
 
     /*
@@ -65,6 +90,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+
+        'job_seekers' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\JobSeeker::class,
         ],
 
         // 'users' => [

@@ -23,13 +23,14 @@
 {{-- What is left of the entitlement, so a decision to extend is made against
      the balance rather than in the dark. --}}
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+    {{-- "Reserved" told nobody anything. Each figure now says what it is. --}}
     @foreach([
-        ['Entitled', $balance['entitled'], 'slate'],
-        ['Taken', $balance['used'], 'slate'],
-        ['Reserved', $balance['pending'], 'amber'],
-        ['Remaining', $balance['remaining'], $balance['remaining'] > 0 ? 'green' : 'rose'],
-    ] as [$label, $value, $colour])
-    <div class="rounded-xl border border-{{ $colour }}-200 bg-{{ $colour }}-50 p-4">
+        ['Entitled',  $balance['entitled'],  'slate', 'The full allowance for this leave type this year'],
+        ['Taken',     $balance['used'],      'slate', 'Days already approved and spent'],
+        ['Awaiting approval', $balance['pending'], 'amber', 'Days asked for but not yet decided — held back so they cannot be promised twice'],
+        ['Remaining', $balance['remaining'], $balance['remaining'] > 0 ? 'green' : 'rose', 'Entitled, less taken, less awaiting approval'],
+    ] as [$label, $value, $colour, $explain])
+    <div class="rounded-xl border border-{{ $colour }}-200 bg-{{ $colour }}-50 p-4" title="{{ $explain }}">
         <p class="text-2xl font-bold text-{{ $colour }}-700">{{ rtrim(rtrim(number_format($value, 2), '0'), '.') }}</p>
         <p class="text-xs text-slate-600">{{ $label }} day(s)</p>
     </div>
@@ -168,6 +169,15 @@
                         'Applied On'     => $leave->created_at?->format('M d, Y H:i') ?? '—',
                         'Approved By'    => $leave->approver?->name ?? '—',
                     ];
+
+                    // Repeated here because the cards at the top scroll away,
+                    // and this is the card somebody is looking at when they
+                    // decide.
+                    if ($balance) {
+                        $trim = fn ($v) => rtrim(rtrim(number_format((float) $v, 2), '0'), '.');
+                        $details['Taken So Far'] = $trim($balance['used']) . ' of ' . $trim($balance['entitled']) . ' day(s)';
+                        $details['Remaining']    = $trim($balance['remaining']) . ' day(s)';
+                    }
                 @endphp
                 @foreach($details as $label => $val)
                 <div class="bg-slate-50 rounded-lg p-3">
@@ -246,6 +256,20 @@
         {{-- Approve / Reject --}}
         @if($leave->status === 'pending')
         @can("leave.approve")
+
+        @if($leave->isOwnRequestOf(auth()->user()))
+        {{-- Saying so beats hiding the card and leaving somebody wondering
+             where their buttons went, and beats a 403 after they click. --}}
+        <div class="card p-5 border-l-4 border-amber-400">
+            <h3 class="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                <i class="fas fa-user-lock text-amber-500"></i> This one is yours
+            </h3>
+            <p class="text-sm text-slate-600">
+                You cannot approve or reject your own leave, whatever your role.
+                Another approver has to action it.
+            </p>
+        </div>
+        @else
         <div class="card p-5">
             <h3 class="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
                 <i class="fas fa-gavel text-blue-500"></i> Actions
@@ -263,6 +287,7 @@
                 </button>
             </form>
         </div>
+        @endif
         @endcan
         @endif
 

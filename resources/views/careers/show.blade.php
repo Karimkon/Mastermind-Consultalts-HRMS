@@ -13,11 +13,19 @@
 
 <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
     <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-        <a href="{{ route('careers.index') }}" class="flex items-center gap-2 text-slate-600 hover:text-slate-800 text-sm font-medium">
-            <i class="fas fa-arrow-left"></i> Back to Jobs
-        </a>
+        <div class="flex items-center gap-4">
+            <a href="{{ route('home') }}">
+                <img src="{{ asset('images/logo.png') }}" alt="Mastermind Consult Ltd"
+                     class="h-8 w-auto object-contain">
+            </a>
+            <a href="{{ route('careers.index') }}"
+               class="flex items-center gap-2 text-slate-600 hover:text-slate-800 text-sm font-medium border-l border-slate-200 pl-4">
+                <i class="fas fa-arrow-left"></i> Back to Jobs
+            </a>
+        </div>
         <div class="flex items-center gap-5">
             <a href="{{ route('blog.index') }}" class="text-sm text-slate-600 hover:text-blue-600">Insights</a>
+            <a href="{{ route('careers.status') }}" class="text-sm text-slate-600 hover:text-blue-600">Track Application</a>
             <a href="{{ route('login') }}" class="text-sm text-blue-600 font-medium hover:underline">Employee Login →</a>
         </div>
     </div>
@@ -104,7 +112,17 @@
                 @if($job->deadline && !$job->deadline->isPast())
                 <p class="text-xs text-orange-500 mb-4"><i class="fas fa-clock mr-1"></i>Closes {{ $job->deadline->format('d M Y') }}</p>
                 @endif
-                <p class="text-xs text-slate-500 mb-5">{{ $job->vacancies }} position{{ $job->vacancies > 1 ? 's' : '' }} available</p>
+                <p class="text-xs text-slate-500 mb-2">{{ $job->vacancies }} position{{ $job->vacancies > 1 ? 's' : '' }} available</p>
+                <div class="flex items-center gap-2 mb-5 text-xs">
+                    <span class="inline-flex items-center gap-1 bg-slate-100 text-slate-700 rounded-full px-2.5 py-1 font-medium">
+                        <i class="fas fa-users text-slate-400"></i>{{ $job->candidates_count }} {{ Str::plural('applicant', $job->candidates_count) }} so far
+                    </span>
+                    @if($job->category)
+                    <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 rounded-full px-2.5 py-1 font-medium">
+                        <i class="fas fa-tag text-blue-400"></i>{{ $job->category->name }}
+                    </span>
+                    @endif
+                </div>
 
                 <form method="POST" action="{{ route('careers.apply', $job) }}" enctype="multipart/form-data" class="space-y-4">
                     @csrf
@@ -133,19 +151,59 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">CV / Resume <span class="text-red-500">*</span></label>
                         <input type="file" name="cv" accept=".pdf,.doc,.docx" required
                             class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-600 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700">
-                        <p class="text-xs text-slate-400 mt-1">PDF, DOC or DOCX — max 5MB</p>
+                        <p class="text-xs text-slate-400 mt-1">PDF, DOC or DOCX — max 8MB</p>
+                    </div>
+                    {{-- The rest of the papers. Optional, because somebody
+                         applying for a cleaning job from a phone in Mbale may
+                         not have a scanned police letter to hand - and an
+                         application that cannot be submitted is worse than one
+                         missing an attachment a recruiter can ask for later. --}}
+                    <div class="border-t border-slate-200 pt-4">
+                        <h3 class="font-semibold text-slate-800 text-sm mb-1">Supporting Documents</h3>
+                        <p class="text-xs text-slate-400 mb-4">Attach what you have. You can be asked for the rest later.</p>
+                        <div class="space-y-3">
+                            @foreach($documentTypes as $type => $meta)
+                            @continue($type === 'cv')
+                            <div>
+                                <label class="block text-xs font-medium text-slate-600 mb-1">
+                                    {{ $meta['label'] }}
+                                    @if($meta['multiple'])<span class="text-slate-400 font-normal">(you may attach several)</span>@endif
+                                </label>
+                                <input type="file"
+                                    name="documents[{{ $type }}]@if($meta['multiple'])[]@endif"
+                                    @if($meta['multiple']) multiple @endif
+                                    accept="@if($type === 'passport_photo').jpg,.jpeg,.png @else .pdf,.doc,.docx,.jpg,.jpeg,.png @endif"
+                                    class="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-600 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-slate-100 file:text-slate-700">
+                            </div>
+                            @endforeach
+                        </div>
+                        <p class="text-xs text-slate-400 mt-3"><i class="fas fa-lock mr-1"></i>Your documents are stored privately and seen only by the recruitment team.</p>
                     </div>
                     {{-- Screening Questions (if criteria active) --}}
                     @if(!empty($screeningCriteria) && $screeningCriteria->questions->isNotEmpty())
                     <div class="border-t border-slate-200 pt-4">
-                        <h3 class="font-semibold text-slate-800 text-sm mb-1">Screening Questions</h3>
-                        <p class="text-xs text-slate-400 mb-4">Please answer all questions below. Your responses help us identify the best fit.</p>
+                        <div class="flex items-center justify-between mb-1">
+                            <h3 class="font-semibold text-slate-800 text-sm">Screening Questions</h3>
+                            @php $assessmentTotal = $screeningCriteria->questions->filter(fn($q) => $q->isScored())->sum('weight'); @endphp
+                            @if($assessmentTotal > 0)
+                            <span class="text-xs font-semibold bg-blue-50 text-blue-700 rounded-full px-2.5 py-1">
+                                {{ $assessmentTotal }} marks
+                            </span>
+                            @endif
+                        </div>
+                        <p class="text-xs text-slate-400 mb-4">
+                            Every question must be answered. You will see your score as soon as you submit.
+                        </p>
                         <div class="space-y-5">
                             @foreach($screeningCriteria->questions as $q)
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 mb-2">
                                     {{ $loop->iteration }}. {{ $q->question }}
-                                    <span class="text-xs text-slate-400 font-normal ml-1">(weight: {{ $q->weight }})</span>
+                                    @if($q->isScored())
+                                    <span class="text-xs text-blue-600 font-semibold ml-1">{{ $q->weight }} {{ Str::plural('mark', $q->weight) }}</span>
+                                    @else
+                                    <span class="text-xs text-slate-400 font-normal ml-1">(read by our team, not marked)</span>
+                                    @endif
                                 </label>
 
                                 @if($q->question_type === 'multiple_choice' && !empty($q->options))
@@ -198,9 +256,9 @@
                                 </script>
 
                                 @elseif($q->question_type === 'text')
-                                <textarea name="screening[{{ $q->id }}]" rows="3"
+                                <textarea name="screening[{{ $q->id }}]" rows="3" required
                                     class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none"
-                                    placeholder="Your answer..."></textarea>
+                                    placeholder="Your answer...">{{ old('screening.' . $q->id) }}</textarea>
                                 @endif
                             </div>
                             @endforeach

@@ -236,7 +236,20 @@ class RecruitmentApiController extends Controller
             'score'                  => $c->score,
             'status'                 => $c->status,
             'notes'                  => $c->notes,
-            'resume_url'             => $c->resume_path ? Storage::url($c->resume_path) : null,
+            // Through the controller that checks who is asking, not a
+            // public path: Storage::url() pointed at a disk these files
+            // are deliberately not on, so it only ever 404'd.
+            'resume_url'             => $c->resume_path
+                ? route('recruitment.applications.cv', $c)
+                : null,
+            'documents'              => $c->relationLoaded('documents')
+                ? $c->documents->map(fn ($d) => [
+                    'type'  => $d->type,
+                    'label' => $d->label,
+                    'size'  => $d->size_label,
+                    'url'   => route('recruitment.applications.document', $d),
+                ])->values()
+                : [],
             'offer_amount'           => $c->offer_amount,
             'client_shortlist_status'=> $c->client_shortlist_status,
             'created_at'             => $c->created_at?->format('Y-m-d'),
@@ -245,8 +258,14 @@ class RecruitmentApiController extends Controller
 
     private function keywordScore(string $resumePath, string $requirements): int
     {
-        $fullPath = storage_path('app/public/' . $resumePath);
-        if (!file_exists($fullPath)) return 0;
+        // An application from the careers page is stored on the local
+        // disk; only the ones a recruiter typed in by hand land on the
+        // public one. Try both rather than scoring every public
+        // applicant a flat zero.
+        $fullPath = storage_path('app/private/' . $resumePath);
+        if (! file_exists($fullPath)) $fullPath = storage_path('app/' . $resumePath);
+        if (! file_exists($fullPath)) $fullPath = storage_path('app/public/' . $resumePath);
+        if (! file_exists($fullPath)) return 0;
         $text = strtolower(file_get_contents($fullPath));
         $keywords = preg_split('/[\n,;]+/', strtolower($requirements));
         $keywords = array_filter(array_map('trim', $keywords));

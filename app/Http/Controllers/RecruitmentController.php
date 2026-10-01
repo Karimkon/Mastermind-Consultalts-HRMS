@@ -20,7 +20,10 @@ class RecruitmentController extends Controller
 
     public function jobsCreate()
     {
-        return view('recruitment.jobs.create', ['departments' => Department::all()]);
+        return view('recruitment.jobs.create', [
+            'departments' => Department::all(),
+            'categories'  => \App\Models\JobCategory::active()->orderBy('sort_order')->get(),
+        ]);
     }
 
     public function jobsStore(Request $request)
@@ -31,7 +34,7 @@ class RecruitmentController extends Controller
             'status'          => 'required|in:draft,open,closed,filled',
             'description'     => 'required|string',
         ]);
-        JobPosting::create([
+        $job = JobPosting::create([
             'title'           => $request->title,
             'department_id'   => $request->department_id ?: null,
             'employment_type' => $request->employment_type,
@@ -45,8 +48,12 @@ class RecruitmentController extends Controller
             'salary_min'      => $request->salary_min ?: null,
             'salary_max'      => $request->salary_max ?: null,
             'is_public'       => $request->boolean('is_public'),
+            'job_category_id' => $request->job_category_id ?: null,
             'created_by'      => auth()->id(),
         ]);
+
+        $this->announceIfNewlyPublic($job);
+
         return redirect()->route('recruitment.jobs.index')->with('success', 'Job posting created.');
     }
 
@@ -58,7 +65,11 @@ class RecruitmentController extends Controller
 
     public function jobsEdit(JobPosting $job)
     {
-        return view('recruitment.jobs.edit', ['job' => $job, 'departments' => Department::all()]);
+        return view('recruitment.jobs.edit', [
+            'job'         => $job,
+            'departments' => Department::all(),
+            'categories'  => \App\Models\JobCategory::active()->orderBy('sort_order')->get(),
+        ]);
     }
 
     public function jobsUpdate(Request $request, JobPosting $job)
@@ -82,7 +93,11 @@ class RecruitmentController extends Controller
             'salary_min'      => $request->salary_min ?: null,
             'salary_max'      => $request->salary_max ?: null,
             'is_public'       => $request->boolean('is_public'),
+            'job_category_id' => $request->job_category_id ?: null,
         ]);
+
+        $this->announceIfNewlyPublic($job);
+
         return redirect()->route('recruitment.jobs.show', $job)->with('success', 'Job updated.');
     }
 
@@ -96,8 +111,34 @@ class RecruitmentController extends Controller
     {
         $job->update(['is_public' => !$job->is_public]);
         $job->refresh();
+
+        $this->announceIfNewlyPublic($job);
+
         $msg = $job->is_public ? 'Job published to public board.' : 'Job removed from public board.';
         return back()->with('success', $msg);
+    }
+
+    /**
+     * Tell the job seekers following this category - once, ever.
+     *
+     * `seekers_notified_at` is what makes it once: fixing a typo in a live
+     * posting must not send the whole audience another alert. A posting with
+     * no category alerts nobody, because there is nothing to match on.
+     */
+    private function announceIfNewlyPublic(JobPosting $job): void
+    {
+        if ($job->status !== 'open' || ! $job->is_public) return;
+        if ($job->seekers_notified_at !== null) return;
+        if (! $job->job_category_id) return;
+
+        $reached = app(\App\Services\RecruitmentNotifier::class)->newJobPosted($job);
+        $job->forceFill(['seekers_notified_at' => now()])->save();
+
+        if ($reached > 0) {
+            \App\Services\QueueRunner::kick();
+            session()->flash('info', $reached . ' job ' . \Illuminate\Support\Str::plural('seeker', $reached)
+                . ' following this category ' . ($reached === 1 ? 'was' : 'were') . ' told about it.');
+        }
     }
 
     // Candidates
@@ -161,8 +202,39 @@ class RecruitmentController extends Controller
 
     public function candidatesUpdate(Request $request, Candidate $candidate)
     {
-        $candidate->update($request->only('status', 'notes'));
-        return back()->with('success', 'Candidate updated.');
+        $data = $request->validate([
+            'status'  => 'nullable|in:new,screening,shortlisted,interview,offer,hired,rejected',
+            'notes'   => 'nullable|string',
+            'message' => 'nullable|string|max:1000',
+            'notify'  => 'nullable|boolean',
+        ]);
+
+        // Notes are the recruiter's own and nobody is told about them.
+        if (array_key_exists('notes', $data)) {
+            $candidate->forceFill(['notes' => $data['notes']])->save();
+        }
+
+        // The status is not. It goes through the pipeline so the move is
+        // recorded and the applicant hears about it - which is the whole
+        // point of a recruitment stage, and until now never happened.
+        $told = null;
+        if (! empty($data['status'])) {
+            $event = app(\App\Services\RecruitmentPipeline::class)->moveTo(
+                $candidate,
+                $data['status'],
+                $data['message'] ?? null,
+                $request->boolean('notify', true),
+            );
+
+            if ($event) {
+                $told = $event->channel_list
+                    ? 'Applicant notified by ' . implode(' and ', $event->channel_list) . '.'
+                    : 'No notice was sent.';
+                \App\Services\QueueRunner::kick();
+            }
+        }
+
+        return back()->with('success', trim('Candidate updated. ' . ($told ?? '')));
     }
 
     // Interviews
@@ -192,7 +264,8 @@ class RecruitmentController extends Controller
             $request->only('candidate_id', 'interviewer_id', 'scheduled_at', 'type', 'notes')
             + ['status' => 'scheduled']
         );
-        Candidate::find($request->candidate_id)->update(['status' => 'interview']);
+        $interviewee = Candidate::find($request->candidate_id);
+        if ($interviewee) app(\App\Services\RecruitmentPipeline::class)->moveTo($interviewee, 'interview');
         return redirect()->route('recruitment.interviews.index')->with('success', 'Interview scheduled.');
     }
 

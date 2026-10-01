@@ -59,6 +59,11 @@ class ClientLeaveController extends Controller
 
     public function approve(LeaveRequest $leave)
     {
+        // Every check here asked what role you hold, never whose request it
+        // is — so HR, who approves everybody's leave, approved their own too.
+        abort_if($leave->isOwnRequestOf(auth()->user()), 403,
+            'You cannot decide your own leave request. Another approver has to action it.');
+
         $client = $this->getClient();
         $employeeIds = $client->employees()->pluck('employees.id');
 
@@ -91,6 +96,11 @@ class ClientLeaveController extends Controller
 
     public function reject(Request $request, LeaveRequest $leave)
     {
+        // Every check here asked what role you hold, never whose request it
+        // is — so HR, who approves everybody's leave, approved their own too.
+        abort_if($leave->isOwnRequestOf($request->user()), 403,
+            'You cannot decide your own leave request. Another approver has to action it.');
+
         $client = $this->getClient();
         $employeeIds = $client->employees()->pluck('employees.id');
 

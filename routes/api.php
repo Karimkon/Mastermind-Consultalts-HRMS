@@ -402,3 +402,44 @@ Route::prefix('blog')->name('api.blog.feed.')->group(function () {
     Route::get('/topics', [App\Http\Controllers\Api\BlogFeedController::class, 'categories'])->name('topics');
     Route::get('/articles/{slug}', [App\Http\Controllers\Api\BlogFeedController::class, 'show'])->name('show');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Careers app — external job seekers
+|--------------------------------------------------------------------------
+|
+| A separate population on a separate guard. Nothing in this group can reach
+| an employee record, a payslip or a role: `auth:job_seeker` only resolves
+| tokens whose owner is a JobSeeker, and a JobSeeker has none of those things.
+|
+| The browse endpoints are deliberately open. Somebody who has just installed
+| the app should see the jobs before being asked to create an account.
+*/
+Route::prefix('careers')->name('api.careers.')->group(function () {
+
+    Route::middleware('throttle:60,1')->group(function () {
+        Route::get('/jobs', [App\Http\Controllers\Api\CareersApiController::class, 'jobs'])->name('jobs');
+        Route::get('/jobs/{job}', [App\Http\Controllers\Api\CareersApiController::class, 'job'])->name('job');
+        Route::get('/categories', [App\Http\Controllers\Api\CareersApiController::class, 'categories'])->name('categories');
+        Route::get('/track/{code}', [App\Http\Controllers\Api\CareersApiController::class, 'track'])->name('track');
+    });
+
+    // Tighter limits on the two endpoints worth guessing at.
+    Route::middleware('throttle:10,1')->group(function () {
+        Route::post('/register', [App\Http\Controllers\Api\CareersApiController::class, 'register'])->name('register');
+        Route::post('/login', [App\Http\Controllers\Api\CareersApiController::class, 'login'])->name('login');
+    });
+
+    Route::middleware('auth:job_seeker')->group(function () {
+        Route::get('/me', [App\Http\Controllers\Api\CareersApiController::class, 'me'])->name('me');
+        Route::put('/me', [App\Http\Controllers\Api\CareersApiController::class, 'updateMe'])->name('me.update');
+        Route::post('/logout', [App\Http\Controllers\Api\CareersApiController::class, 'logout'])->name('logout');
+
+        Route::post('/jobs/{job}/apply', [App\Http\Controllers\Api\CareersApiController::class, 'apply'])->name('apply');
+        Route::get('/applications', [App\Http\Controllers\Api\CareersApiController::class, 'applications'])->name('applications');
+        Route::get('/applications/{candidate}', [App\Http\Controllers\Api\CareersApiController::class, 'application'])->name('application');
+
+        Route::get('/notifications', [App\Http\Controllers\Api\CareersApiController::class, 'notifications'])->name('notifications');
+        Route::post('/notifications/read', [App\Http\Controllers\Api\CareersApiController::class, 'markRead'])->name('notifications.read');
+    });
+});

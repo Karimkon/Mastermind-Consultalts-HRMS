@@ -8,7 +8,8 @@
     <div class="space-y-4">
         <div class="card p-6 text-center">
             <div class="relative inline-block mb-4">
-                <img src="{{ auth()->user()->avatar_url }}" class="w-24 h-24 rounded-2xl object-cover shadow-lg mx-auto">
+                <img id="avatar-image" src="{{ auth()->user()->avatar_url }}"
+                     class="w-24 h-24 rounded-2xl object-cover shadow-lg mx-auto transition-opacity">
                 <label class="absolute -bottom-2 -right-2 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-blue-700 transition-colors shadow">
                     <i class="fas fa-camera text-white text-xs"></i>
                     <input type="file" class="hidden" id="avatar-upload" accept="image/*">
@@ -88,15 +89,55 @@
 
 @push('scripts')
 <script>
-document.getElementById('avatar-upload').addEventListener('change', function(e) {
-    if (!e.target.files[0]) return;
+document.getElementById('avatar-upload').addEventListener('change', async function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const img = document.getElementById('avatar-image');
+    const previous = img ? img.src : null;
+
     const form = new FormData();
     form.append('_token', '{{ csrf_token() }}');
-    form.append('_method', 'PUT');
-    form.append('avatar', e.target.files[0]);
-    fetch('{{ route("profile.avatar") }}', { method: 'POST', body: form })
-        .then(r => r.json())
-        .then(d => { if (d.url) document.querySelector('img[src*="ui-avatars"]') && location.reload(); });
+    // No _method here. The route is POST, and spoofing PUT sent this to a verb
+    // with no route at all — a 405 that nothing surfaced, so choosing a photo
+    // looked like it had simply done nothing.
+    form.append('avatar', file);
+
+    if (img) img.style.opacity = '0.4';
+
+    try {
+        const r = await fetch('{{ route("profile.avatar") }}', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json' },
+            body: form,
+        });
+
+        if (!r.ok) {
+            let message = 'That photo could not be saved (status ' + r.status + ').';
+            if ((r.headers.get('content-type') || '').includes('json')) {
+                const d = await r.json();
+                message = d.message || Object.values(d.errors || {})[0]?.[0] || message;
+            }
+            throw new Error(message);
+        }
+
+        const d = await r.json();
+
+        // Swapped in place with a cache-buster, rather than only reloading when
+        // the old picture happened to be the ui-avatars placeholder — which is
+        // what the previous condition actually checked.
+        if (img && d.url) {
+            img.src = d.url + (d.url.includes('?') ? '&' : '?') + 'v=' + Date.now();
+            img.style.opacity = '1';
+        } else {
+            location.reload();
+        }
+    } catch (err) {
+        if (img) { img.src = previous; img.style.opacity = '1'; }
+        alert(err.message || 'That photo could not be saved.');
+    } finally {
+        e.target.value = '';   // so choosing the same file again still fires
+    }
 });
 </script>
 @endpush

@@ -83,7 +83,8 @@
             <td class="px-4 py-3">
                 <div class="flex items-center gap-1">
                     <a href="{{ route('leaves.show',$leave) }}" class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><i class="fas fa-eye text-xs"></i></a>
-                    @if($leave->status === 'pending')
+                    {{-- Nobody decides their own, so the row offers no buttons. --}}
+                    @if($leave->status === 'pending' && ! $leave->isOwnRequestOf(auth()->user()))
                     @can("leave.approve")
                     <form method="POST" action="{{ route('leaves.approve',$leave) }}" class="inline">@csrf<button class="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg" title="Approve"><i class="fas fa-check text-xs"></i></button></form>
                     <button onclick="showRejectModal({{ $leave->id }})" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Reject"><i class="fas fa-times text-xs"></i></button>

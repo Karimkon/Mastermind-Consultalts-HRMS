@@ -25,6 +25,13 @@
                         <option value="intern" @selected(old('employment_type',$job->employment_type)==='intern')>Internship</option>
                     </select>
                 </div>
+                                <div class="col-span-2"><label class="form-label">Category</label>
+                    <select name="job_category_id" class="form-input">
+                        <option value="">Not categorised</option>
+                        @foreach($categories as $c)<option value="{{ $c->id }}" @selected(old('job_category_id', $job->job_category_id)==$c->id)>{{ $c->name }}</option>@endforeach
+                    </select>
+                    <p class="text-xs text-slate-400 mt-1">Job seekers choose categories to follow. A posting with no category alerts nobody.</p>
+                </div>
                 <div><label class="form-label">Location</label><input type="text" name="location" class="form-input" value="{{ old('location', $job->location) }}"></div>
                 <div><label class="form-label">Deadline</label><input type="date" name="deadline" class="form-input" value="{{ old('deadline', $job->deadline) }}"></div>
                 <div><label class="form-label">Vacancies</label><input type="number" name="vacancies" class="form-input" value="{{ old('vacancies', $job->vacancies ?? 1) }}" min="1"></div>

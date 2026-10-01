@@ -416,6 +416,11 @@ class LeaveController extends Controller
 
     public function approve(LeaveRequest $leave)
     {
+        // Every check here asked what role you hold, never whose request it
+        // is — so HR, who approves everybody's leave, approved their own too.
+        abort_if($leave->isOwnRequestOf(auth()->user()), 403,
+            'You cannot decide your own leave request. Another approver has to action it.');
+
         // Check annual limit based on leave type days_allowed
         $leaveType = $leave->leaveType;
         if ($leaveType) {
@@ -432,11 +437,12 @@ class LeaveController extends Controller
 
         $leave->update(['status' => 'approved', 'approved_by' => auth()->user()->employee?->id]);
 
-        // Deduct from leave balance
-        LeaveBalance::where('employee_id', $leave->employee_id)
-            ->where('leave_type_id', $leave->leave_type_id)
-            ->where('year', now()->year)
-            ->increment('used_days', $leave->days_count);
+        // Through the service, which creates the balance row when there is
+        // none. increment() on a where() that matches nothing changed nothing,
+        // and only 2 of 1,246 employees had a row — so approvals were lost.
+        $adjust = app(\App\Services\LeaveAdjustmentService::class);
+        $adjust->moveBalance($leave, 'used_days', (float) $leave->days_count);
+        $adjust->moveBalance($leave, 'pending_days', -(float) $leave->days_count);
 
         $leave->employee->update(['status' => 'on_leave']);
         app(NotificationService::class)->leaveStatusChanged($leave->fresh());
@@ -475,6 +481,11 @@ class LeaveController extends Controller
 
     public function reject(Request $request, LeaveRequest $leave)
     {
+        // Every check here asked what role you hold, never whose request it
+        // is — so HR, who approves everybody's leave, approved their own too.
+        abort_if($leave->isOwnRequestOf(auth()->user()), 403,
+            'You cannot decide your own leave request. Another approver has to action it.');
+
         $wasApproved = $leave->status === 'approved';
 
         $leave->update([

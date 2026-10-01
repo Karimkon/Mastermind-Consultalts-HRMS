@@ -9,6 +9,21 @@ use Illuminate\Support\Facades\Mail;
 
 class NotificationService
 {
+    /**
+     * The users holding any of these roles, skipping names that are not real
+     * roles on this installation.
+     *
+     * Spatie's User::role() throws on an unknown name. A role nobody has
+     * created yet is simply an audience with no members; the people who do
+     * hold the other roles must still be told.
+     */
+    private function usersWithAnyRole(array $roles)
+    {
+        $known = \Spatie\Permission\Models\Role::whereIn('name', $roles)->pluck('name')->all();
+        if (! $known) return collect();
+
+        return User::role($known)->get()->unique('id');
+    }
     // ──────────────────────────────────────────────
     // LEAVE
     // ──────────────────────────────────────────────
@@ -22,7 +37,7 @@ class NotificationService
         $emp  = $leave->employee;
         $name = $emp ? "{$emp->first_name} {$emp->last_name}" : 'An employee';
 
-        User::role(['hr-admin', 'super-admin', 'manager'])->each(function (User $u) use ($leave, $name) {
+        $this->usersWithAnyRole(['hr-admin', 'super-admin', 'manager'])->each(function (User $u) use ($leave, $name) {
             Notification::create([
                 'user_id' => $u->id,
                 'type'    => 'leave_submitted',
@@ -157,13 +172,7 @@ class NotificationService
         ?string $comment = null,
         ?string $byName = null,
     ): void {
-        // Spatie throws if any name in the list is not a real role, which would
-        // take the whole handover down with it. A role nobody has created yet is
-        // simply a stage with no holders — the others must still be told.
-        $roles = \Spatie\Permission\Models\Role::whereIn('name', $roles)->pluck('name')->all();
-        if (! $roles) return;
-
-        User::role($roles)->get()->unique('id')->each(function (User $u) use ($run, $heading, $action, $comment, $byName) {
+        $this->usersWithAnyRole($roles)->each(function (User $u) use ($run, $heading, $action, $comment, $byName) {
             Notification::create([
                 'user_id' => $u->id,
                 'type'    => 'payroll_stage',
@@ -243,7 +252,7 @@ class NotificationService
         $candidate->loadMissing('jobPosting');
         $jobTitle = $candidate->jobPosting?->title ?? 'a job';
 
-        User::role(['recruiter', 'hr-admin', 'super-admin'])->each(function (User $u) use ($candidate, $jobTitle) {
+        $this->usersWithAnyRole(['recruiter', 'hr-admin', 'super-admin'])->each(function (User $u) use ($candidate, $jobTitle) {
             Notification::create([
                 'user_id' => $u->id,
                 'type'    => 'new_application',

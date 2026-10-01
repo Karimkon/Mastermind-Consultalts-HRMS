@@ -111,6 +111,11 @@ class LeaveApiController extends Controller
 
     public function approve(LeaveRequest $leave)
     {
+        // Every check here asked what role you hold, never whose request it
+        // is — so HR, who approves everybody's leave, approved their own too.
+        abort_if($leave->isOwnRequestOf(request()->user()), 403,
+            'You cannot decide your own leave request. Another approver has to action it.');
+
         $user = request()->user();
         if (!$user->hasRole(['super-admin','hr-admin','manager'])) abort(403);
         if ($leave->status !== 'pending') return response()->json(['message' => 'Leave is not pending.'], 422);
@@ -126,10 +131,8 @@ class LeaveApiController extends Controller
             ->where('leave_type_id', $leave->leave_type_id)
             ->where('year', Carbon::now()->year)
             ->decrement('pending_days', $leave->days_count);
-        LeaveBalance::where('employee_id', $leave->employee_id)
-            ->where('leave_type_id', $leave->leave_type_id)
-            ->where('year', Carbon::now()->year)
-            ->increment('used_days', $leave->days_count);
+        // Through the service, which creates the row when there is none.
+        app(\App\Services\LeaveAdjustmentService::class)->moveBalance($leave, 'used_days', (float) $leave->days_count);
 
         Employee::where('id', $leave->employee_id)->update(['status' => 'on_leave']);
 
@@ -138,6 +141,11 @@ class LeaveApiController extends Controller
 
     public function reject(Request $request, LeaveRequest $leave)
     {
+        // Every check here asked what role you hold, never whose request it
+        // is — so HR, who approves everybody's leave, approved their own too.
+        abort_if($leave->isOwnRequestOf($request->user()), 403,
+            'You cannot decide your own leave request. Another approver has to action it.');
+
         $user = $request->user();
         if (!$user->hasRole(['super-admin','hr-admin','manager','account-manager'])) abort(403);
 

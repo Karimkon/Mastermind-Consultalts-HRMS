@@ -35,9 +35,33 @@
                     </form>
                 </div>
             </div>
-            @if($candidate->resume_path)
+            @php $documents = $candidate->documents()->orderBy('type')->get(); @endphp
+            @if($candidate->resume_path || $documents->isNotEmpty())
             <div class="mt-4 pt-4 border-t border-slate-100">
-                <a href="{{ Storage::url($candidate->resume_path) }}" target="_blank" class="btn-secondary text-sm"><i class="fas fa-file-pdf mr-1 text-red-500"></i> View Resume</a>
+                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                    Attached documents
+                </p>
+                <div class="flex flex-wrap gap-2">
+                    @if($candidate->resume_path && $documents->where('type', 'cv')->isEmpty())
+                    <a href="{{ route('recruitment.applications.cv', $candidate) }}" target="_blank"
+                       class="btn-secondary text-sm">
+                        <i class="fas fa-file-pdf mr-1 text-red-500"></i> View CV
+                    </a>
+                    @endif
+                    @foreach($documents as $doc)
+                    <a href="{{ route('recruitment.applications.document', $doc) }}" target="_blank"
+                       class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition text-sm">
+                        <i class="fas fa-file text-slate-400"></i>
+                        <span class="text-slate-700">{{ $doc->label }}</span>
+                        @if($doc->size_label)
+                        <span class="text-xs text-slate-400">{{ $doc->size_label }}</span>
+                        @endif
+                    </a>
+                    @endforeach
+                </div>
+                <p class="text-xs text-slate-400 mt-2">
+                    <i class="fas fa-lock mr-1"></i>These open through the system, so they are never readable from a bare link.
+                </p>
             </div>
             @endif
         </div>

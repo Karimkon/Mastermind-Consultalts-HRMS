@@ -4,25 +4,78 @@
      so new lines arrive by polling - slower while the panel is shut, quicker
      while a thread is open and somebody is waiting on a reply. --}}
 <div x-data="chatPanel()" x-init="boot()" class="no-print">
+<style>
+/* The open and close of the messages panel.
+   Two transforms at once: it grows out of the launcher corner and tips
+   forward off its bottom edge, which is what makes it read as unfolding
+   rather than simply scaling. */
+.chat-panel { transform-origin: bottom right; will-change: transform, opacity; }
+
+.chat-folded {
+    opacity: 0;
+    transform: perspective(900px) translateY(18px) scale(.86) rotateX(-12deg);
+}
+.chat-unfolded {
+    opacity: 1;
+    transform: perspective(900px) translateY(0) scale(1) rotateX(0deg);
+}
+
+/* Out slightly faster than in, and without the overshoot: a close that
+   lingers feels like the app is thinking about it. */
+.chat-unfold { transition: opacity .18s ease-out, transform .34s cubic-bezier(.17,.84,.28,1.12); }
+.chat-fold   { transition: opacity .16s ease-in,  transform .2s  cubic-bezier(.4,0,1,1); }
+
+/* The contents arrive a beat after the frame, so the panel looks like it
+   opens and then fills rather than both at once. */
+.chat-unfold .chat-panel-body,
+.chat-unfolded .chat-panel-body { animation: chatBodyIn .3s .08s ease-out both; }
+
+@keyframes chatBodyIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+}
+
+.chat-launcher-icon { transition: transform .3s cubic-bezier(.2,.9,.25,1.2); }
+.chat-launcher-icon.is-open { transform: rotate(135deg); }
+
+/* Somebody who has asked their machine to stop moving things gets no
+   movement — the panel still opens and closes, it just does it at once. */
+@media (prefers-reduced-motion: reduce) {
+    .chat-unfold, .chat-fold, .chat-launcher-icon { transition-duration: .01ms; }
+    .chat-folded, .chat-unfolded { transform: none; }
+    .chat-unfold .chat-panel-body,
+    .chat-unfolded .chat-panel-body { animation: none; }
+}
+</style>
 
     {{-- The button, bottom right --}}
     <button @click="toggle()" type="button"
             class="fixed bottom-5 right-5 z-[60] flex items-center justify-center w-14 h-14 rounded-full
                    bg-blue-600 text-white shadow-lg hover:bg-blue-700 transition-colors"
             :title="open ? 'Close messages' : 'Messages'">
-        <i class="fas text-lg" :class="open ? 'fa-xmark' : 'fa-comment-dots'"></i>
+        <i class="fas text-lg chat-launcher-icon"
+           :class="open ? 'fa-xmark is-open' : 'fa-comment-dots'"></i>
         <span x-show="unread > 0 && !open" x-cloak
               class="absolute -top-1 -right-1 min-w-[22px] h-[22px] px-1 flex items-center justify-center
                      rounded-full bg-rose-500 text-white text-[11px] font-bold border-2 border-white"
               x-text="unread > 99 ? '99+' : unread"></span>
     </button>
 
+    {{-- Unfolds out of the button rather than appearing on top of the page.
+         The origin is the launcher's corner, so the panel reads as having come
+         from the thing that was pressed. Reduced-motion is honoured below. --}}
     <div x-show="open" x-cloak @keydown.escape.window="open = false"
-         class="fixed bottom-24 right-5 z-[60] w-[min(26rem,calc(100vw-2.5rem))] h-[min(34rem,calc(100vh-9rem))]
+         x-transition:enter="chat-unfold"
+         x-transition:enter-start="chat-folded"
+         x-transition:enter-end="chat-unfolded"
+         x-transition:leave="chat-fold"
+         x-transition:leave-start="chat-unfolded"
+         x-transition:leave-end="chat-folded"
+         class="chat-panel fixed bottom-24 right-5 z-[60] w-[min(26rem,calc(100vw-2.5rem))] h-[min(34rem,calc(100vh-9rem))]
                 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
 
         {{-- ── Header ── --}}
-        <div class="flex items-center gap-2 px-4 py-3 bg-slate-800 text-white shrink-0">
+        <div class="chat-panel-body flex items-center gap-2 px-4 py-3 bg-slate-800 text-white shrink-0">
             <button x-show="view === 'thread'" @click="backToList()" type="button"
                     class="p-1 -ml-1 rounded hover:bg-white/10"><i class="fas fa-arrow-left text-sm"></i></button>
             <p class="font-semibold text-sm truncate flex-1" x-text="heading"></p>
@@ -42,7 +95,7 @@
         </div>
 
         {{-- ── Conversations ── --}}
-        <div x-show="view === 'list'" class="flex-1 overflow-y-auto">
+        <div x-show="view === 'list'" class="chat-panel-body flex-1 overflow-y-auto">
             <template x-if="conversations.length === 0">
                 <div class="p-8 text-center text-sm text-slate-400">
                     <i class="fas fa-comments text-3xl block mb-3 text-slate-200"></i>
@@ -71,7 +124,7 @@
              Ticking ninety names one at a time is how this would go unused, so
              the ready-made lists (a client site, a department, your own
              reporting line) come first and the search is there to adjust. --}}
-        <div x-show="view === 'group'" class="flex-1 flex flex-col overflow-hidden">
+        <div x-show="view === 'group'" class="chat-panel-body flex-1 flex flex-col overflow-hidden">
             <div class="p-3 border-b border-slate-100 space-y-2">
                 <input x-model="groupName" maxlength="120"
                        class="form-input text-sm" placeholder="Group name, e.g. Serena night shift">
@@ -131,7 +184,11 @@
                 <button type="button" @click="view = 'list'"
                         class="px-3 py-2 rounded-lg text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
                 <button type="button" @click="createGroup()"
-                        :disabled="groupSaving || !groupName.trim() || groupMembers.length === 0"
+                        {{-- Ticking six people and finding the button dead, with
+                             nothing saying why, is worse than an unnamed group.
+                             People are the only real requirement; a blank name
+                             gets a sensible one. --}}
+                        :disabled="groupSaving || groupMembers.length === 0"
                         class="flex-1 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600
                                hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
                     <span x-show="!groupSaving">Create group</span>
@@ -139,10 +196,18 @@
                 </button>
             </div>
             <p x-show="groupError" x-cloak class="px-3 pb-3 -mt-1 text-xs text-red-600" x-text="groupError"></p>
+            <p x-show="!groupError && groupMembers.length === 0" x-cloak
+               class="px-3 pb-3 -mt-1 text-xs text-slate-400">
+                Tick at least one person to create the group.
+            </p>
+            <p x-show="!groupError && groupMembers.length > 0 && !groupName.trim()" x-cloak
+               class="px-3 pb-3 -mt-1 text-xs text-slate-400">
+                No name given — it will be called <span class="font-medium" x-text="suggestedName()"></span>.
+            </p>
         </div>
 
         {{-- ── Who to write to ── --}}
-        <div x-show="view === 'contacts'" class="flex-1 flex flex-col overflow-hidden">
+        <div x-show="view === 'contacts'" class="chat-panel-body flex-1 flex flex-col overflow-hidden">
             <div class="p-3 border-b border-slate-100">
                 <input x-model="contactSearch" @input.debounce.300ms="loadContacts()"
                        class="form-input text-sm" placeholder="Search by name or email...">
@@ -162,7 +227,7 @@
         </div>
 
         {{-- ── The thread ── --}}
-        <div x-show="view === 'thread'" class="flex-1 flex flex-col overflow-hidden">
+        <div x-show="view === 'thread'" class="chat-panel-body flex-1 flex flex-col overflow-hidden">
             <div x-ref="scroll" class="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-slate-50">
                 <template x-for="m in messages" :key="m.id">
                     <div class="flex" :class="m.mine ? 'justify-end' : 'justify-start'">
@@ -388,26 +453,62 @@ function chatPanel() {
             }
         },
 
+        /* Named after the audience if one was tapped whole, otherwise by size. */
+        suggestedName() {
+            const whole = this.audiences.find(a => this.audienceOn(a));
+            if (whole) return whole.label;
+            return this.groupMembers.length + ' people';
+        },
+
         async createGroup() {
             if (this.groupSaving) return;
             this.groupSaving = true;
             this.groupError = '';
+            /* Read at click time. The page may have been open for hours and the
+               token on the meta tag is the one the session actually holds. */
+            const token = document.querySelector('meta[name="csrf-token"]')?.content || csrf;
+
             try {
                 const r = await fetch('{{ route('chat.group') }}', {
                     method: 'POST',
-                    headers: { 'X-CSRF-TOKEN': csrf, 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify({ name: this.groupName.trim(), user_ids: this.groupMembers }),
+                    headers: { 'X-CSRF-TOKEN': token, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({
+                        name: this.groupName.trim() || this.suggestedName(),
+                        user_ids: this.groupMembers,
+                    }),
                 });
-                const d = await r.json();
-                if (!r.ok) {
-                    /* Laravel answers a validation failure with errors, not message. */
-                    this.groupError = d.message || Object.values(d.errors || {})[0]?.[0] || 'Could not create that group.';
+
+                /* Everything below used to sit inside one try/catch whose only
+                   message was "Could not reach the server". A 419, a redirect to
+                   the login page, a 500 — anything that answered HTML — threw on
+                   r.json() and was reported as a network failure, which sent
+                   somebody looking at their wifi instead of at the real problem. */
+                if (r.status === 419) {
+                    this.groupError = 'Your session expired. Reloading…';
+                    setTimeout(() => window.location.reload(), 1500);
                     return;
                 }
-                await this.load();
+
+                const isJson = (r.headers.get('content-type') || '').includes('json');
+                if (!isJson) {
+                    this.groupError = 'The server answered with a page, not data (status ' + r.status + '). Try reloading.';
+                    return;
+                }
+
+                const d = await r.json();
+
+                if (!r.ok) {
+                    /* Laravel answers a validation failure with errors, not message. */
+                    this.groupError = d.message
+                        || Object.values(d.errors || {})[0]?.[0]
+                        || ('Could not create that group (status ' + r.status + ').');
+                    return;
+                }
+
+                await this.loadList();
                 this.openThread(d.conversation_id, d.title);
-            } catch {
-                this.groupError = 'Could not reach the server.';
+            } catch (e) {
+                this.groupError = 'Could not reach the server — ' + (e.message || 'the request did not complete') + '.';
             } finally {
                 this.groupSaving = false;
             }

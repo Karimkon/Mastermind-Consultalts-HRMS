@@ -54,17 +54,58 @@ button{cursor:pointer;font-family:inherit}
 .mb-acts{margin-top:8px;display:flex;gap:9px}
 
 /* HERO */
-.hero{position:relative;height:570px;overflow:hidden;background:var(--dark)}
+.hero{position:relative;background:var(--dark)}
+.hero-stage{position:relative;height:570px;overflow:hidden}
+
+/* The first thing anybody sees is split in two: the jobs that are open on
+   the left, who we are and the way in on the right. The panel is overlaid
+   rather than made a column of the slides, so one copy of the list serves
+   all three slides instead of being repeated three times in the markup. */
+.hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:center}
+.hero-panel{position:absolute;inset:0;z-index:4;display:flex;align-items:center;pointer-events:none}
+.hero-panel .hero-grid{width:100%}
+.hp-card{pointer-events:auto;background:rgba(255,255,255,.97);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.35);overflow:hidden}
+.hp-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;background:var(--dark);color:var(--white)}
+.hp-head h3{font-size:.95rem;font-weight:800;display:flex;align-items:center;gap:8px}
+.hp-head h3 i{color:var(--gold)}
+.hp-count{background:var(--gold);color:var(--dark);font-size:.7rem;font-weight:800;padding:3px 10px;border-radius:100px;white-space:nowrap}
+.hp-list{max-height:296px;overflow-y:auto}
+.hp-list::-webkit-scrollbar{width:6px}
+.hp-list::-webkit-scrollbar-thumb{background:var(--gold-l);border-radius:3px}
+.hp-job{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border);transition:background .18s}
+.hp-job:last-child{border-bottom:none}
+.hp-job:hover{background:var(--gold-bg)}
+.hp-job-t{font-size:.87rem;font-weight:700;color:var(--dark);line-height:1.3}
+.hp-job-m{font-size:.73rem;color:var(--text-l);margin-top:3px;display:flex;flex-wrap:wrap;gap:9px}
+.hp-job-m i{color:var(--gold);margin-right:3px}
+.hp-apply{flex-shrink:0;font-size:.73rem;font-weight:800;padding:6px 13px;border-radius:7px;background:var(--gold);color:var(--dark);white-space:nowrap;transition:background .2s}
+.hp-apply:hover{background:var(--gold-d)}
+.hp-empty{padding:30px 18px;text-align:center;color:var(--text-l);font-size:.84rem}
+.hp-empty i{font-size:1.8rem;color:var(--gold);display:block;margin-bottom:8px}
+.hp-foot{display:flex;gap:9px;padding:13px 18px;border-top:1px solid var(--border);background:var(--bg)}
+.hp-foot a{flex:1;min-width:0;text-align:center;font-size:.79rem;font-weight:700;padding:9px 10px;border-radius:8px;transition:all .2s}
+.hp-all{border:1.5px solid var(--gold);color:var(--gold-d)}
+.hp-all:hover{background:var(--gold);color:var(--white)}
+.hp-login{background:var(--dark);color:var(--white)}
+.hp-login:hover{background:var(--dark2)}
 .slide{position:absolute;inset:0;opacity:0;transition:opacity .9s ease}
 .slide.active{opacity:1;z-index:1}
 .slide-bg{position:absolute;inset:0;background-size:cover;background-position:center}
-.slide-bg::after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,rgba(28,28,30,.9) 0%,rgba(28,28,30,.55) 55%,rgba(28,28,30,.12) 100%)}
-.slide-ct{position:relative;z-index:2;height:100%;display:flex;align-items:center}
+.slide-bg::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(18,18,20,.86) 0%,rgba(18,18,20,.60) 38%,rgba(18,18,20,.58) 55%,rgba(18,18,20,.88) 100%)}
+/* A second, vertical pass so a bright sky at the top of a photo does not
+   wash out the navigation sitting over it. */
+.slide-bg::before{content:'';position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(18,18,20,.45) 0%,rgba(18,18,20,0) 32%,rgba(18,18,20,.35) 100%)}
+/* Photographs get a slow drift, so a still image still feels alive. */
+.slide.active .slide-bg{animation:slideDrift 18s ease-out forwards}
+@keyframes slideDrift{from{transform:scale(1.06)}to{transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){.slide.active .slide-bg{animation:none}}
+.slide-ct{position:relative;z-index:3;height:100%;display:flex;align-items:center}
+.slide-ct .container{width:100%}
 .slide-txt{max-width:590px;color:var(--white)}
 .s-eye{display:inline-flex;align-items:center;gap:6px;background:rgba(201,168,76,.18);border:1px solid rgba(201,168,76,.33);color:var(--gold);padding:5px 13px;border-radius:100px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:17px}
-.s-title{font-size:2.9rem;font-weight:900;line-height:1.08;margin-bottom:13px;letter-spacing:-.4px}
+.s-title{font-size:2.9rem;font-weight:900;line-height:1.08;margin-bottom:13px;letter-spacing:-.4px;text-shadow:0 2px 24px rgba(0,0,0,.45)}
 .s-title em{color:var(--gold);font-style:normal}
-.s-sub{font-size:1rem;color:rgba(255,255,255,.77);line-height:1.65;margin-bottom:26px;max-width:470px}
+.s-sub{font-size:1rem;color:rgba(255,255,255,.85);line-height:1.65;margin-bottom:26px;max-width:470px;text-shadow:0 1px 14px rgba(0,0,0,.4)}
 .s-btns{display:flex;gap:11px;flex-wrap:wrap}
 .btn-ha{padding:12px 27px;background:var(--gold);color:var(--dark);border-radius:9px;font-weight:800;font-size:.93rem;transition:all .25s}
 .btn-ha:hover{background:#dfba5a;transform:translateY(-2px);box-shadow:0 8px 28px rgba(201,168,76,.35)}
@@ -89,9 +130,9 @@ button{cursor:pointer;font-family:inherit}
 
 /* JOBS */
 .j-search{display:flex;gap:9px;max-width:520px;margin:0 auto 34px}
-.j-search input{flex:1;padding:10px 15px;border:1.5px solid var(--border);border-radius:8px;font-size:.875rem;font-family:inherit;outline:none;transition:border-color .2s}
+.j-search input{flex:1;min-width:0;padding:10px 15px;border:1.5px solid var(--border);border-radius:8px;font-size:.875rem;font-family:inherit;outline:none;transition:border-color .2s}
 .j-search input:focus{border-color:var(--gold)}
-.btn-srch{padding:10px 21px;background:var(--gold);color:var(--dark);border:none;border-radius:8px;font-weight:700;font-size:.85rem;white-space:nowrap;transition:background .2s}
+.btn-srch{flex-shrink:0;padding:10px 21px;background:var(--gold);color:var(--dark);border:none;border-radius:8px;font-weight:700;font-size:.85rem;white-space:nowrap;transition:background .2s}
 .btn-srch:hover{background:var(--gold-d)}
 .jgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:17px}
 .jc{background:var(--white);border:1px solid var(--border);border-radius:13px;padding:20px;transition:all .25s}
@@ -125,6 +166,25 @@ button{cursor:pointer;font-family:inherit}
 .svc-t{font-size:.97rem;font-weight:700;color:var(--dark);margin-bottom:7px}
 .svc-d{font-size:.82rem;color:var(--text-l);line-height:1.65}
 
+/* END TO END */
+.e2e{background:var(--dark);color:var(--white);position:relative;overflow:hidden}
+.e2e::before{content:'';position:absolute;top:-120px;right:-120px;width:380px;height:380px;border-radius:50%;background:radial-gradient(circle,rgba(201,168,76,.16) 0%,transparent 70%)}
+.e2e-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center;position:relative;z-index:1}
+.e2e-tag{display:inline-flex;align-items:center;gap:6px;background:rgba(201,168,76,.14);border:1px solid rgba(201,168,76,.3);color:var(--gold);padding:5px 13px;border-radius:100px;font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:15px}
+.e2e-h{font-size:2rem;font-weight:900;line-height:1.15;margin-bottom:12px}
+.e2e-h em{color:var(--gold);font-style:normal}
+.e2e-p{font-size:.92rem;color:rgba(255,255,255,.68);line-height:1.7;margin-bottom:28px;max-width:520px}
+.e2e-steps{display:flex;flex-direction:column;gap:0}
+.e2e-step{display:flex;gap:16px;padding-bottom:20px;position:relative}
+.e2e-step:last-child{padding-bottom:0}
+.e2e-step:not(:last-child)::before{content:'';position:absolute;left:17px;top:38px;bottom:2px;width:2px;background:linear-gradient(180deg,rgba(201,168,76,.5),rgba(201,168,76,.08))}
+.e2e-num{flex-shrink:0;width:36px;height:36px;border-radius:50%;background:rgba(201,168,76,.13);border:1px solid rgba(201,168,76,.35);color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.84rem;position:relative;z-index:1}
+.e2e-st{font-size:.95rem;font-weight:700;margin-bottom:3px}
+.e2e-sd{font-size:.83rem;color:rgba(255,255,255,.58);line-height:1.6}
+.e2e-art{display:flex;justify-content:center}
+.e2e-art img{width:100%;max-width:420px;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.45);display:block}
+.e2e-cta{display:inline-flex;align-items:center;gap:8px;margin-top:26px;padding:12px 26px;background:var(--gold);color:var(--dark);border-radius:9px;font-weight:800;font-size:.9rem;transition:all .25s}
+.e2e-cta:hover{background:#dfba5a;transform:translateY(-2px)}
 /* TEAM MARQUEE */
 .team-sec{padding:72px 0;background:var(--gold-bg)}
 .mq{overflow:hidden}
@@ -150,10 +210,10 @@ button{cursor:pointer;font-family:inherit}
 .cl-sec{padding:70px 0}
 .cm-tr{display:flex;align-items:center;gap:28px;animation:scrollL 45s linear infinite;width:max-content}
 .cm-tr:hover{animation-play-state:paused}
-.cl-box{width:148px;height:65px;display:flex;align-items:center;justify-content:center;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 14px;transition:all .3s;font-size:.76rem;font-weight:700;color:var(--text);text-align:center;line-height:1.35}
-.cl-box:hover{border-color:var(--gold);color:var(--gold);background:var(--gold-bg)}
-.cl-box img{max-width:110px;max-height:44px;object-fit:contain;filter:grayscale(55%);transition:filter .3s}
-.cl-box:hover img{filter:none}
+.cl-box{width:190px;height:88px;display:flex;align-items:center;justify-content:center;background:var(--white);border:1px solid var(--border);border-radius:12px;padding:12px 16px;transition:all .3s;font-size:.78rem;font-weight:700;color:var(--text);text-align:center;line-height:1.35}
+.cl-box:hover{border-color:var(--gold);color:var(--gold);background:var(--white);box-shadow:0 8px 24px rgba(201,168,76,.18);transform:translateY(-2px)}
+.cl-box img{max-width:158px;max-height:62px;width:auto;height:auto;object-fit:contain;image-rendering:-webkit-optimize-contrast}
+
 
 /* CTA SPLIT */
 .cta-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
@@ -209,7 +269,8 @@ button{cursor:pointer;font-family:inherit}
 /* FOOTER */
 .footer{background:var(--dark);color:rgba(255,255,255,.68);padding-top:56px}
 .f-inner{display:grid;grid-template-columns:2fr 1fr 1fr 1.2fr;gap:32px;padding-bottom:40px;border-bottom:1px solid rgba(255,255,255,.07)}
-.f-brand img{height:34px;filter:brightness(0) invert(1);margin-bottom:13px}
+.f-brand img{height:30px;display:block}
+.f-logo-chip{display:inline-block;background:var(--white);padding:9px 14px;border-radius:10px;margin-bottom:14px}
 .f-brand p{font-size:.82rem;line-height:1.7;max-width:270px;margin-bottom:16px}
 .f-socs{display:flex;gap:8px}
 .f-soc{width:33px;height:33px;border-radius:7px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.5);font-size:.82rem;transition:all .2s}
@@ -226,8 +287,26 @@ button{cursor:pointer;font-family:inherit}
 
 /* RESPONSIVE */
 @media(max-width:1024px){.jgrid,.svgrid{grid-template-columns:repeat(2,1fr)}.f-inner{grid-template-columns:1fr 1fr}}
-@media(max-width:768px){.nl,.na{display:none}.brg{display:block}.hero{height:490px}.s-title{font-size:2rem}.st-grid{grid-template-columns:repeat(2,1fr)}.ab-grid,.cta-grid,.ct-grid{grid-template-columns:1fr}.tb-c{display:none}}
-@media(max-width:540px){.jgrid,.svgrid{grid-template-columns:1fr}.hero{height:440px}.s-title{font-size:1.75rem}.sec{padding:50px 0}.f-inner{grid-template-columns:1fr}.cf-row{grid-template-columns:1fr}}
+@media(max-width:980px){.e2e-grid{grid-template-columns:1fr;gap:34px}.e2e-art{order:-1}}
+@media(max-width:768px){.nl,.na{display:none}.brg{display:block}.hero-stage{height:430px}.e2e-h{font-size:1.6rem}.s-title{font-size:2rem}.st-grid{grid-template-columns:repeat(2,1fr)}.ab-grid,.cta-grid,.ct-grid{grid-template-columns:1fr}.tb-c{display:none}}
+@media(max-width:980px){.hero-grid{grid-template-columns:1fr;gap:0}.hero-panel{position:static;display:block;padding:0 0 26px}.hp-card{box-shadow:0 10px 30px rgba(0,0,0,.22)}.hp-spacer{display:none}.hp-list{max-height:none}}
+/* Below 480px the search field and its button no longer fit side by side,
+   so they stack rather than being squeezed to nothing. */
+@media(max-width:480px){
+  .j-search{flex-direction:column}
+  .j-search input,.btn-srch{width:100%}
+  .container,.nw{padding-left:16px;padding-right:16px}
+  .sh-h{font-size:1.55rem}
+  .s-title{font-size:1.7rem}
+  .hp-job{flex-wrap:wrap;gap:8px}
+  .hp-apply{width:100%;text-align:center}
+  .e2e-h{font-size:1.45rem}
+  .st-n{font-size:2.1rem}
+}
+/* Long words and pasted URLs should wrap rather than widen the page. */
+body{overflow-wrap:break-word}
+img,video,iframe,table{max-width:100%}
+@media(max-width:540px){.jgrid,.svgrid{grid-template-columns:1fr}.hero-stage{height:390px}.s-title{font-size:1.75rem}.sec{padding:50px 0}.f-inner{grid-template-columns:1fr}.cf-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -259,7 +338,7 @@ button{cursor:pointer;font-family:inherit}
       <a href="{{ route('home') }}" class="cur">Home</a>
       <a href="#jobs">Jobs</a>
       <a href="#services">Services</a>
-    <a href="{{ route('blog.index') }}">Insights</a>
+      <a href="#how-it-works">How We Work</a>
       <a href="{{ route('blog.index') }}">Insights</a>
       <a href="#about">About</a>
       <a href="#clients">Clients</a>
@@ -287,22 +366,44 @@ button{cursor:pointer;font-family:inherit}
 
 {{-- HERO SLIDER --}}
 @php
+/**
+ * A versioned URL for an image kept in storage/app/public.
+ *
+ * The server tells proxies to hold static files for a week. Replacing a
+ * picture under the same filename therefore kept serving the old one for
+ * days - the new artwork was on disk and correct, and visitors still saw the
+ * small version. Stamping the file's modified time onto the URL makes every
+ * replacement a new address, so a swap shows up at once.
+ */
+$siteImg = function (?string $path): string {
+    if (! $path) return '';
+    if (Str::startsWith($path, 'http')) return $path;
+
+    $full = storage_path('app/public/' . ltrim($path, '/'));
+    $url  = asset('storage/' . ltrim($path, '/'));
+
+    return is_file($full) ? $url . '?v=' . filemtime($full) : $url;
+};
+@endphp
+@php
 $heroSlides = (isset($heroSlides) && count($heroSlides)) ? $heroSlides : [
-  ['eyebrow'=>'Expert HR Consultancy','title'=>'Transforming the <em>Work Place</em>','subtitle'=>'Your Strategic Human Resource Solution Partner. We help organisations optimise performance by meeting their most critical HR needs across Uganda and East Africa.','btn1_label'=>'View Open Jobs','btn1_url'=>'#jobs','btn2_label'=>'Our Services','btn2_url'=>'#services','gradient'=>'linear-gradient(110deg,#1C1C1E 0%,#2d2420 60%,#3d2d10 100%)','image'=>null],
+  ['eyebrow'=>'Expert HR Consultancy','title'=>'Transforming the <em>Work Place</em>','subtitle'=>'Your Strategic Human Resource Solution Partner. We help organisations optimise performance by meeting their most critical HR needs across Uganda and East Africa.','btn1_label'=>'View Open Jobs','btn1_url'=>'#jobs','btn2_label'=>'Our Services','btn2_url'=>'#services','gradient'=>'linear-gradient(110deg,#1C1C1E 0%,#2d2420 60%,#3d2d10 100%)','image'=>'site/hero-site-team.jpg'],
   ['eyebrow'=>'Recruitment Specialists','title'=>'Your Partner in <em>Talent Acquisition</em>','subtitle'=>'From executive search to staffing solutions — connecting the right people with the right organisations. Over 500 successful placements across East Africa.','btn1_label'=>'Post a Job','btn1_url'=>'#contact','btn2_label'=>'Learn More','btn2_url'=>'#about','gradient'=>'linear-gradient(110deg,#1a2040 0%,#1C1C1E 60%,#2d2420 100%)','image'=>null],
   ['eyebrow'=>'Trusted by 20+ Companies','title'=>'Empowering <em>HR Excellence</em> in East Africa','subtitle'=>'Delivering consistent, affordable and innovative HR services. Join over 20 leading organisations that trust Mastermind Consult Ltd for their human resource needs.','btn1_label'=>'Get In Touch','btn1_url'=>'#contact','btn2_label'=>'Our Clients','btn2_url'=>'#clients','gradient'=>'linear-gradient(110deg,#1C1C1E 0%,#1e1a10 60%,#3d2d10 100%)','image'=>null],
 ];
 @endphp
 <div class="hero" id="hero">
+  <div class="hero-stage">
   @foreach($heroSlides as $i => $sl)
   <div class="slide{{ $i===0 ? ' active' : '' }}" data-i="{{ $i }}">
     @if(!empty($sl['image']))
-      <div class="slide-bg" style="background-image:url('{{ Str::startsWith($sl['image'],'http') ? $sl['image'] : asset('storage/'.$sl['image']) }}')"></div>
+      <div class="slide-bg" style="background-image:url('{{ $siteImg($sl['image']) }}')"></div>
     @else
       <div class="slide-bg" style="background:{{ $sl['gradient'] ?? '#1C1C1E' }}"></div>
     @endif
     <div class="slide-ct">
-      <div class="container">
+      <div class="container hero-grid">
+        <div class="hp-spacer"></div>
         <div class="slide-txt">
           <div class="s-eye"><i class="fas fa-star-of-life"></i>&nbsp;{{ $sl['eyebrow'] ?? 'Mastermind Consult Ltd' }}</div>
           <h1 class="s-title">{!! $sl['title'] ?? '' !!}</h1>
@@ -310,6 +411,7 @@ $heroSlides = (isset($heroSlides) && count($heroSlides)) ? $heroSlides : [
           <div class="s-btns">
             <a href="{{ $sl['btn1_url'] ?? '#jobs' }}" class="btn-ha">{{ $sl['btn1_label'] ?? 'View Jobs' }}</a>
             <a href="{{ $sl['btn2_url'] ?? '#services' }}" class="btn-hb">{{ $sl['btn2_label'] ?? 'Our Services' }}</a>
+            <a href="{{ route('login') }}" class="btn-hb"><i class="fas fa-sign-in-alt"></i>&nbsp;Login</a>
           </div>
         </div>
       </div>
@@ -324,6 +426,48 @@ $heroSlides = (isset($heroSlides) && count($heroSlides)) ? $heroSlides : [
     @foreach($heroSlides as $i => $sl)
     <button class="sdot{{ $i===0 ? ' active' : '' }}" data-d="{{ $i }}"></button>
     @endforeach
+  </div>
+  </div>{{-- /.hero-stage --}}
+
+  {{-- Open jobs, in the left half, where somebody arriving sees them without
+       scrolling. The same $jobs the Jobs section further down already uses. --}}
+  <div class="hero-panel">
+    <div class="container hero-grid">
+      <div class="hp-card">
+        <div class="hp-head">
+          <h3><i class="fas fa-briefcase"></i>Jobs Open Now</h3>
+          <span class="hp-count">{{ isset($jobs) ? $jobs->count() : 0 }} {{ Str::plural('position', isset($jobs) ? $jobs->count() : 0) }}</span>
+        </div>
+        @if(isset($jobs) && $jobs->count())
+        <div class="hp-list">
+          @foreach($jobs as $job)
+          <div class="hp-job">
+            <div>
+              <div class="hp-job-t">{{ $job->title }}</div>
+              <div class="hp-job-m">
+                <span><i class="fas fa-building"></i>{{ $job->department?->name ?? 'General' }}</span>
+                @if($job->location)<span><i class="fas fa-map-marker-alt"></i>{{ $job->location }}</span>@endif
+                @if($job->deadline)<span><i class="far fa-clock"></i>Closes {{ \Carbon\Carbon::parse($job->deadline)->format('d M') }}</span>@endif
+              </div>
+            </div>
+            <a href="{{ route('careers.show', $job) }}" class="hp-apply">Apply</a>
+          </div>
+          @endforeach
+        </div>
+        @else
+        <div class="hp-empty">
+          <i class="fas fa-briefcase"></i>
+          <p style="font-weight:700;color:var(--dark);margin-bottom:4px">No open positions right now</p>
+          <p>New roles are posted regularly. Please check back.</p>
+        </div>
+        @endif
+        <div class="hp-foot">
+          <a href="{{ route('careers.index') }}" class="hp-all"><i class="fas fa-th-list"></i>&nbsp;All Jobs</a>
+          <a href="{{ route('login') }}" class="hp-login"><i class="fas fa-sign-in-alt"></i>&nbsp;Login</a>
+        </div>
+      </div>
+      <div class="hp-spacer"></div>
+    </div>
   </div>
 </div>
 
@@ -407,20 +551,62 @@ $heroSlides = (isset($heroSlides) && count($heroSlides)) ? $heroSlides : [
   </div>
 </section>
 
+{{-- END TO END --}}
+<section class="sec e2e" id="how-it-works">
+  <div class="container">
+    <div class="e2e-grid">
+      <div class="reveal">
+        <div class="e2e-tag"><i class="fas fa-route"></i>&nbsp;How we work</div>
+        <h2 class="e2e-h">From job post to payroll, <em>handled end to end</em></h2>
+        <p class="e2e-p">
+          Most HR firms hand you a shortlist and stop there. We stay with the hire &mdash;
+          advertising the role, scoring every applicant, placing the right person, putting
+          them on the ground and paying them correctly every month, with the statutory
+          deductions filed on time.
+        </p>
+
+        <div class="e2e-steps">
+          @php
+          $steps = [
+            ['Advertise the role', 'Your vacancy goes onto our public job board and straight to job seekers already registered in the categories you are hiring for.'],
+            ['Screen on evidence', 'Every applicant answers the questions you set, each carrying its own marks out of 30, so candidates arrive ranked rather than in the order they applied.'],
+            ['Shortlist and interview', 'You see the ranking, the CV and every supporting document in one place, and shortlist as many as you need with one click.'],
+            ['Place and onboard', 'Contracts, statutory documents and site placement handled, so the person starts work ready rather than waiting on paperwork.'],
+            ['Payroll and compliance', 'Monthly payroll with PAYE, NSSF and LST worked out, payslips issued, and the returns filed.'],
+          ];
+          @endphp
+          @foreach($steps as $i => [$title, $desc])
+          <div class="e2e-step">
+            <div class="e2e-num">{{ $i + 1 }}</div>
+            <div>
+              <div class="e2e-st">{{ $title }}</div>
+              <div class="e2e-sd">{{ $desc }}</div>
+            </div>
+          </div>
+          @endforeach
+        </div>
+
+        <a href="#contact" class="e2e-cta">
+          <i class="fas fa-comments"></i> Talk to us about your hiring
+        </a>
+      </div>
+
+      <div class="e2e-art reveal">
+        <img src="{{ $siteImg('site/end-to-end.jpg') }}"
+             alt="Mastermind Consult Ltd — from job post to payroll, handled end to end"
+             loading="lazy">
+      </div>
+    </div>
+  </div>
+</section>
 {{-- TEAM MARQUEE --}}
 @php
-$team = (isset($teamPhotos) && count($teamPhotos)) ? $teamPhotos : [
-  ['name'=>'HR Consultant','role'=>'Senior Consultant','image'=>null],
-  ['name'=>'Recruitment Lead','role'=>'Talent Acquisition','image'=>null],
-  ['name'=>'HR Analyst','role'=>'Policy & Systems','image'=>null],
-  ['name'=>'Senior Recruiter','role'=>'Executive Search','image'=>null],
-  ['name'=>'Client Manager','role'=>'Account Management','image'=>null],
-  ['name'=>'HR Advisor','role'=>'Organisational Consulting','image'=>null],
-  ['name'=>'Payroll Specialist','role'=>'Payroll & Benefits','image'=>null],
-  ['name'=>'Training Officer','role'=>'L&D Specialist','image'=>null],
-];
-$teamD = array_merge($team, $team);
+$team  = (isset($teamPhotos) && count($teamPhotos)) ? $teamPhotos : [];
+// Doubled so the marquee can loop without a visible seam; pointless with
+// fewer than three, so it only doubles when there is something to loop.
+$teamD = count($team) >= 3 ? array_merge($team, $team) : $team;
 @endphp
+@if(count($team))
 <section class="team-sec">
   <div class="container">
     <div class="sh reveal" style="margin-bottom:36px">
@@ -436,7 +622,7 @@ $teamD = array_merge($team, $team);
       <div class="tcard">
         <div class="tcard-img">
           @if(!empty($m['image']))
-            <img src="{{ Str::startsWith($m['image'],'http') ? $m['image'] : asset('storage/'.$m['image']) }}" alt="{{ $m['name'] }}">
+            <img src="{{ $siteImg($m['image']) }}" alt="{{ $m['name'] }}">
           @else
             <i class="fas fa-user-tie ph"></i>
           @endif
@@ -450,6 +636,7 @@ $teamD = array_merge($team, $team);
     </div>
   </div>
 </section>
+@endif
 
 {{-- STATS --}}
 <section class="stats-s">
@@ -516,7 +703,7 @@ $clientsD = array_merge($clients, $clients);
       @foreach($clientsD as $cl)
       <a href="{{ $cl['url'] ?? '#' }}" target="_blank" rel="noopener">
         @if(!empty($cl['logo']))
-          <div class="cl-box"><img src="{{ Str::startsWith($cl['logo'],'http') ? $cl['logo'] : asset('storage/'.$cl['logo']) }}" alt="{{ $cl['name'] }}"></div>
+          <div class="cl-box"><img src="{{ $siteImg($cl['logo']) }}" alt="{{ $cl['name'] }} logo" loading="lazy" decoding="async"></div>
         @else
           <div class="cl-box">{{ $cl['name'] }}</div>
         @endif
@@ -630,7 +817,9 @@ $clientsD = array_merge($clients, $clients);
   <div class="container">
     <div class="f-inner">
       <div class="f-brand">
-        <img src="{{ asset('images/logo.png') }}" alt="Mastermind Consult Ltd">
+        <span class="f-logo-chip">
+          <img src="{{ asset('images/logo.png') }}" alt="Mastermind Consult Ltd">
+        </span>
         <p>Your Strategic Human Resource Solution Partner. Transforming workplaces across Uganda and East Africa.</p>
         <div class="f-socs">
           <a href="#" class="f-soc"><i class="fab fa-x-twitter"></i></a>

@@ -31,13 +31,23 @@ Route::get("/careers", [CareersController::class, "index"])->name("careers.index
 Route::get("/careers/{job}", [CareersController::class, "show"])->name("careers.show");
 Route::post("/careers/{job}/apply", [CareersController::class, "apply"])->name("careers.apply");
 
+// Following an application without an account. The tracking code is the only
+// credential, so it is 12 random characters rather than the candidate id, and
+// these pages show nothing an applicant does not already know about
+// themselves - no recruiter notes, no other applicants.
+Route::get("/careers-status", [CareersController::class, "statusLookup"])->name("careers.status");
+Route::post("/careers-status", [CareersController::class, "statusFind"])->name("careers.status.find");
+Route::get("/careers-status/{code}", [CareersController::class, "statusShow"])->name("careers.status.show");
+Route::get("/careers-applied/{code}", [CareersController::class, "applied"])->name("careers.applied");
+
 // Landing page (public)
 Route::get('/', function () {
     if (auth()->check()) return redirect()->route('dashboard');
-    $jobs = \App\Models\JobPosting::with('department')
+    $jobs = \App\Models\JobPosting::with(['department', 'category'])
         ->where('status', 'open')
+        ->where('is_public', true)
         ->where(fn($q) => $q->whereNull('deadline')->orWhere('deadline', '>=', now()))
-        ->latest()->take(6)->get();
+        ->latest()->take(8)->get();
     $heroSlides  = json_decode(\App\Models\Setting::get('hero_slides',  '[]'), true) ?: [];
     $teamPhotos  = json_decode(\App\Models\Setting::get('team_photos',  '[]'), true) ?: [];
     $clientLogos = json_decode(\App\Models\Setting::get('client_logos', '[]'), true) ?: [];
@@ -290,6 +300,18 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::post('jobs/{job}/shortlisting/auto-shortlist', [ShortlistingController::class, 'autoShortlist'])->name('shortlisting.auto-shortlist');
         Route::put('jobs/{job}/shortlisting/{criteria}', [ShortlistingController::class, 'update'])->name('shortlisting.update');
         Route::delete('jobs/{job}/shortlisting/{criteria}', [ShortlistingController::class, 'destroy'])->name('shortlisting.destroy');
+
+        // Where applications come from, and what they are for.
+        Route::get('analytics', [\App\Http\Controllers\Recruitment\AnalyticsController::class, 'index'])
+            ->name('analytics');
+
+        // An applicant's papers. Never a public path: these are somebody's
+        // CV, academic certificates and police letter, and the controller
+        // checks who is asking on every fetch.
+        Route::get('applications/documents/{document}', [\App\Http\Controllers\Recruitment\ApplicationDocumentController::class, 'show'])
+            ->name('applications.document');
+        Route::get('applications/{candidate}/cv', [\App\Http\Controllers\Recruitment\ApplicationDocumentController::class, 'resume'])
+            ->name('applications.cv');
     });
 
     // Performance

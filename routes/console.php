@@ -41,3 +41,7 @@ Schedule::command('blog:publish-scheduled')
 // Probation — daily at 08:45. Warns HR 45 days before a probation period ends
 // and flags reviews already past their end date.
 Schedule::command('hrms:probation-alerts')->dailyAt('08:45');
+
+// Place pending applications on the map. The queue normally does this the
+// moment somebody applies; this catches whatever it missed.
+Schedule::command('hrms:resolve-applicant-origins')->everyThirtyMinutes();

@@ -33,15 +33,26 @@ class ChatController extends Controller
             'Your role cannot start a group. Ask HR or your manager to open one.');
 
         $data = $request->validate([
-            'name'       => 'required|string|max:120',
+            // A name is a nicety; people are the requirement. A group with a
+            // dull name is usable, one with nobody in it is not.
+            'name'       => 'nullable|string|max:120',
             'user_ids'   => 'required|array|min:1',
-            'user_ids.*' => 'integer|exists:users,id',
+            // Deliberately not exists:users,id — that rule runs one query per
+            // id, and "everyone reporting to me" is 1,236 of them. createGroup()
+            // already resolves the list against active users and drops anything
+            // that is not one, so the check would only be buying a number we
+            // already have, 1,236 queries at a time.
+            'user_ids.*' => 'integer',
         ], [
-            'name.required'     => 'Give the group a name, so people know what it is.',
             'user_ids.required' => 'Choose at least one person to put in it.',
         ]);
 
-        $conversation = $this->chat->createGroup($me, $data['name'], $data['user_ids']);
+        $name = trim((string) ($data['name'] ?? ''));
+        if ($name === '') {
+            $name = count($data['user_ids']) . ' people';
+        }
+
+        $conversation = $this->chat->createGroup($me, $name, $data['user_ids']);
         $count        = $conversation->participants()->count();
 
         return response()->json([
@@ -63,7 +74,7 @@ class ChatController extends Controller
 
         $data = $request->validate([
             'user_ids'   => 'required|array|min:1',
-            'user_ids.*' => 'integer|exists:users,id',
+            'user_ids.*' => 'integer',
         ]);
 
         $added = $this->chat->addToGroup($conversation, $data['user_ids']);

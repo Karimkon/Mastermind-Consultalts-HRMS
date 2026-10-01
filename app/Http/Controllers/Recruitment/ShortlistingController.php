@@ -3,11 +3,128 @@ namespace App\Http\Controllers\Recruitment;
 
 use App\Http\Controllers\Controller;
 use App\Models\{JobPosting, ShortlistingCriteria, ShortlistingQuestion, ShortlistingResponse, Candidate};
+use App\Services\RecruitmentPipeline;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ShortlistingController extends Controller
 {
+    /**
+     * Write one question, carrying the marks each answer is worth.
+     *
+     * "How many years of experience?" is not right-or-wrong: 1-2 years earns
+     * something, 5+ earns more. Each option therefore stores its own `marks`.
+     * `is_correct` is still written so anything reading the old shape - and a
+     * questionnaire saved before this - keeps working.
+     */
+    private function writeQuestion(ShortlistingCriteria $criteria, array $q, int $sortOrder): void
+    {
+        $scored  = in_array($q['question_type'], ShortlistingQuestion::SCORED_TYPES, true);
+        $weight  = $scored ? (int) $q['weight'] : 0;
+        $options = null;
+
+        if ($q['question_type'] === 'multiple_choice' && ! empty($q['options'])) {
+            $correctIdx = (int) ($q['correct_answer'] ?? 0);
+
+            $options = collect($q['options'])->map(function ($opt, $idx) use ($correctIdx, $weight) {
+                $marks = isset($opt['marks']) && $opt['marks'] !== ''
+                    ? min($weight, max(0, (float) $opt['marks']))
+                    : ($idx === $correctIdx ? $weight : 0);
+
+                return [
+                    'text'       => $opt['text'],
+                    'marks'      => round($marks, 2),
+                    // Kept for the older all-or-nothing readers.
+                    'is_correct' => $marks >= $weight && $weight > 0,
+                ];
+            })->values()->all();
+        }
+
+        ShortlistingQuestion::create([
+            'criteria_id'    => $criteria->id,
+            'question'       => $q['question'],
+            'question_type'  => $q['question_type'],
+            'options'        => $options,
+            'correct_answer' => $q['question_type'] === 'multiple_choice'
+                ? null
+                : ($q['correct_answer'] ?? null),
+            'weight'         => $weight,
+            'sort_order'     => $sortOrder,
+        ]);
+    }
+
+    /**
+     * The rules for a questionnaire, including the one the brief is built on:
+     * the marks must add up to the total, which is 30.
+     *
+     * Nothing enforced a total before. Weights ran 1 to 10 across up to
+     * fifteen questions, so one job could be scored out of 12 and the next
+     * out of 140 - and the two percentages sat side by side on the same
+     * shortlist as though they meant the same thing.
+     *
+     * Free text is not marked by the system, so it carries no weight and is
+     * left out of the total rather than quietly costing an applicant marks
+     * nobody can award.
+     */
+    private function validateCriteria(Request $request): array
+    {
+        $total = (int) $request->input('total_marks', ShortlistingCriteria::DEFAULT_TOTAL_MARKS);
+
+        $data = $request->validate([
+            'title'                        => 'required|string|max:255',
+            'description'                  => 'nullable|string|max:1000',
+            'top_n'                        => 'required|integer|min:1|max:1000',
+            'total_marks'                  => 'nullable|integer|min:1|max:100',
+            'is_active'                    => 'nullable|boolean',
+            'questions'                    => 'required|array|min:1|max:15',
+            'questions.*.question'         => 'required|string|max:500',
+            'questions.*.question_type'    => 'required|in:multiple_choice,yes_no,scale,text',
+            'questions.*.weight'           => 'required|integer|min:0|max:' . $total,
+            'questions.*.options'          => 'nullable|array|max:6',
+            'questions.*.options.*.text'   => 'required_with:questions.*.options|string|max:255',
+            'questions.*.options.*.marks'  => 'nullable|numeric|min:0|max:' . $total,
+            'questions.*.correct_answer'   => 'nullable|string|max:50',
+        ], [
+            'questions.*.weight.max' => 'A single question cannot be worth more than the ' . $total . ' marks available.',
+        ]);
+
+        $data['total_marks'] = $total;
+
+        $allocated = collect($data['questions'])
+            ->filter(fn ($q) => in_array($q['question_type'], ShortlistingQuestion::SCORED_TYPES, true))
+            ->sum(fn ($q) => (int) $q['weight']);
+
+        if ($allocated !== $total) {
+            $over = $allocated > $total;
+            throw ValidationException::withMessages([
+                'questions' => sprintf(
+                    'The marks must add up to %d. You have allocated %d, which is %d %s. %s',
+                    $total,
+                    $allocated,
+                    abs($allocated - $total),
+                    $over ? 'too many' : 'short',
+                    $over ? 'Reduce some weights.' : 'Give the remaining marks to a question.',
+                ),
+            ]);
+        }
+
+        // An option may not be worth more than its own question.
+        foreach ($data['questions'] as $i => $q) {
+            foreach ($q['options'] ?? [] as $oi => $opt) {
+                if (isset($opt['marks']) && (float) $opt['marks'] > (float) $q['weight']) {
+                    throw ValidationException::withMessages([
+                        "questions.{$i}.options.{$oi}.marks" => sprintf(
+                            'That answer is worth %s, but the question is only worth %d.',
+                            $opt['marks'], $q['weight']
+                        ),
+                    ]);
+                }
+            }
+        }
+
+        return $data;
+    }
     // ----------------------------------------------------------------
     // GET /recruitment/jobs/{job}/shortlisting
     // Show existing criteria or the create form
@@ -19,6 +136,10 @@ class ShortlistingController extends Controller
             ->latest()
             ->first();
 
+        // How many have applied, so "shortlist the top N" can be set against
+        // a real number rather than guessed at.
+        $job->loadCount('candidates');
+
         return view('recruitment.shortlisting.manage', compact('job', 'criteria'));
     }
 
@@ -28,19 +149,7 @@ class ShortlistingController extends Controller
     // ----------------------------------------------------------------
     public function store(Request $request, JobPosting $job)
     {
-        $data = $request->validate([
-            'title'                       => 'required|string|max:255',
-            'description'                 => 'nullable|string|max:1000',
-            'top_n'                       => 'required|integer|min:1|max:100',
-            'is_active'                   => 'nullable|boolean',
-            'questions'                   => 'required|array|min:1|max:15',
-            'questions.*.question'        => 'required|string|max:500',
-            'questions.*.question_type'   => 'required|in:multiple_choice,yes_no,scale,text',
-            'questions.*.weight'          => 'required|integer|min:1|max:10',
-            'questions.*.options'         => 'nullable|array',
-            'questions.*.options.*.text'  => 'required_with:questions.*.options|string|max:255',
-            'questions.*.correct_answer'  => 'nullable|string|max:50',
-        ]);
+        $data = $this->validateCriteria($request);
 
         DB::transaction(function () use ($data, $job, $request) {
             // Deactivate any existing criteria
@@ -51,31 +160,13 @@ class ShortlistingController extends Controller
                 'title'          => $data['title'],
                 'description'    => $data['description'] ?? null,
                 'top_n'          => $data['top_n'],
+                'total_marks'    => $data['total_marks'],
                 'is_active'      => true,
                 'created_by'     => auth()->id(),
             ]);
 
             foreach ($data['questions'] as $i => $q) {
-                $options = null;
-                if ($q['question_type'] === 'multiple_choice' && !empty($q['options'])) {
-                    // Mark correct option based on correct_answer index
-                    $correctIdx = (int) ($q['correct_answer'] ?? 0);
-                    $options    = collect($q['options'])->map(function ($opt, $idx) use ($correctIdx) {
-                        return ['text' => $opt['text'], 'is_correct' => $idx === $correctIdx];
-                    })->values()->all();
-                }
-
-                ShortlistingQuestion::create([
-                    'criteria_id'    => $criteria->id,
-                    'question'       => $q['question'],
-                    'question_type'  => $q['question_type'],
-                    'options'        => $options,
-                    'correct_answer' => $q['question_type'] === 'multiple_choice'
-                        ? null
-                        : ($q['correct_answer'] ?? null),
-                    'weight'         => $q['weight'],
-                    'sort_order'     => $i,
-                ]);
+                $this->writeQuestion($criteria, $q, $i);
             }
         });
 
@@ -89,25 +180,14 @@ class ShortlistingController extends Controller
     // ----------------------------------------------------------------
     public function update(Request $request, JobPosting $job, ShortlistingCriteria $criteria)
     {
-        $data = $request->validate([
-            'title'                       => 'required|string|max:255',
-            'description'                 => 'nullable|string|max:1000',
-            'top_n'                       => 'required|integer|min:1|max:100',
-            'is_active'                   => 'nullable|boolean',
-            'questions'                   => 'required|array|min:1|max:15',
-            'questions.*.question'        => 'required|string|max:500',
-            'questions.*.question_type'   => 'required|in:multiple_choice,yes_no,scale,text',
-            'questions.*.weight'          => 'required|integer|min:1|max:10',
-            'questions.*.options'         => 'nullable|array',
-            'questions.*.options.*.text'  => 'required_with:questions.*.options|string|max:255',
-            'questions.*.correct_answer'  => 'nullable|string|max:50',
-        ]);
+        $data = $this->validateCriteria($request);
 
         DB::transaction(function () use ($data, $criteria) {
             $criteria->update([
                 'title'       => $data['title'],
                 'description' => $data['description'] ?? null,
                 'top_n'       => $data['top_n'],
+                'total_marks' => $data['total_marks'],
                 'is_active'   => $request->boolean('is_active', true),
             ]);
 
@@ -115,26 +195,10 @@ class ShortlistingController extends Controller
             $criteria->questions()->delete();
 
             foreach ($data['questions'] as $i => $q) {
-                $options = null;
-                if ($q['question_type'] === 'multiple_choice' && !empty($q['options'])) {
-                    $correctIdx = (int) ($q['correct_answer'] ?? 0);
-                    $options    = collect($q['options'])->map(function ($opt, $idx) use ($correctIdx) {
-                        return ['text' => $opt['text'], 'is_correct' => $idx === $correctIdx];
-                    })->values()->all();
-                }
-
-                ShortlistingQuestion::create([
-                    'criteria_id'    => $criteria->id,
-                    'question'       => $q['question'],
-                    'question_type'  => $q['question_type'],
-                    'options'        => $options,
-                    'correct_answer' => $q['question_type'] === 'multiple_choice'
-                        ? null
-                        : ($q['correct_answer'] ?? null),
-                    'weight'         => $q['weight'],
-                    'sort_order'     => $i,
-                ]);
+                $this->writeQuestion($criteria, $q, $i);
             }
+
+            $criteria->load('questions');
 
             // Recalculate all existing responses against new questions
             foreach ($criteria->responses as $response) {
@@ -211,30 +275,41 @@ class ShortlistingController extends Controller
             return back()->with('error', 'No active criteria found.');
         }
 
-        $topN = $request->integer('top_n', $criteria->top_n);
+        $request->validate(['top_n' => 'nullable|integer|min:1|max:1000']);
+
+        $topN = $request->integer('top_n') ?: $criteria->top_n;
 
         $topResponses = ShortlistingResponse::where('criteria_id', $criteria->id)
             ->orderByDesc('percentage')
             ->take($topN)
             ->pluck('candidate_id');
 
-        // Mark top N as shortlisted
-        Candidate::whereIn('id', $topResponses)
-            ->whereIn('status', ['new', 'screening'])
-            ->update(['status' => 'shortlisted']);
+        // One at a time through the pipeline rather than a mass update. A
+        // mass update changed the column and told nobody: the whole point of
+        // shortlisting is that the people on the list, and the people not on
+        // it, find out.
+        $pipeline = app(RecruitmentPipeline::class);
 
-        // Mark the rest as rejected (only those who completed screening and aren't already in a later stage)
-        ShortlistingResponse::where('criteria_id', $criteria->id)
+        $shortlisted = 0;
+        foreach (Candidate::whereIn('id', $topResponses)
+                     ->whereIn('status', ['new', 'screening'])->get() as $candidate) {
+            if ($pipeline->moveTo($candidate, 'shortlisted')) $shortlisted++;
+        }
+
+        // The rest, but only those who actually completed the screening and
+        // have not already moved into a later stage.
+        $declined   = 0;
+        $restIds    = ShortlistingResponse::where('criteria_id', $criteria->id)
             ->whereNotIn('candidate_id', $topResponses)
-            ->pluck('candidate_id')
-            ->each(function ($candidateId) {
-                Candidate::where('id', $candidateId)
-                    ->whereIn('status', ['new', 'screening'])
-                    ->update(['status' => 'rejected']);
-            });
+            ->pluck('candidate_id');
+
+        foreach (Candidate::whereIn('id', $restIds)
+                     ->whereIn('status', ['new', 'screening'])->get() as $candidate) {
+            if ($pipeline->moveTo($candidate, 'rejected')) $declined++;
+        }
 
         return redirect()->route('recruitment.shortlisting.results', $job)
-            ->with('success', "Top {$topN} candidates have been shortlisted automatically.");
+            ->with('success', "{$shortlisted} shortlisted, {$declined} not taken forward. Everybody affected has been told.");
     }
 
     // ----------------------------------------------------------------

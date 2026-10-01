@@ -97,19 +97,20 @@ class LeaveController extends Controller
 
     public function approve(Request $request, LeaveRequest $leave)
     {
+        // Every check here asked what role you hold, never whose request it
+        // is — so HR, who approves everybody's leave, approved their own too.
+        abort_if($leave->isOwnRequestOf($request->user()), 403,
+            'You cannot decide your own leave request. Another approver has to action it.');
+
         if ($leave->status !== "pending") return back()->withErrors(["error" => "Already processed."]);
 
         $leave->update(["status" => "approved", "approved_by" => auth()->id(), "actioned_at" => now()]);
 
-        // Update balance
-        LeaveBalance::where("employee_id", $leave->employee_id)
-            ->where("leave_type_id", $leave->leave_type_id)
-            ->where("year", Carbon::parse($leave->from_date)->year)
-            ->increment("used_days", $leave->days_count);
-        LeaveBalance::where("employee_id", $leave->employee_id)
-            ->where("leave_type_id", $leave->leave_type_id)
-            ->where("year", Carbon::parse($leave->from_date)->year)
-            ->decrement("pending_days", $leave->days_count);
+        // Through the service, so the row is created when it is missing.
+        $year   = Carbon::parse($leave->from_date)->year;
+        $adjust = app(\App\Services\LeaveAdjustmentService::class);
+        $adjust->moveBalance($leave, "used_days", (float) $leave->days_count, $year);
+        $adjust->moveBalance($leave, "pending_days", -(float) $leave->days_count, $year);
 
         // Notify employee
         if ($leave->employee->user_id) {
@@ -121,6 +122,11 @@ class LeaveController extends Controller
 
     public function reject(Request $request, LeaveRequest $leave)
     {
+        // Every check here asked what role you hold, never whose request it
+        // is — so HR, who approves everybody's leave, approved their own too.
+        abort_if($leave->isOwnRequestOf($request->user()), 403,
+            'You cannot decide your own leave request. Another approver has to action it.');
+
         $request->validate(["rejection_reason" => "required|string|max:500"]);
         $leave->update(["status" => "rejected", "approved_by" => auth()->id(), "rejection_reason" => $request->rejection_reason, "actioned_at" => now()]);
 

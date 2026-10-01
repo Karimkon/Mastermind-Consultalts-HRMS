@@ -93,15 +93,29 @@ class GroupChatTest extends TestCase
         $this->assertSame(0, Conversation::where('type', Conversation::GROUP)->count());
     }
 
-    public function test_a_group_needs_a_name_and_somebody_in_it(): void
+    public function test_a_group_needs_somebody_in_it(): void
     {
-        $am = $this->userWithRole('account-manager');
+        // People are the requirement. A group with a dull name is usable; one
+        // with nobody in it is not.
+        $this->actingAs($this->userWithRole('account-manager'))
+            ->postJson('/chat/group', ['name' => 'Nobody here'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('user_ids');
+    }
 
-        $this->actingAs($am)->postJson('/chat/group', ['user_ids' => [$this->userWithRole('employee')->id]])
-            ->assertStatus(422)->assertJsonValidationErrors('name');
-
-        $this->actingAs($am)->postJson('/chat/group', ['name' => 'Nobody here'])
-            ->assertStatus(422)->assertJsonValidationErrors('user_ids');
+    public function test_a_group_created_without_a_name_still_gets_one(): void
+    {
+        // Ticking six people and finding the button dead, with nothing saying
+        // why, is worse than a group called "2 people".
+        $this->actingAs($this->userWithRole('account-manager'))
+            ->postJson('/chat/group', [
+                'user_ids' => [
+                    $this->userWithRole('employee')->id,
+                    $this->userWithRole('employee')->id,
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('title', '2 people');
     }
 
     // ── What it does ────────────────────────────────────────────────────────

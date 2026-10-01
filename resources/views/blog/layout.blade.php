@@ -55,14 +55,12 @@
 {{-- Header: same shell as the careers portal --}}
 <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-        <a href="{{ url('/') }}" class="flex items-center gap-3">
-            <div class="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center">
-                <i class="fas fa-lightbulb text-white text-sm"></i>
-            </div>
-            <div>
-                <p class="font-bold text-slate-800 text-sm">Mastermind Consult Ltd</p>
-                <p class="text-xs text-slate-500">Insights</p>
-            </div>
+        <a href="{{ url('/') }}" class="flex items-center gap-3 group">
+            <img src="{{ asset('images/logo.png') }}" alt="Mastermind Consult Ltd"
+                 class="h-9 w-auto object-contain">
+            <span class="hidden sm:block border-l border-slate-200 pl-3 text-xs text-slate-500 group-hover:text-slate-700 transition">
+                Insights
+            </span>
         </a>
         <nav class="flex items-center gap-5 text-sm">
             <a href="{{ url('/') }}" class="text-slate-600 hover:text-blue-600 hidden sm:inline">Home</a>
@@ -79,7 +77,8 @@
     <div class="max-w-6xl mx-auto px-4 py-10">
         <div class="grid sm:grid-cols-3 gap-8 mb-8">
             <div>
-                <p class="font-bold text-slate-800 mb-2">Mastermind Consult Ltd</p>
+                <img src="{{ asset('images/logo.png') }}" alt="Mastermind Consult Ltd"
+                     class="h-9 w-auto object-contain mb-3">
                 <p class="text-sm text-slate-500 leading-relaxed">
                     Your strategic HR solutions partner — executive recruitment, staffing, payroll
                     and HR systems across Uganda and East Africa.

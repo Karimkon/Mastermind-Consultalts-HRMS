@@ -7,12 +7,12 @@ use App\Models\ShortlistingCriteria;
 class JobPosting extends Model
 {
     protected $fillable = [
-        'title','slug','department_id','designation_id','employment_type','location',
+        'title','slug','department_id','job_category_id','designation_id','employment_type','location',
         'description','requirements','benefits','status','is_public',
-        'deadline','vacancies','salary_min','salary_max','reference_number','created_by',
+        'deadline','seekers_notified_at','vacancies','salary_min','salary_max','reference_number','created_by',
     ];
 
-    protected $casts = ['is_public' => 'boolean', 'deadline' => 'date'];
+    protected $casts = ['is_public' => 'boolean', 'deadline' => 'date', 'seekers_notified_at' => 'datetime'];
 
     protected static function booted(): void
     {
@@ -30,6 +30,7 @@ class JobPosting extends Model
     }
 
     public function department()           { return $this->belongsTo(Department::class); }
+    public function category()             { return $this->belongsTo(JobCategory::class, 'job_category_id'); }
     public function candidates()           { return $this->hasMany(Candidate::class); }
     public function shortlistingCriteria() { return $this->hasMany(ShortlistingCriteria::class); }
     public function activeCriteria()       { return $this->hasOne(ShortlistingCriteria::class)->where('is_active', true)->latest(); }

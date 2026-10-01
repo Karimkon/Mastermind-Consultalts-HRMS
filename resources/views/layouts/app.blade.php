@@ -345,6 +345,9 @@
         <a href="{{ route('recruitment.interviews.index') }}" class="sidebar-link {{ request()->routeIs('recruitment.interviews.*') ? 'active' : '' }}">
             <i class="fas fa-comments w-4 text-center"></i><span x-show="sidebarOpen">Interviews</span>
         </a>
+        <a href="{{ route('recruitment.analytics') }}" class="sidebar-link {{ request()->routeIs('recruitment.analytics') ? 'active' : '' }}">
+            <i class="fas fa-chart-pie w-4 text-center"></i><span x-show="sidebarOpen">Recruitment Analytics</span>
+        </a>
         @endrole
 
         {{-- ===== MANAGER / HR ADMIN / SUPER ADMIN: full menu ===== --}}
@@ -427,7 +430,9 @@
         <a href="{{ route('recruitment.jobs.index') }}" class="sidebar-link {{ request()->routeIs('recruitment.*') ? 'active' : '' }}">
             <i class="fas fa-briefcase w-4 text-center"></i><span x-show="sidebarOpen">Recruitment</span>
         </a>
-        <a href="{{ route('careers.index') }}" target="_blank" class="sidebar-link">
+        <a href="{{ route('recruitment.analytics') }}" class="sidebar-link {{ request()->routeIs('recruitment.analytics') ? 'active' : '' }}">
+            <i class="fas fa-chart-pie w-4 text-center"></i><span x-show="sidebarOpen">Recruitment Analytics</span>
+        </a>        <a href="{{ route('careers.index') }}" target="_blank" class="sidebar-link">
             <i class="fas fa-globe w-4 text-center text-emerald-400"></i><span x-show="sidebarOpen" class="text-emerald-400">Public Job Board ↗</span>
         </a>
         @endrole

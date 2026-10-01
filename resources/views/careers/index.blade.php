@@ -14,17 +14,16 @@
 {{-- Header --}}
 <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
     <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <div class="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center">
-                <i class="fas fa-users text-white text-sm"></i>
-            </div>
-            <div>
-                <p class="font-bold text-slate-800 text-sm">Mastermind Consult Ltd</p>
-                <p class="text-xs text-slate-500">Careers Portal</p>
-            </div>
-        </div>
+        <a href="{{ route('home') }}" class="flex items-center gap-3 group">
+            <img src="{{ asset('images/logo.png') }}" alt="Mastermind Consult Ltd"
+                 class="h-9 w-auto object-contain">
+            <span class="hidden sm:block border-l border-slate-200 pl-3 text-xs text-slate-500 group-hover:text-slate-700 transition">
+                Careers Portal
+            </span>
+        </a>
         <div class="flex items-center gap-5">
             <a href="{{ route('blog.index') }}" class="text-sm text-slate-600 hover:text-blue-600">Insights</a>
+            <a href="{{ route('careers.status') }}" class="text-sm text-slate-600 hover:text-blue-600">Track Application</a>
             <a href="{{ route('login') }}" class="text-sm text-blue-600 font-medium hover:underline">Employee Login →</a>
         </div>
     </div>
@@ -40,6 +39,25 @@
                 class="flex-1 px-4 py-3 rounded-xl text-slate-800 text-sm outline-none focus:ring-2 focus:ring-blue-300">
             <button type="submit" class="bg-white text-blue-700 font-semibold px-6 py-3 rounded-xl text-sm hover:bg-blue-50 transition">Search</button>
         </form>
+
+        @if(!empty($topCategories))
+        {{-- The three categories most applied for. Useful to an applicant
+             deciding where to put their effort, and it was in the brief. --}}
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-2 text-xs">
+            <span class="text-blue-200 font-medium mr-1">Most applied for:</span>
+            @foreach($topCategories as $cat)
+            <span class="inline-flex items-center gap-1.5 bg-white/10 border border-white/15 rounded-full px-3 py-1.5">
+                <span class="font-semibold">{{ $cat['label'] }}</span>
+                <span class="text-blue-200">{{ $cat['percent'] }}%</span>
+            </span>
+            @endforeach
+        </div>
+        @endif
+
+        <p class="mt-6 text-sm text-blue-200">
+            Already applied?
+            <a href="{{ route('careers.status') }}" class="text-white font-semibold underline">Track your application</a>
+        </p>
     </div>
 </section>
 
@@ -65,6 +83,15 @@
                         <option value="">All Departments</option>
                         @foreach($departments as $dept)
                         <option value="{{ $dept->id }}" {{ request('department')==$dept->id?'selected':'' }}>{{ $dept->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1 uppercase tracking-wide">Category</label>
+                    <select name="category" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none">
+                        <option value="">All Categories</option>
+                        @foreach($categories as $cat)
+                        <option value="{{ $cat->id }}" {{ request('category')==$cat->id?'selected':'' }}>{{ $cat->name }}</option>
                         @endforeach
                     </select>
                 </div>

@@ -61,6 +61,44 @@ class LeaveAdjustmentService
     }
 
     /**
+     * Move one column of somebody's balance, creating the row if it is missing.
+     *
+     * Every approval used to do this itself, as
+     *
+     *     LeaveBalance::where(...)->increment('used_days', $days);
+     *
+     * which matches no rows and silently changes nothing when that person has
+     * no balance row for the year — and only 2 of 1,246 employees had one. Leave
+     * was approved, the days were never recorded, and the screen went on showing
+     * the leave type's default with nothing taken. Ian Kirabo's row was finally
+     * created by a recall, at zero, after his approved day had already been lost.
+     *
+     * @param  string  $column  used_days or pending_days
+     */
+    public function moveBalance(LeaveRequest $leave, string $column, float $delta, ?int $year = null): void
+    {
+        if (abs($delta) < 0.001) return;
+
+        $balance = LeaveBalance::firstOrCreate(
+            [
+                'employee_id'   => $leave->employee_id,
+                'leave_type_id' => $leave->leave_type_id,
+                'year'          => $year ?: (int) now()->year,
+            ],
+            [
+                'total_days'   => LeaveType::find($leave->leave_type_id)?->days_allowed ?? 0,
+                'used_days'    => 0,
+                'pending_days' => 0,
+            ]
+        );
+
+        // Never below zero: a balance reading -2 days is worse than one reading
+        // 0, because somebody will believe it.
+        $balance->$column = max(0, round((float) $balance->$column + $delta, 2));
+        $balance->save();
+    }
+
+    /**
      * Move the balance by a difference in days.
      *
      * An approved leave is spent, so it moves `used_days`; one still waiting is

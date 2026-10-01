@@ -10,6 +10,61 @@
     </div>
 </div>
 
+{{-- The whole recruitment flow, so a client can see where this application
+     sits rather than only the one decision in front of them. --}}
+<div class="card p-6 mb-6">
+    <h3 class="font-semibold text-slate-700 mb-1">Recruitment flow</h3>
+    <p class="text-xs text-slate-400 mb-5">Every stage an application passes through, and where this one has reached.</p>
+
+    <div class="flex flex-col md:flex-row md:items-start gap-0 md:gap-2">
+        @foreach($progress as $i => $stage)
+        <div class="flex md:flex-col md:flex-1 md:items-center gap-3 md:gap-2 md:text-center">
+            <div class="flex md:w-full items-center">
+                @if($i > 0)
+                <span class="hidden md:block flex-1 h-0.5 {{ $stage['state'] === 'pending' ? 'bg-slate-200' : 'bg-emerald-400' }}"></span>
+                @endif
+                <span class="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold
+                    @if($stage['state'] === 'done') bg-emerald-500 text-white
+                    @elseif($stage['state'] === 'current') bg-blue-600 text-white ring-4 ring-blue-100
+                    @else bg-slate-100 text-slate-400 border border-slate-200 @endif">
+                    @if($stage['state'] === 'done')<i class="fas fa-check"></i>
+                    @elseif($stage['state'] === 'current')<i class="fas fa-circle text-[7px]"></i>
+                    @else {{ $i + 1 }} @endif
+                </span>
+                @if($i < count($progress) - 1)
+                <span class="hidden md:block flex-1 h-0.5 {{ $progress[$i + 1]['state'] === 'pending' ? 'bg-slate-200' : 'bg-emerald-400' }}"></span>
+                @endif
+            </div>
+            <div class="md:px-1 pb-4 md:pb-0">
+                <p class="text-sm font-semibold {{ $stage['state'] === 'pending' ? 'text-slate-400' : 'text-slate-800' }}">
+                    {{ $stage['label'] }}
+                </p>
+                <p class="text-xs text-slate-400 mt-0.5 hidden md:block">{{ $stage['blurb'] }}</p>
+                @if($stage['state'] === 'current')
+                <span class="inline-block mt-1 text-[10px] uppercase tracking-wide bg-blue-50 text-blue-700 rounded-full px-2 py-0.5 font-bold">Here now</span>
+                @endif
+            </div>
+        </div>
+        @endforeach
+    </div>
+
+    @if($candidate->statusEvents->count())
+    <div class="mt-6 pt-5 border-t border-slate-100">
+        <p class="text-xs font-semibold text-slate-600 mb-3">History</p>
+        <div class="space-y-2">
+            @foreach($candidate->statusEvents->sortByDesc('created_at')->take(8) as $event)
+            <div class="flex items-start gap-3 text-xs">
+                <span class="text-slate-400 w-32 flex-shrink-0">{{ $event->created_at?->format('d M Y, H:i') }}</span>
+                <span class="font-medium text-slate-700 w-28 flex-shrink-0">{{ ucfirst(str_replace('_', ' ', $event->to_status)) }}</span>
+                <span class="text-slate-500">
+                    {{ $event->channels ? 'Applicant told by ' . str_replace(',', ' and ', $event->channels) : 'No notice sent' }}
+                </span>
+            </div>
+            @endforeach
+        </div>
+    </div>
+    @endif
+</div>
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     {{-- Left: Candidate info --}}
     <div class="space-y-4">
@@ -36,10 +91,29 @@
             </div>
             @endif
 
-            @if($candidate->resume_path)
-            <a href="{{ Storage::url($candidate->resume_path) }}" target="_blank" class="btn-secondary w-full mt-4 justify-center">
-                <i class="fas fa-file-download mr-2"></i>Download Resume
+            @php $documents = $candidate->documents()->orderBy('type')->get(); @endphp
+            @if($candidate->resume_path && $documents->where('type', 'cv')->isEmpty())
+            <a href="{{ route('recruitment.applications.cv', $candidate) }}" target="_blank"
+               class="btn-secondary w-full mt-4 justify-center">
+                <i class="fas fa-file-download mr-2"></i>Open CV
             </a>
+            @endif
+            @if($documents->isNotEmpty())
+            <div class="mt-4 pt-4 border-t border-slate-100">
+                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Documents</p>
+                <div class="space-y-1.5">
+                    @foreach($documents as $doc)
+                    <a href="{{ route('recruitment.applications.document', $doc) }}" target="_blank"
+                       class="flex items-center gap-2 text-sm text-slate-700 hover:text-blue-600">
+                        <i class="fas fa-file text-slate-300"></i>
+                        <span class="flex-1 truncate">{{ $doc->label }}</span>
+                        @if($doc->size_label)
+                        <span class="text-xs text-slate-400">{{ $doc->size_label }}</span>
+                        @endif
+                    </a>
+                    @endforeach
+                </div>
+            </div>
             @endif
         </div>
 

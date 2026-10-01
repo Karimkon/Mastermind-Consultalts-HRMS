@@ -38,9 +38,13 @@ class ClientRecruitmentController extends Controller
 
         abort_unless($jobIds->contains($candidate->job_posting_id), 403);
 
-        $candidate->load(['jobPosting', 'interviews.interviewer']);
+        $candidate->load(['jobPosting', 'interviews.interviewer', 'statusEvents', 'documents', 'shortlistingResponse']);
 
-        return view('client.recruitment.show', compact('client', 'candidate'));
+        // The brief asked that a client see the whole recruitment flow, not
+        // only the approve/reject step in front of them.
+        $progress = app(\App\Services\RecruitmentPipeline::class)->progressFor($candidate);
+
+        return view('client.recruitment.show', compact('client', 'candidate', 'progress'));
     }
 
     public function approve(Request $request, Candidate $candidate)
@@ -55,8 +59,12 @@ class ClientRecruitmentController extends Controller
             'client_shortlisted_by'   => $client->id,
             'client_shortlist_notes'  => $request->notes,
             'client_actioned_at'      => now(),
-            'status'                  => 'interview',
         ]);
+
+        // The stage moves through the pipeline, so the applicant is told. The
+        // client's own notes stay with the client - they are not sent on.
+        app(\App\Services\RecruitmentPipeline::class)->moveTo($candidate, 'interview');
+        \App\Services\QueueRunner::kick();
 
         return redirect()->route('client.recruitment.index')
             ->with('success', "{$candidate->name} approved for interview.");
@@ -74,8 +82,10 @@ class ClientRecruitmentController extends Controller
             'client_shortlisted_by'   => $client->id,
             'client_shortlist_notes'  => $request->notes,
             'client_actioned_at'      => now(),
-            'status'                  => 'rejected',
         ]);
+
+        app(\App\Services\RecruitmentPipeline::class)->moveTo($candidate, 'rejected');
+        \App\Services\QueueRunner::kick();
 
         return redirect()->route('client.recruitment.index')
             ->with('success', "{$candidate->name} rejected.");
