@@ -1,6 +1,7 @@
 <?php
 namespace App\Http\Controllers;
 
+use App\Support\ProfilePhoto;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Auth, Hash, Storage};
 
@@ -30,10 +31,12 @@ class ProfileController extends Controller
 
     public function updateAvatar(Request $request)
     {
-        $request->validate(['avatar' => 'required|image|max:2048']);
-        $path = $request->file('avatar')->store('avatars', 'public');
-        if (auth()->user()->avatar) Storage::disk('public')->delete(auth()->user()->avatar);
-        auth()->user()->update(['avatar' => $path]);
+        $request->validate(ProfilePhoto::rules(), ProfilePhoto::messages());
+
+        $user = $request->user();
+        $path = ProfilePhoto::store($request->file('avatar'), $user->avatar);
+        $user->update(['avatar' => $path]);
+
         return response()->json(['url' => Storage::url($path)]);
     }
 

@@ -10,10 +10,36 @@
             <div class="relative inline-block mb-4">
                 <img id="avatar-image" src="{{ auth()->user()->avatar_url }}"
                      class="w-24 h-24 rounded-2xl object-cover shadow-lg mx-auto transition-opacity">
-                <label class="absolute -bottom-2 -right-2 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-blue-700 transition-colors shadow">
+                {{-- Two inputs, not one. `capture` asks the phone for the camera
+                     directly; without it the same control offers the gallery and
+                     the file manager. One input cannot do both, and a
+                     camera-only control is useless on a desktop. --}}
+                <label for="avatar-camera"
+                       class="absolute -bottom-2 -right-2 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-blue-700 transition-colors shadow"
+                       title="Take a photo">
                     <i class="fas fa-camera text-white text-xs"></i>
-                    <input type="file" class="hidden" id="avatar-upload" accept="image/*">
                 </label>
+                <input type="file" class="sr-only" id="avatar-camera" accept="image/*" capture="user" data-avatar-input>
+                <input type="file" class="sr-only" id="avatar-upload" accept="image/*" data-avatar-input>
+            </div>
+
+            <div class="flex items-center justify-center gap-2 mb-3">
+                <label for="avatar-camera"
+                       class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer transition-colors">
+                    <i class="fas fa-camera mr-1"></i> Take a photo
+                </label>
+                <label for="avatar-upload"
+                       class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer transition-colors">
+                    <i class="fas fa-image mr-1"></i> Upload from device
+                </label>
+            </div>
+
+            {{-- Photos may now be several megabytes, so the wait is shown. --}}
+            <div id="avatar-progress" hidden class="mb-3">
+                <div class="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                    <div class="h-full rounded-full bg-blue-600 transition-all duration-150" style="width:0%" id="avatar-bar"></div>
+                </div>
+                <p class="mt-1 text-[11px] text-slate-400" id="avatar-status">Uploading&hellip;</p>
             </div>
             <h3 class="font-semibold text-slate-800 text-lg">{{ auth()->user()->name }}</h3>
             <p class="text-sm text-slate-500">{{ auth()->user()->employee?->designation?->title ?? auth()->user()->roles->first()?->name }}</p>
@@ -89,12 +115,50 @@
 
 @push('scripts')
 <script>
-document.getElementById('avatar-upload').addEventListener('change', async function (e) {
-    const file = e.target.files[0];
+// Both the camera input and the gallery input go through this. Bound by
+// attribute rather than by id, so adding a third way to pick a picture needs no
+// change here.
+const AVATAR_MAX_KB = {{ \App\Support\ProfilePhoto::maxKb() }};
+
+function uploadAvatar(input) {
+    const file = input.files[0];
     if (!file) return;
 
     const img = document.getElementById('avatar-image');
     const previous = img ? img.src : null;
+    const panel = document.getElementById('avatar-progress');
+    const bar = document.getElementById('avatar-bar');
+    const status = document.getElementById('avatar-status');
+
+    function done() {
+        input.value = '';            // so choosing the same file again still fires
+        if (panel) panel.hidden = true;
+        if (bar) bar.style.width = '0%';
+    }
+
+    function fail(message) {
+        if (img) { img.src = previous; img.style.opacity = '1'; }
+        done();
+        alert(message || 'That photo could not be saved.');
+    }
+
+    // Refuse it here rather than pushing several megabytes up the wire first.
+    if (AVATAR_MAX_KB > 0 && file.size > AVATAR_MAX_KB * 1024) {
+        fail('That photo is larger than ' + Math.round(AVATAR_MAX_KB / 1024)
+             + ' MB. Try again with a smaller one.');
+        return;
+    }
+
+    // Show the chosen picture straight away; a phone photo takes a moment to
+    // travel and the old code left the avatar looking untouched.
+    if (img && window.URL && URL.createObjectURL) {
+        const preview = URL.createObjectURL(file);
+        img.src = preview;
+        setTimeout(() => URL.revokeObjectURL(preview), 10000);
+    }
+    if (img) img.style.opacity = '0.4';
+    if (panel) panel.hidden = false;
+    if (status) status.textContent = 'Uploading…';
 
     const form = new FormData();
     form.append('_token', '{{ csrf_token() }}');
@@ -103,25 +167,37 @@ document.getElementById('avatar-upload').addEventListener('change', async functi
     // looked like it had simply done nothing.
     form.append('avatar', file);
 
-    if (img) img.style.opacity = '0.4';
+    // XHR rather than fetch: fetch cannot report upload progress, and these are
+    // now allowed to be large.
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '{{ route("profile.avatar") }}', true);
+    xhr.setRequestHeader('Accept', 'application/json');
 
-    try {
-        const r = await fetch('{{ route("profile.avatar") }}', {
-            method: 'POST',
-            headers: { 'Accept': 'application/json' },
-            body: form,
-        });
+    xhr.upload.addEventListener('progress', function (evt) {
+        if (!evt.lengthComputable || !bar) return;
+        const pct = Math.round((evt.loaded / evt.total) * 100);
+        bar.style.width = pct + '%';
+        if (status) status.textContent = 'Uploading… ' + pct + '%';
+    });
 
-        if (!r.ok) {
-            let message = 'That photo could not be saved (status ' + r.status + ').';
-            if ((r.headers.get('content-type') || '').includes('json')) {
-                const d = await r.json();
+    xhr.upload.addEventListener('load', function () {
+        if (bar) bar.style.width = '100%';
+        if (status) status.textContent = 'Resizing on the server…';
+    });
+
+    xhr.addEventListener('load', function () {
+        if (xhr.status < 200 || xhr.status >= 300) {
+            let message = 'That photo could not be saved (status ' + xhr.status + ').';
+            try {
+                const d = JSON.parse(xhr.responseText);
                 message = d.message || Object.values(d.errors || {})[0]?.[0] || message;
-            }
-            throw new Error(message);
+            } catch (e) { /* not json; keep the status message */ }
+            fail(message);
+            return;
         }
 
-        const d = await r.json();
+        let d = {};
+        try { d = JSON.parse(xhr.responseText); } catch (e) { /* ignore */ }
 
         // Swapped in place with a cache-buster, rather than only reloading when
         // the old picture happened to be the ui-avatars placeholder — which is
@@ -129,15 +205,20 @@ document.getElementById('avatar-upload').addEventListener('change', async functi
         if (img && d.url) {
             img.src = d.url + (d.url.includes('?') ? '&' : '?') + 'v=' + Date.now();
             img.style.opacity = '1';
+            done();
         } else {
             location.reload();
         }
-    } catch (err) {
-        if (img) { img.src = previous; img.style.opacity = '1'; }
-        alert(err.message || 'That photo could not be saved.');
-    } finally {
-        e.target.value = '';   // so choosing the same file again still fires
-    }
+    });
+
+    xhr.addEventListener('error', function () { fail('The upload failed. Check your connection and try again.'); });
+    xhr.addEventListener('abort', function () { fail('The upload was cancelled.'); });
+
+    xhr.send(form);
+}
+
+document.querySelectorAll('[data-avatar-input]').forEach(function (input) {
+    input.addEventListener('change', function () { uploadAvatar(this); });
 });
 </script>
 @endpush
