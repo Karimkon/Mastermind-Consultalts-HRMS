@@ -42,7 +42,7 @@ class AttendanceLog extends Model
     protected $fillable = [
         'employee_id', 'date', 'clock_in', 'clock_out', 'status', 'location_status',
         'overtime_hours', 'lat', 'lng', 'note', 'approved_by',
-        'client_id', 'clock_out_lat', 'clock_out_lng', 'distance_metres',
+        'client_id', 'verified_at_client_id', 'clock_out_lat', 'clock_out_lng', 'distance_metres',
         'approved_overtime_hours', 'overtime_status',
         'overtime_approved_by', 'overtime_approved_at', 'overtime_note',
     ];

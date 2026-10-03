@@ -191,6 +191,9 @@ class AttendanceController extends Controller
             'distance_metres' => $distance,
             'location_status' => $locationStatus,
             'client_id'       => $client?->id,      // resolved above for the enabled check
+            // Which premises actually recognised the fix. Null when it was
+            // their own posting; set when head office staff were at a client.
+            'verified_at_client_id' => $this->verifiedAtClientId($client, $locationStatus, $site),
         ]);
 
         $message = 'Clocked in at ' . now()->format('H:i') . '.' . ($notice ? ' ' . $notice : '');

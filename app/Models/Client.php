@@ -76,6 +76,38 @@ class Client extends Model
      *
      * @return array{ClientSite, float}|null
      */
+    /**
+     * The nearest mapped premises belonging to ANY client.
+     *
+     * For head office staff, who spend the week visiting clients: measuring
+     * them against head office marked every visit as off-site and sent it to
+     * HR to sort out. Here the whole estate is the fence.
+     *
+     * Twenty clients and ten sites, so this is a single query and a loop rather
+     * than trigonometry in SQL - and it picks up the clients still carrying the
+     * legacy work_site_lat through fenceSites().
+     *
+     * @return array{0: \App\Models\ClientSite, 1: float, 2: \App\Models\Client}|null
+     */
+    public static function nearestSiteAnywhere(float $lat, float $lng): ?array
+    {
+        $best = null;
+
+        foreach (static::with('activeSites')->get() as $client) {
+            $nearest = $client->nearestSite($lat, $lng);
+            if ($nearest === null) {
+                continue;
+            }
+
+            [$site, $distance] = $nearest;
+
+            if ($best === null || $distance < $best[1]) {
+                $best = [$site, $distance, $client];
+            }
+        }
+
+        return $best;
+    }
     public function nearestSite(float $lat, float $lng): ?array
     {
         $nearest = null;
@@ -97,12 +129,13 @@ class Client extends Model
         'phone', 'email',
         'industry', 'address', 'deployment_area', 'work_area', 'status', 'notes',
         'payment_day', 'work_site_address', 'work_site_lat', 'work_site_lng', 'geo_fence_radius',
-        'attendance_enabled',
+        'attendance_enabled', 'is_head_office',
         // Payroll formula settings
         'gross_up_paye', 'gpa_wmc_rate', 'billing_rate_multiplier', 'payroll_type',
     ];
 
     protected $casts = [
+        'is_head_office' => 'boolean',
         'work_site_lat'          => 'float',
         'work_site_lng'          => 'float',
         'payment_day'            => 'integer',

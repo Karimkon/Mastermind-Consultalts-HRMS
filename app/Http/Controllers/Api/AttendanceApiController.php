@@ -77,6 +77,7 @@ class AttendanceApiController extends Controller
         $log = AttendanceLog::create([
             'employee_id'       => $employee->id,
             'client_id'         => $client?->id,
+            'verified_at_client_id' => $this->verifiedAtClientId($client, $locationStatus, $site),
             'clock_in'          => now(),
             'date'              => Carbon::today()->format('Y-m-d'),
             'lat'               => $request->latitude,

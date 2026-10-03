@@ -52,9 +52,13 @@ trait ChecksWorkSiteLocation
             return [null, AttendanceLog::LOCATION_NO_FIX, null];
         }
 
-        // Nearest of however many premises this client has, so Industrial Area
-        // staff are not measured against Lubowa.
-        $nearest = $client?->nearestSite((float) $lat, (float) $lng);
+        // Head office staff are measured against every mapped client premises,
+        // not against head office. Their job takes them to the clients, so a
+        // visit used to come back "9km off" and go to HR as an exception when
+        // it was somebody doing exactly what they were sent to do.
+        $nearest = $client?->is_head_office
+            ? Client::nearestSiteAnywhere((float) $lat, (float) $lng)
+            : $client?->nearestSite((float) $lat, (float) $lng);
 
         if ($nearest === null) {
             // A fix was given and there is nothing to measure it against. The
@@ -89,7 +93,40 @@ trait ChecksWorkSiteLocation
                 $site?->geo_fence_radius ?? 0,
             ),
             AttendanceLog::LOCATION_NO_FIX => 'Recorded, but your device gave no location, so it could not be verified.',
+            AttendanceLog::LOCATION_VERIFIED => $this->verifiedElsewhereNotice($client, $site),
             default => null,
         };
+    }
+
+    /**
+     * Head office staff get told WHERE they were recognised.
+     *
+     * Silence is the right answer when somebody clocks in at their own posting.
+     * It is the wrong answer for an HQ visitor, who needs to see that the
+     * system placed them at the client rather than quietly at head office.
+     */
+    private function verifiedElsewhereNotice(?Client $client, $site): ?string
+    {
+        if (! $client?->is_head_office || ! $site || $site->client_id === $client->id) {
+            return null;
+        }
+
+        $visited = Client::find($site->client_id);
+
+        return sprintf(
+            'Recorded at %s%s.',
+            $site->name,
+            $visited ? ' (' . $visited->company_name . ')' : ''
+        );
+    }
+
+    /** Which client's premises the fix was verified against, when it was elsewhere. */
+    protected function verifiedAtClientId(?Client $client, string $status, $site): ?int
+    {
+        if ($status !== AttendanceLog::LOCATION_VERIFIED || ! $site || ! $client) {
+            return null;
+        }
+
+        return $site->client_id === $client->id ? null : $site->client_id;
     }
 }
