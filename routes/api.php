@@ -176,6 +176,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('meetings/{meeting}',         [MeetingApiController::class, 'update']);
     Route::delete('meetings/{meeting}',      [MeetingApiController::class, 'destroy']);
     Route::post('meetings/{meeting}/rsvp',   [MeetingApiController::class, 'rsvp']);
+    // Meeting papers. Named, because the JSON hands the app a URL for each file.
+    Route::get('meetings/{meeting}/files/{file}', [MeetingApiController::class, 'downloadFile'])
+        ->name('api.meetings.files.download');
     Route::get('calendar',                   [MeetingApiController::class, 'calendar']);
 
     // Notifications

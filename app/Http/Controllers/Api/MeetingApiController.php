@@ -1,6 +1,8 @@
 <?php
 namespace App\Http\Controllers\Api;
 
+use Illuminate\Support\Facades\Storage;
+use App\Models\MeetingFile;
 use App\Http\Controllers\Controller;
 use App\Models\{Meeting, MeetingParticipant};
 use Illuminate\Http\Request;
@@ -55,7 +57,7 @@ class MeetingApiController extends Controller
 
     public function show(Meeting $meeting)
     {
-        $meeting->load(['organizer', 'participants.employee.user']);
+        $meeting->load(['organizer', 'participants.employee.user', 'files.uploader']);
         $data = $this->formatMeeting($meeting);
         $data['participants'] = $meeting->participants->map(fn($p) => [
             'id'     => $p->employee?->id,
@@ -63,6 +65,26 @@ class MeetingApiController extends Controller
             'avatar' => $p->employee?->user?->avatar_url,
             'rsvp'   => $p->rsvp,
         ]);
+
+        // The papers, but only to the people the meeting is for. The list is
+        // withheld as well as the bytes: knowing a colleague's appraisal pack
+        // exists, and what it is called, is itself worth withholding.
+        $user = request()->user();
+        $entitled = $meeting->involves($user) || $user->hasAnyRole(['super-admin', 'hr-admin']);
+
+        $data['files'] = $entitled
+            ? $meeting->files->map(fn ($f) => [
+                'id'            => $f->id,
+                'name'          => $f->original_name,
+                'mime'          => $f->mime,
+                'size'          => $f->size,
+                'readable_size' => $f->readable_size,
+                'uploaded_by'   => $f->uploader?->name,
+                'uploaded_at'   => $f->created_at,
+                'download_url'  => route('api.meetings.files.download', [$meeting->id, $f->id]),
+            ])->values()
+            : [];
+
         return response()->json(['data' => $data]);
     }
 
@@ -120,6 +142,28 @@ class MeetingApiController extends Controller
         ]);
     }
 
+    /**
+     * Stream a meeting file to the app.
+     *
+     * Same gate as the web download, written out again rather than shared: the
+     * two run under different guards, and a single helper that assumed a
+     * session would be the kind of thing that quietly stops checking.
+     */
+    public function downloadFile(Request $request, Meeting $meeting, MeetingFile $file)
+    {
+        abort_unless($file->meeting_id === $meeting->id, 404);
+
+        $user = $request->user();
+        abort_unless(
+            $meeting->involves($user) || $user->hasAnyRole(['super-admin', 'hr-admin']),
+            403,
+            'This file belongs to a meeting you are not part of.'
+        );
+
+        abort_unless(Storage::disk('local')->exists($file->path), 404, 'File not found.');
+
+        return Storage::disk('local')->download($file->path, $file->original_name);
+    }
     private function formatMeeting(Meeting $m): array
     {
         return [
@@ -134,6 +178,7 @@ class MeetingApiController extends Controller
             'status'          => $m->status ?? 'scheduled',
             'organizer'       => $m->organizer?->full_name,
             'participant_count' => $m->participants()->count(),
+            'file_count'        => $m->files()->count(),
         ];
     }
 }
