@@ -234,9 +234,16 @@
                                 @elseif($q->question_type === 'scale')
                                 <div class="flex gap-2">
                                     @foreach([1,2,3,4,5] as $val)
-                                    <label class="flex-1 text-center p-2 rounded-lg border border-slate-200 cursor-pointer hover:bg-amber-50 hover:border-amber-300 transition text-sm font-medium">
+                                    {{-- The input covers the box at zero opacity rather than using
+                                         sr-only. An sr-only control is clipped to a point, and a
+                                         browser will not show a validation message on something it
+                                         cannot focus: an applicant who skipped a scale question got
+                                         no message and no submission, just a dead Apply button. At
+                                         zero opacity it stays focusable, so `required` works, and
+                                         the whole box becomes the click target. --}}
+                                    <label class="relative flex-1 text-center p-2 rounded-lg border border-slate-200 cursor-pointer hover:bg-amber-50 hover:border-amber-300 transition text-sm font-medium">
                                         <input type="radio" name="screening[{{ $q->id }}]" value="{{ $val }}"
-                                            class="sr-only" required>
+                                            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" required>
                                         <span class="block">{{ $val }}</span>
                                         <span class="text-xs text-slate-400">{{ $val === 1 ? 'Low' : ($val === 5 ? 'High' : '') }}</span>
                                     </label>
