@@ -6,14 +6,14 @@
 
 <x-page-header title="Company Documents"
                subtitle="{{ $canUpload
-                    ? 'Approved Mastermind documents. You maintain this library.'
+                    ? 'Approved Mastermind documents. You can submit new ones for approval.'
                     : 'Approved Mastermind documents, available to all staff' }}">
     @if($canUpload)
     {{-- Toggled with .hidden rather than a style, so it works whether or not
          Alpine has booted. --}}
     <button type="button"
             onclick="var p=document.getElementById('library-upload'); p.hidden=!p.hidden; if(!p.hidden){p.scrollIntoView({behavior:'smooth',block:'nearest'});}"
-            class="btn-primary"><i class="fas fa-paperclip mr-1"></i> Attach a document</button>
+            class="btn-primary"><i class="fas fa-paperclip mr-1"></i> Add a document</button>
     @endif
 </x-page-header>
 
@@ -46,9 +46,21 @@
             </div>
         </div>
 
-        <div>
-            <label class="form-label">Description (optional)</label>
-            <textarea name="description" rows="2" class="form-input">{{ old('description') }}</textarea>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="form-label">Description (optional)</label>
+                <textarea name="description" rows="2" class="form-input">{{ old('description') }}</textarea>
+            </div>
+            <div>
+                <label class="form-label">Send to for approval</label>
+                <select name="approver_id" required class="form-select">
+                    <option value="">Choose an approver</option>
+                    @foreach($approvers as $u)
+                        <option value="{{ $u->id }}" @selected(old('approver_id') == $u->id)>{{ $u->name }}</option>
+                    @endforeach
+                </select>
+                <p class="text-xs text-slate-400 mt-1">It cannot be you.</p>
+            </div>
         </div>
 
         <x-file-drop name="file" label="Document" :required="true" />
@@ -56,13 +68,38 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <p class="text-xs text-slate-400 flex-1 min-w-[240px]">
                 <i class="fas fa-circle-info mr-1"></i>
-                Published to every member of staff as soon as it uploads, without the
-                editor and approver steps. Use Document Control if it needs review first.
+                This does not publish it. The document goes to your approver, and
+                appears in Company Documents once it is approved and published.
             </p>
-            <button class="btn-primary whitespace-nowrap"><i class="fas fa-cloud-arrow-up mr-1"></i> Upload</button>
+            <button class="btn-primary whitespace-nowrap"><i class="fas fa-paper-plane mr-1"></i> Send for approval</button>
         </div>
     </form>
 </div>
+
+{{-- What this person has in flight. Without it, sending a document for approval
+     looks like nothing happened: it is not in the library and will not be until
+     somebody else acts. --}}
+@if($awaiting->isNotEmpty())
+<div class="mb-6 rounded-xl bg-amber-50 border border-amber-200 p-4">
+    <p class="text-sm font-semibold text-amber-900 mb-2">
+        <i class="fas fa-hourglass-half mr-1"></i> Your documents waiting on approval
+    </p>
+    <ul class="divide-y divide-amber-200/60">
+        @foreach($awaiting as $doc)
+        <li class="flex flex-wrap items-center justify-between gap-2 py-2">
+            <div>
+                <a href="{{ route('quality.documents.show', $doc) }}" class="text-sm font-medium text-amber-900 underline">{{ $doc->title }}</a>
+                <span class="text-xs text-amber-700/80">&middot; {{ $doc->doc_number }}</span>
+            </div>
+            <span class="text-xs text-amber-800">
+                {{ str_replace('_', ' ', $doc->status) }}
+                @if($doc->approver) &middot; with {{ $doc->approver->name }} @endif
+            </span>
+        </li>
+        @endforeach
+    </ul>
+</div>
+@endif
 @endif
 
 <form method="GET" class="flex flex-wrap items-center gap-2 mb-4">
@@ -94,7 +131,7 @@
     <div class="col-span-full rounded-xl border-2 border-dashed border-slate-200 bg-white p-10 text-center text-slate-400">
         <i class="fas fa-folder-open text-3xl mb-2"></i>
         <p class="text-sm">No published documents yet.</p>
-        @if($canUpload)<p class="text-xs mt-1">Attach one to start the library.</p>@endif
+        @if($canUpload)<p class="text-xs mt-1">Add one to start the library.</p>@endif
     </div>
     @endforelse
 </div>

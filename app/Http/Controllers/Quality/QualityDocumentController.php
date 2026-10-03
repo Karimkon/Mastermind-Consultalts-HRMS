@@ -43,11 +43,12 @@ class QualityDocumentController extends Controller
      * The quality manager and the appointed auditors maintain Company Documents;
      * everybody else reads and downloads. This is wider than canManage() on
      * purpose - the auditor cannot drive somebody else's document through the
-     * workflow, but may publish into the library he is responsible for.
+     * workflow, but may put one into it.
      *
-     * Note this bypasses Initiator -> Editor -> Approver. That is the point of
-     * the button, and the bypass is written into the document's own timeline as
-     * a direct publish so it is never silent.
+     * Submitting is not publishing. What this permits is starting a document
+     * and sending it to a named approver; it reaches the library only once that
+     * approver has approved it and a manager has published it, exactly like
+     * anything raised in Document Control.
      */
     private function canUploadToLibrary(?User $u): bool
     {
@@ -68,14 +69,36 @@ class QualityDocumentController extends Controller
 
         $canUpload = $this->canUploadToLibrary($request->user());
 
-        return view('quality.documents.library', compact('documents', 'category', 'canUpload'));
+        // Only loaded for the handful of people who can actually submit.
+        $approvers = $canUpload
+            ? User::whereHas('roles', fn ($q) => $q->where('name', '!=', 'client'))
+                ->where('id', '!=', $request->user()->id)
+                ->orderBy('name')->get(['id', 'name'])
+            : collect();
+
+        // What the uploader has in flight, so submitting does not look like
+        // nothing happened while it waits on somebody else.
+        $awaiting = $canUpload
+            ? QualityDocument::where('initiator_id', $request->user()->id)
+                ->whereIn('status', ['draft', 'in_review', 'pending_approval', 'approved'])
+                ->with('approver')->latest()->get()
+            : collect();
+
+        return view('quality.documents.library',
+            compact('documents', 'category', 'canUpload', 'approvers', 'awaiting'));
     }
 
     /**
-     * Add a document straight to the company library.
+     * Submit a document for the company library.
      *
      * Quality manager and auditors only - the staff-wide route is open to any
      * signed-in user, so the gate lives here rather than in the middleware.
+     *
+     * This does NOT publish. The document is created against a named approver
+     * and goes into the same Initiator -> Approver -> Publish chain as anything
+     * raised in Document Control, so nothing reaches every member of staff
+     * without somebody having agreed to it. It appears in the library when a
+     * manager publishes it.
      */
     public function libraryUpload(Request $request)
     {
@@ -86,8 +109,14 @@ class QualityDocumentController extends Controller
             'title' => 'required|string|max:255',
             'category' => 'required|in:' . implode(',', array_keys(QualityDocument::CATEGORIES)),
             'description' => 'nullable|string',
+            // Someone other than the submitter has to agree to it, so this is
+            // required and may not be the submitter.
+            'approver_id' => 'required|exists:users,id|not_in:' . $request->user()->id,
             // Any format; size is the only limit. See QualityDocument::maxUploadKb().
             'file' => 'required|file|max:' . QualityDocument::maxUploadKb(),
+        ], [
+            'approver_id.required' => 'Choose who should approve this document.',
+            'approver_id.not_in' => 'Somebody else has to approve it.',
         ]);
 
         $doc = QualityDocument::create([
@@ -95,17 +124,19 @@ class QualityDocumentController extends Controller
             'title' => $data['title'],
             'category' => $data['category'],
             'description' => $data['description'] ?? null,
-            'status' => 'published',
+            'status' => 'pending_approval',
             'initiator_id' => $request->user()->id,
-            'published_at' => now(),
+            'approver_id' => $data['approver_id'],
         ]);
 
-        $this->storeFile($doc, $request->file('file'), $request->user()->id, 'Uploaded to the company library');
-        $this->event($doc, 'created', 'Uploaded directly to the company library');
-        $this->event($doc, 'published', 'Published on upload, without the editor and approver steps');
+        $this->storeFile($doc, $request->file('file'), $request->user()->id, 'Submitted for the company library');
+        $this->event($doc, 'created', 'Submitted for the company library');
+        $this->event($doc, 'submitted_for_approval', 'Sent for approval before publishing');
+        $this->notify($doc->approver_id, "Document to approve: {$doc->title}", $doc);
 
         return redirect()->route('quality.documents.library')
-            ->with('success', "{$doc->doc_number} published to Company Documents.");
+            ->with('success', "{$doc->doc_number} sent to {$doc->approver?->name} for approval. "
+                . 'It appears in Company Documents once it is approved and published.');
     }
     // ===== Management / workflow (quality-manager + admins; auditors read only) =====
 
