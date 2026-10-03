@@ -121,7 +121,25 @@ class ProfilePhoto
         return $path;
     }
 
-    /** Square centre crop at AVATAR_PX, as JPEG bytes. Null if undecodable. */
+    /**
+     * Square centre crop at AVATAR_PX, as JPEG bytes. Null if undecodable.
+     *
+     * Imagick is tried FIRST, and the order matters more than it looks. GD
+     * decodes a JPEG into a full truecolor bitmap - four bytes per pixel,
+     * whatever the file weighs - so a 48MP phone photo needs about 192MB. The
+     * web process has 256MB, and crossing it is not an exception that can be
+     * caught: the request dies and the member of staff sees a blank failure.
+     *
+     * Measured on production: 12MP peaked at 124MB, 27MP at 242MB, and 48MP
+     * killed the process outright. That is the whole of "some staff can upload
+     * a photo and some cannot" - it follows the camera in their phone and
+     * nothing about them. File size does not predict it; a 48MP photo can be
+     * 5MB on disk.
+     *
+     * Imagick's jpeg:size hint makes the decoder scale during the DCT pass, so
+     * it never holds the full bitmap and memory stays roughly flat whatever the
+     * input. It also reads HEIC where the delegate is installed.
+     */
     private static function toSquareJpeg(UploadedFile $file): ?string
     {
         $raw = @file_get_contents($file->getRealPath());
@@ -129,34 +147,72 @@ class ProfilePhoto
             return null;
         }
 
-        if (function_exists('imagecreatefromstring')) {
-            $jpeg = self::viaGd($raw, $file->getRealPath());
+        if (class_exists(\Imagick::class)) {
+            $jpeg = self::viaImagick($raw);
             if ($jpeg !== null) {
                 return $jpeg;
             }
         }
 
-        // GD cannot read HEIC; Imagick can when the delegate is installed.
-        if (class_exists(\Imagick::class)) {
-            try {
-                $im = new \Imagick();
-                $im->readImageBlob($raw);
-                $im->autoOrient();
-                $im->setImageBackgroundColor('white');
-                $im = $im->flattenImages();
-                $im->cropThumbnailImage(self::AVATAR_PX, self::AVATAR_PX);
-                $im->setImageFormat('jpeg');
-                $im->setImageCompressionQuality(self::JPEG_QUALITY);
-                $blob = $im->getImageBlob();
-                $im->clear();
-
-                return $blob;
-            } catch (\Throwable $e) {
-                report($e);
-            }
+        // GD only decodes at full size, so refuse what would not fit rather
+        // than letting the request die with nothing to show for it.
+        if (function_exists('imagecreatefromstring') && self::fitsInMemory($raw)) {
+            return self::viaGd($raw, $file->getRealPath());
         }
 
         return null;
+    }
+
+    /** Decode pre-scaled, so memory does not track the input resolution. */
+    private static function viaImagick(string $raw): ?string
+    {
+        try {
+            $im = new \Imagick();
+            // Ask the JPEG decoder for something near the size we need. Ignored
+            // by other formats, which is harmless.
+            $im->setOption('jpeg:size', (self::AVATAR_PX * 2) . 'x' . (self::AVATAR_PX * 2));
+            $im->readImageBlob($raw);
+            $im->autoOrient();
+            $im->setImageBackgroundColor('white');
+            $im = $im->flattenImages();
+            $im->cropThumbnailImage(self::AVATAR_PX, self::AVATAR_PX);
+            $im->setImageFormat('jpeg');
+            $im->setImageCompressionQuality(self::JPEG_QUALITY);
+            $blob = $im->getImageBlob();
+            $im->clear();
+            $im->destroy();
+
+            return $blob ?: null;
+        } catch (\Throwable $e) {
+            report($e);
+
+            return null;
+        }
+    }
+
+    /**
+     * Would GD's full-size decode fit in what is left of the memory limit?
+     *
+     * Four bytes per pixel for the bitmap, plus the raw bytes already held, plus
+     * the output canvas, plus headroom for everything else in the request.
+     */
+    private static function fitsInMemory(string $raw): bool
+    {
+        $info = @getimagesizefromstring($raw);
+        if (! $info) {
+            return false;
+        }
+
+        $limit = self::iniBytes(ini_get('memory_limit'));
+        if ($limit <= 0) {
+            return true;       // unlimited
+        }
+
+        $needed = ($info[0] * $info[1] * 4)
+            + strlen($raw)
+            + (self::AVATAR_PX * self::AVATAR_PX * 4);
+
+        return ($needed + memory_get_usage(true)) < ($limit * 0.8);
     }
 
     private static function viaGd(string $raw, string $path): ?string
