@@ -7,7 +7,7 @@
     <a href="{{ route('payroll.index') }}" class="btn-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
 
     {{-- Manual Days Upload (draft/processing stage only) --}}
-    @if(!$payroll->isLocked() && in_array($payroll->status, ['draft','processing']))
+    @if(!$payroll->isLocked() && !$payroll->isImported() && in_array($payroll->status, ['draft','processing']))
     <div class="relative" x-data="{ showUpload: false }">
         <button @click="showUpload = !showUpload" class="btn-secondary flex items-center gap-1">
             <i class="fas fa-calendar-alt text-indigo-600"></i> Manual Days
@@ -26,7 +26,7 @@
     @endif
 
     {{-- Stage 1: AM processes --}}
-    @if(!$payroll->isLocked() && in_array($payroll->status, ['draft','processing']))
+    @if(!$payroll->isLocked() && !$payroll->isImported() && in_array($payroll->status, ['draft','processing']))
     <form method="POST" action="{{ route('payroll.process', $payroll) }}" class="inline">
         @csrf <button class="btn-primary"><i class="fas fa-play mr-1"></i> Run &amp; Submit to HR</button>
     </form>
@@ -348,6 +348,29 @@
     </div>
 </div>
 @endif
+{{-- Imported-run banner.
+
+     Somebody reading these figures needs to know the engine did not produce
+     them before they try to reconcile them against a salary record, and before
+     they reach for Process to "refresh" the run. --}}
+@if($payroll->isImported())
+<div class="mb-5 flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800">
+    <i class="fas fa-file-import text-xl mt-0.5"></i>
+    <div>
+        <p class="font-semibold">These payslips were imported, not calculated.</p>
+        <p class="text-sm">
+            They record what was actually paid{{ $payroll->imported_at ? ' and were loaded on '.$payroll->imported_at->format('j M Y') : '' }}.
+            The payroll engine cannot reproduce them, so this run can no longer be processed —
+            re-running it would replace the real figures with ones derived from today's salary records.
+            Corrections belong in a new run.
+        </p>
+        @if($payroll->import_note)
+        <p class="text-sm mt-1 italic">{{ $payroll->import_note }}</p>
+        @endif
+    </div>
+</div>
+@endif
+
 {{-- Lock warning banner --}}
 @if($payroll->isLocked())
 <div class="mb-5 flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">

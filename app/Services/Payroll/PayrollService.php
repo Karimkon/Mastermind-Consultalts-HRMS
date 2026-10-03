@@ -2,6 +2,7 @@
 namespace App\Services\Payroll;
 
 use App\Models\{Employee, PayrollRun, Payslip, EmployeeSalary, SalaryComponent, AttendanceLog, LeaveRequest, PayrollManualDays, PublicHoliday, HolidayPayApproval, HolidayWork};
+use App\Exceptions\ImportedPayrollRunException;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 
@@ -36,6 +37,18 @@ class PayrollService
 
     public function processRun(PayrollRun $run): int
     {
+        // An imported run holds payslips this engine did not produce and cannot
+        // reproduce. Re-processing would silently replace what was really paid
+        // with figures derived from today's salary records, so it is refused
+        // here as well as at every controller — this is the floor, and any new
+        // caller gets the protection without having to remember it.
+        if ($run->isImported()) {
+            throw new ImportedPayrollRunException(
+                'Payroll run '.$run->id.' was imported on '.$run->imported_at->toDateString()
+                .' and cannot be re-processed. Create a new run instead.'
+            );
+        }
+
         $today = now()->toDateString();
         $query = Employee::whereIn('status', ['active', 'on_leave'])
             ->where('is_blacklisted', false)
@@ -271,13 +284,26 @@ class PayrollService
         }
 
         // ── Unpaid leave deduction ──────────────────────────────────
+        //
+        // Only leave that was actually granted is deducted. This read
+        // 'rejected' — the one status that means the days were never taken —
+        // so it docked pay for leave that had been refused and let genuine
+        // unpaid leave through untouched. Nobody noticed because no unpaid
+        // leave has been requested yet; the rule was simply never exercised.
+        //
+        // The days are counted over the overlap with this payroll period
+        // rather than the whole request. The window matched a request on
+        // either its start or its end date and then summed days_count, so an
+        // absence straddling month-end was charged in full against both
+        // months — 9 days of leave taking 18 days of pay. That only mattered
+        // once the status above was right, which is why both are fixed here.
         $unpaidLeaveDays = LeaveRequest::where('employee_id', $employee->id)
-            ->whereIn('status', ['rejected'])
+            ->where('status', 'approved')
             ->whereHas('leaveType', fn($q) => $q->where('is_paid', false))
-            ->where(function ($q) use ($start, $end) {
-                $q->whereBetween('from_date', [$start->toDateString(), $end->toDateString()])
-                  ->orWhereBetween('to_date', [$start->toDateString(), $end->toDateString()]);
-            })->sum('days_count');
+            ->where('from_date', '<=', $end->toDateString())
+            ->where('to_date', '>=', $start->toDateString())
+            ->get()
+            ->sum(fn($leave) => $this->leaveDaysInPeriod($leave, $start, $end));
 
         $leaveDeductionRate = match($salaryType) {
             'daily'  => $rateValue,
@@ -489,6 +515,38 @@ class PayrollService
         return ['extra_days' => $extra, 'worked' => $worked, 'unapproved_worked' => $unapproved];
     }
 
+    /**
+     * How many of a leave request's days fall inside this payroll period.
+     *
+     * days_count is the authoritative length of the absence — it may already
+     * exclude weekends or holidays — so a request lying wholly inside the
+     * period is taken at face value. One that straddles a boundary is
+     * apportioned by the share of its calendar days that fall inside, which
+     * keeps the two months' deductions adding up to the one absence.
+     */
+    private function leaveDaysInPeriod(LeaveRequest $leave, Carbon $start, Carbon $end): float
+    {
+        $days = (float) $leave->days_count;
+        if ($days <= 0) return 0.0;
+
+        $from = Carbon::parse($leave->from_date)->startOfDay();
+        $to   = Carbon::parse($leave->to_date)->startOfDay();
+        if ($from->gt($to)) return 0.0;
+
+        $periodStart = $start->copy()->startOfDay();
+        $periodEnd   = $end->copy()->startOfDay();
+
+        if ($from->gte($periodStart) && $to->lte($periodEnd)) return $days;
+
+        $overlapFrom = $from->lt($periodStart) ? $periodStart : $from;
+        $overlapTo   = $to->gt($periodEnd)     ? $periodEnd   : $to;
+        if ($overlapFrom->gt($overlapTo)) return 0.0;
+
+        $totalSpan   = $from->diffInDays($to) + 1;
+        $overlapSpan = $overlapFrom->diffInDays($overlapTo) + 1;
+
+        return $totalSpan > 0 ? round($days * ($overlapSpan / $totalSpan), 2) : 0.0;
+    }
     private function countWorkingDays(Carbon $from, Carbon $to): int
     {
         $count  = 0;

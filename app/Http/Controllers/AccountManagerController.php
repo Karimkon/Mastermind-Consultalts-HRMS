@@ -591,6 +591,9 @@ class AccountManagerController extends Controller
         if ($run->isLocked()) {
             return back()->with('error', 'This payroll run is locked.');
         }
+        if ($run->isImported()) {
+            return back()->with('error', 'This run was imported and records what was actually paid. The system cannot reproduce its figures, so it cannot be re-processed — create a new run instead.');
+        }
         if (!in_array($run->status, ['draft', 'processing'])) {
             return back()->with('error', 'Payroll is already in the approval workflow.');
         }

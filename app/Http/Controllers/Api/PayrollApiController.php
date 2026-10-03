@@ -75,6 +75,9 @@ class PayrollApiController extends Controller
     public function process(PayrollRun $payroll)
     {
         if (!request()->user()->hasRole(['super-admin','hr-admin','payroll-officer'])) abort(403);
+        if ($payroll->isImported()) {
+            return response()->json(['message' => 'This run was imported and records what was actually paid. The system cannot reproduce its figures, so it cannot be re-processed — create a new run instead.'], 422);
+        }
         if (!in_array($payroll->status, ['draft','failed'])) {
             return response()->json(['message' => 'Already processed.'], 422);
         }

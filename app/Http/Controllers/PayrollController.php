@@ -372,6 +372,9 @@ class PayrollController extends Controller
     {
         $this->denyMd();
         if ($payroll->isLocked()) return back()->with('error', 'This payroll is locked.');
+        if ($payroll->isImported()) {
+            return back()->with('error', 'This run was imported and records what was actually paid. The system cannot reproduce its figures, so it cannot be re-processed — create a new run instead.');
+        }
         if (in_array($payroll->status, ['hr_approved','finance_approved','md_approved','approved','paid'])) {
             return back()->with('error', 'Payroll is already in approval workflow.');
         }

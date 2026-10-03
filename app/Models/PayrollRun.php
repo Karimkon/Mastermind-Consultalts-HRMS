@@ -6,7 +6,8 @@ class PayrollRun extends Model {
     protected $fillable = [
         'title','month','year','status','client_id',
         'employment_type','hours_based','billing_total','billing_rate_override',
-        'processed_by','processed_at','approved_by','approved_at',
+        'processed_by','processed_at','imported_at','import_note',
+        'approved_by','approved_at',
         'hr_approved_by','hr_approved_at',
         'finance_approved_by','finance_approved_at',
         'md_approved_by','md_approved_at',
@@ -15,6 +16,7 @@ class PayrollRun extends Model {
     ];
     protected $casts = [
         'processed_at'      => 'datetime',
+        'imported_at'       => 'datetime',
         'approved_at'       => 'datetime',
         'hr_approved_at'    => 'datetime',
         'finance_approved_at' => 'datetime',
@@ -36,6 +38,15 @@ class PayrollRun extends Model {
 
     // Status stages: draft → processed → hr_approved → finance_approved → md_approved(locked) → paid
     public function isLocked(): bool   { return !is_null($this->locked_at); }
+
+    /**
+     * True when this run's payslips came from outside the system.
+     *
+     * Such a run records what was actually paid; the engine cannot reproduce
+     * it, so re-processing would not correct it but overwrite it. Processing
+     * is refused for as long as this is set.
+     */
+    public function isImported(): bool { return !is_null($this->imported_at); }
     public function isEditable(): bool { return !$this->isLocked() && !in_array($this->status, ['paid']); }
 
     public function workflowStage(): int
@@ -64,7 +75,12 @@ class PayrollRun extends Model {
         'payroll-officer' => ['hr_approved', 'md_approved', 'approved'],
         'md'              => ['finance_approved'],
         'account-manager' => ['draft'],
-        'super-admin'     => ['processed', 'hr_approved', 'finance_approved', 'md_approved', 'approved'],
+        // The admin oversees the whole chain but is not a workflow step, so
+        // the badge counts only runs that have just arrived and nobody has yet
+        // acted on - the genuinely unattended ones sitting at the first review.
+        // Counting every pending stage made the badge the size of the whole
+        // pipeline, which told the admin nothing.
+        'super-admin'     => ['processed'],
     ];
 
     /**

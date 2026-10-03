@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\AttendanceLog;
 use App\Models\Employee;
 use App\Models\EmployeeSalary;
+use App\Models\LeaveRequest;
+use App\Models\LeaveType;
 use App\Models\PayrollRun;
 use App\Models\SalaryComponent;
 use App\Services\Payroll\PayrollService;
@@ -489,5 +491,138 @@ class PayrollCalculationTest extends TestCase
 
         $this->assertSame(0.0, (float) $payslip->basic_salary);
         $this->assertSame(0.0, (float) $payslip->net_salary);
+    }
+
+    // ── Unpaid leave ─────────────────────────────────────────────────────
+    //
+    // The deduction keyed off status 'rejected' — the one status that means
+    // the days were never taken. It docked pay for leave that had been
+    // refused and ignored unpaid leave that was actually granted. It had no
+    // test, and no unpaid leave had been requested on production, so the rule
+    // had simply never run.
+
+    private function unpaidLeave(Employee $e, string $from, string $to, float $days, string $status = 'approved'): void
+    {
+        // Not cached in a static: RefreshDatabase empties the table between
+        // tests, so a held-over model would point at an id that no longer exists.
+        $type = LeaveType::firstOrCreate(['code' => 'UNPAID'], [
+            'name' => 'Unpaid Leave',
+            'code' => 'UNPAID',
+            'days_allowed' => 30,
+            'is_paid' => false,
+        ]);
+
+        LeaveRequest::create([
+            'employee_id' => $e->id,
+            'leave_type_id' => $type->id,
+            'from_date' => $from,
+            'to_date' => $to,
+            'days_count' => $days,
+            'status' => $status,
+            'reason' => 'test',
+        ]);
+    }
+
+    public function test_approved_unpaid_leave_is_deducted(): void
+    {
+        $employee = $this->employee();
+        $this->salary($employee, 1_200_000);
+        $this->attend($employee, 30);
+        $this->unpaidLeave($employee, '2026-09-10', '2026-09-14', 5);
+
+        $payslip = $this->payroll->processEmployee($employee, $this->payrollRun());
+
+        // Daily rate is 1,200,000 × 12 ÷ 365 = 39,452.05; five days of it.
+        $this->assertSame(197_260.0, (float) $payslip->leave_deduction);
+    }
+
+    /** Refused leave was never taken, so it costs the employee nothing. */
+    public function test_rejected_unpaid_leave_is_not_deducted(): void
+    {
+        $employee = $this->employee();
+        $this->salary($employee, 1_200_000);
+        $this->attend($employee, 30);
+        $this->unpaidLeave($employee, '2026-09-10', '2026-09-14', 5, 'rejected');
+
+        $payslip = $this->payroll->processEmployee($employee, $this->payrollRun());
+
+        $this->assertSame(0.0, (float) $payslip->leave_deduction);
+    }
+
+    /** Leave still awaiting a decision is not deducted either. */
+    public function test_pending_unpaid_leave_is_not_deducted(): void
+    {
+        $employee = $this->employee();
+        $this->salary($employee, 1_200_000);
+        $this->attend($employee, 30);
+        $this->unpaidLeave($employee, '2026-09-10', '2026-09-14', 5, 'pending');
+
+        $payslip = $this->payroll->processEmployee($employee, $this->payrollRun());
+
+        $this->assertSame(0.0, (float) $payslip->leave_deduction);
+    }
+
+    /**
+     * An absence running across month-end is charged once, split between the
+     * two months — not in full against both.
+     *
+     * The query matched a request on either its start date or its end date and
+     * then summed the whole days_count, so ten days spanning September and
+     * October took twenty days of pay. Here six of the ten days fall in
+     * September, so six days' pay is what September may deduct.
+     */
+    public function test_leave_spanning_month_end_is_only_deducted_for_its_days_in_the_period(): void
+    {
+        $employee = $this->employee();
+        $this->salary($employee, 1_200_000);
+        $this->attend($employee, 30);
+        $this->unpaidLeave($employee, '2026-09-25', '2026-10-04', 10);
+
+        $payslip = $this->payroll->processEmployee($employee, $this->payrollRun());
+
+        // 25–30 September is 6 of the 10 days; 39,452.05 × 6 = 236,712.
+        $this->assertSame(236_712.0, (float) $payslip->leave_deduction);
+    }
+
+    /** Leave wholly in another month does not touch this payroll at all. */
+    public function test_leave_outside_the_period_is_not_deducted(): void
+    {
+        $employee = $this->employee();
+        $this->salary($employee, 1_200_000);
+        $this->attend($employee, 30);
+        $this->unpaidLeave($employee, '2026-07-01', '2026-07-05', 5);
+
+        $payslip = $this->payroll->processEmployee($employee, $this->payrollRun());
+
+        $this->assertSame(0.0, (float) $payslip->leave_deduction);
+    }
+
+    /** Paid leave types are never deducted, approved or not. */
+    public function test_paid_leave_is_not_deducted(): void
+    {
+        $employee = $this->employee();
+        $this->salary($employee, 1_200_000);
+        $this->attend($employee, 30);
+
+        $paid = LeaveType::create([
+            'name' => 'Annual Leave',
+            'code' => 'ANNUAL',
+            'days_allowed' => 21,
+            'is_paid' => true,
+        ]);
+
+        LeaveRequest::create([
+            'employee_id' => $employee->id,
+            'leave_type_id' => $paid->id,
+            'from_date' => '2026-09-10',
+            'to_date' => '2026-09-14',
+            'days_count' => 5,
+            'status' => 'approved',
+            'reason' => 'test',
+        ]);
+
+        $payslip = $this->payroll->processEmployee($employee, $this->payrollRun());
+
+        $this->assertSame(0.0, (float) $payslip->leave_deduction);
     }
 }
