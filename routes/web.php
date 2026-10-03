@@ -681,3 +681,81 @@ Route::middleware(['auth', 'role:super-admin|hr-admin|manager'])
         Route::post('/{post:id}/toggle-featured', [App\Http\Controllers\Admin\AdminBlogController::class, 'toggleFeatured'])->name('toggle-featured');
         Route::post('/{post:id}/duplicate', [App\Http\Controllers\Admin\AdminBlogController::class, 'duplicate'])->name('duplicate');
     });
+
+// ====================
+// QUALITY MANAGEMENT - the control layer over the whole HRMS
+// ====================
+Route::middleware(['auth', 'role:super-admin|hr-admin|manager|quality-manager|auditor'])
+    ->prefix('quality')->name('quality.')->group(function () {
+        Route::get('/', [App\Http\Controllers\Quality\QualityDashboardController::class, 'index'])->name('dashboard');
+
+        Route::get('/checks', [App\Http\Controllers\Quality\QualityCheckController::class, 'index'])->name('checks.index');
+        Route::post('/checks/run', [App\Http\Controllers\Quality\QualityCheckController::class, 'run'])->name('checks.run');
+        Route::get('/checks/results/{run?}', [App\Http\Controllers\Quality\QualityCheckController::class, 'results'])->name('checks.results');
+        Route::put('/checks/{check}/config', [App\Http\Controllers\Quality\QualityCheckController::class, 'updateConfig'])->name('checks.config');
+
+        // Standards - configurable scoring
+        Route::get('/standards', [App\Http\Controllers\Quality\QualityStandardController::class, 'index'])->name('standards.index');
+        Route::post('/standards', [App\Http\Controllers\Quality\QualityStandardController::class, 'store'])->name('standards.store');
+        Route::put('/standards/{standard}', [App\Http\Controllers\Quality\QualityStandardController::class, 'update'])->name('standards.update');
+        Route::post('/standards/{standard}/toggle', [App\Http\Controllers\Quality\QualityStandardController::class, 'toggle'])->name('standards.toggle');
+
+        // Non-conformities + CAPA
+        Route::get('/nonconformities', [App\Http\Controllers\Quality\NonconformityController::class, 'index'])->name('nonconformities.index');
+        Route::post('/nonconformities', [App\Http\Controllers\Quality\NonconformityController::class, 'store'])->name('nonconformities.store');
+        Route::get('/nonconformities/{nonconformity}', [App\Http\Controllers\Quality\NonconformityController::class, 'show'])->name('nonconformities.show');
+        Route::put('/nonconformities/{nonconformity}', [App\Http\Controllers\Quality\NonconformityController::class, 'update'])->name('nonconformities.update');
+        Route::post('/nonconformities/{nonconformity}/actions', [App\Http\Controllers\Quality\CorrectiveActionController::class, 'store'])->name('actions.store');
+        Route::put('/actions/{action}', [App\Http\Controllers\Quality\CorrectiveActionController::class, 'update'])->name('actions.update');
+
+        // Audits
+        Route::get('/audits', [App\Http\Controllers\Quality\AuditController::class, 'index'])->name('audits.index');
+        Route::get('/audits/create', [App\Http\Controllers\Quality\AuditController::class, 'create'])->name('audits.create');
+        Route::post('/audits', [App\Http\Controllers\Quality\AuditController::class, 'store'])->name('audits.store');
+        Route::get('/audits/{audit}', [App\Http\Controllers\Quality\AuditController::class, 'show'])->name('audits.show');
+        Route::put('/audits/{audit}', [App\Http\Controllers\Quality\AuditController::class, 'update'])->name('audits.update');
+        Route::post('/audits/{audit}/complete', [App\Http\Controllers\Quality\AuditController::class, 'complete'])->name('audits.complete');
+
+        // Compliance + Reports + Reviews
+        Route::get('/compliance', [App\Http\Controllers\Quality\ComplianceController::class, 'index'])->name('compliance.index');
+        Route::get('/reports', [App\Http\Controllers\Quality\ReportController::class, 'index'])->name('reports.index');
+        Route::get('/reviews', [App\Http\Controllers\Quality\QualityReviewController::class, 'index'])->name('reviews.index');
+        Route::post('/reviews', [App\Http\Controllers\Quality\QualityReviewController::class, 'store'])->name('reviews.store');
+        Route::get('/reviews/{review}', [App\Http\Controllers\Quality\QualityReviewController::class, 'show'])->name('reviews.show');
+        Route::put('/reviews/{review}', [App\Http\Controllers\Quality\QualityReviewController::class, 'update'])->name('reviews.update');
+
+        // Document control - management side (creating & listing). /documents/create
+        // is literal and declared before the {document} route in the staff group
+        // below, so it is never swallowed by the model binding.
+        Route::get('/documents', [App\Http\Controllers\Quality\QualityDocumentController::class, 'index'])->name('documents.index');
+        Route::get('/documents/create', [App\Http\Controllers\Quality\QualityDocumentController::class, 'create'])->name('documents.create');
+        Route::post('/documents', [App\Http\Controllers\Quality\QualityDocumentController::class, 'store'])->name('documents.store');
+
+        // Appoint the quality team (controller limits this to CEO/System Admin)
+        Route::get('/team', [App\Http\Controllers\Quality\QualityTeamController::class, 'index'])->name('team.index');
+        Route::post('/team/appoint', [App\Http\Controllers\Quality\QualityTeamController::class, 'appoint'])->name('team.appoint');
+        Route::post('/team/revoke', [App\Http\Controllers\Quality\QualityTeamController::class, 'revoke'])->name('team.revoke');
+    });
+
+// ====================
+// QUALITY - staff-wide routes (any logged-in employee; controllers enforce the
+// finer rules - published library for all, workflow steps for participants).
+// ====================
+Route::middleware('auth')->prefix('quality')->name('quality.')->group(function () {
+    // Published company document library - visible to every employee
+    Route::get('/library', [App\Http\Controllers\Quality\QualityDocumentController::class, 'library'])->name('documents.library');
+
+    // A document and its workflow - reachable by its initiator/editor/approver
+    Route::get('/documents/{document}', [App\Http\Controllers\Quality\QualityDocumentController::class, 'show'])->name('documents.show');
+    Route::post('/documents/{document}/upload', [App\Http\Controllers\Quality\QualityDocumentController::class, 'upload'])->name('documents.upload');
+    Route::post('/documents/{document}/transition', [App\Http\Controllers\Quality\QualityDocumentController::class, 'transition'])->name('documents.transition');
+    Route::get('/documents/{document}/files/{file}/download', [App\Http\Controllers\Quality\QualityDocumentController::class, 'download'])->name('documents.download');
+
+    // Quality goals - creation is manager-only (enforced in controller), the rest
+    // is for the assignee and initiator.
+    Route::get('/goals', [App\Http\Controllers\Quality\QualityGoalController::class, 'index'])->name('goals.index');
+    Route::post('/goals', [App\Http\Controllers\Quality\QualityGoalController::class, 'store'])->name('goals.store');
+    Route::get('/goals/{goal}', [App\Http\Controllers\Quality\QualityGoalController::class, 'show'])->name('goals.show');
+    Route::put('/goals/{goal}', [App\Http\Controllers\Quality\QualityGoalController::class, 'update'])->name('goals.update');
+    Route::get('/goals/{goal}/files/{file}/download', [App\Http\Controllers\Quality\QualityGoalController::class, 'download'])->name('goals.download');
+});

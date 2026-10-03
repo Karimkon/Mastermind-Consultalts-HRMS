@@ -10,9 +10,11 @@
     <meta name="upload-max-mb" content="{{ \App\Support\Uploads::maxMb() }}">
     <meta name="theme-color" content="#1d4ed8">
     <link rel="manifest" href="/manifest.json">
-    <link rel="icon" href="/favicon.ico?v=2" sizes="any">
-    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png?v=2">
-    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png?v=2">
+    <link rel="icon" href="/favicon.ico?v=3" sizes="any">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png?v=3">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png?v=3">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=3">
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png?v=2">
     <title>@yield("title","Dashboard") — Mastermind HRMS</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -87,6 +89,7 @@
         .sidebar-link { display:flex; align-items:center; gap:0.75rem; padding:0.625rem 1rem; border-radius:0.5rem; font-size:0.875rem; font-weight:500; color:#cbd5e1; text-decoration:none; transition:all 0.15s; }
         .sidebar-link:hover { background:#334155; color:#fff; }
         .sidebar-link.active { background:#1d4ed8; color:#fff; }
+        [x-cloak] { display:none !important; }
         .sidebar-group { padding:0.25rem 0.75rem; font-size:0.65rem; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:0.25rem; margin-top:1rem; }
 
         [data-nav-badge][hidden] { display: none !important; }
@@ -162,7 +165,7 @@
     </div>
 
     {{-- Navigation --}}
-    <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
+    <nav id="sidebar-nav" class="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
         <a href="{{ route('dashboard') }}" class="sidebar-link {{ request()->routeIs('dashboard') ? 'active' : '' }}">
             <i class="fas fa-home w-4 text-center"></i><span x-show="sidebarOpen">Dashboard</span>
         </a>
@@ -175,6 +178,15 @@
         @unlessrole('client')
         <a href="{{ route('org-structure.index') }}" class="sidebar-link {{ request()->routeIs('org-structure.*') ? 'active' : '' }}">
             <i class="fas fa-sitemap w-4 text-center"></i><span x-show="sidebarOpen">Organisational Structure</span>
+        </a>
+        {{-- Quality documents and goals are company-wide: every logged-in
+             employee can read published documents and see goals assigned to them,
+             so these live outside the admin-only Quality group. --}}
+        <a href="{{ route('quality.documents.library') }}" class="sidebar-link {{ request()->routeIs('quality.documents.library') ? 'active' : '' }}">
+            <i class="fas fa-book w-4 text-center"></i><span x-show="sidebarOpen">Company Documents</span>
+        </a>
+        <a href="{{ route('quality.goals.index') }}" class="sidebar-link {{ request()->routeIs('quality.goals.*') ? 'active' : '' }}">
+            <i class="fas fa-bullseye w-4 text-center"></i><span x-show="sidebarOpen">Quality Goals</span>
         </a>
         @endunlessrole
 
@@ -424,6 +436,83 @@
             @endif
         </a>
         @endrole
+        {{-- Close the admin block that opened above (Website / Human Resources /
+             Payroll). Quality has to sit OUTSIDE it: that block is
+             super-admin|hr-admin|manager, and widening it to admit the quality
+             manager would hand him Website, Payroll and Talent as well. --}}
+        @endrole
+
+        {{-- Quality Management: the control layer that sits over every HR module.
+             Collapsible, like Performance, with a badge counting the open issues
+             the quality engine has raised across the system.
+
+             quality-manager and auditor both belong here. Every route in this
+             block already admits them, but this gate left them out - so the one
+             person appointed to run quality could open /quality/documents/create
+             by typing the URL and had no link to it anywhere, and an appointed
+             auditor saw no Quality Management menu at all. Their only entry
+             point was the read-only published library.
+
+             The group is one gate, not per-link: the quality manager and the
+             auditor see the same eleven screens, and the controllers decide what
+             each may DO there - the auditor reads the document register, the
+             manager authors it. The one exception is Quality Team below, which
+             stays with the CEO. --}}
+        @role('super-admin|hr-admin|manager|quality-manager|auditor')
+        <p class="sidebar-group" x-show="sidebarOpen">Quality</p>
+        @php($qualityOpen = request()->routeIs('quality.*'))
+        @php($qualityOpenNc = \Illuminate\Support\Facades\Schema::hasTable('quality_nonconformities') ? \App\Models\QualityNonconformity::whereIn('status', ['open', 'investigating'])->count() : 0)
+        <div x-data="{ open: {{ $qualityOpen ? 'true' : 'false' }} }">
+            <button type="button" @click="open = !open" class="sidebar-link w-full {{ $qualityOpen ? 'active' : '' }}">
+                <i class="fas fa-shield-halved w-4 text-center"></i>
+                <span x-show="sidebarOpen" class="flex-1 text-left">Quality Management</span>
+                @if($qualityOpenNc)
+                <span x-show="sidebarOpen" title="Open non-conformities"
+                      class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold">{{ $qualityOpenNc }}</span>
+                @endif
+                <i x-show="sidebarOpen" class="fas fa-chevron-down text-[10px] transition-transform ml-1" :class="{ 'rotate-180': open }"></i>
+            </button>
+            <div x-show="open && sidebarOpen" class="ml-4 pl-3 border-l border-white/10">
+                <a href="{{ route('quality.dashboard') }}" class="sidebar-link {{ request()->routeIs('quality.dashboard') ? 'active' : '' }}">
+                    <i class="fas fa-gauge-high w-4 text-center"></i><span x-show="sidebarOpen">Quality Dashboard</span>
+                </a>
+                <a href="{{ route('quality.checks.index') }}" class="sidebar-link {{ request()->routeIs('quality.checks.*') ? 'active' : '' }}">
+                    <i class="fas fa-list-check w-4 text-center"></i><span x-show="sidebarOpen">Quality Checks</span>
+                </a>
+                <a href="{{ route('quality.standards.index') }}" class="sidebar-link {{ request()->routeIs('quality.standards.*') ? 'active' : '' }}">
+                    <i class="fas fa-clipboard-check w-4 text-center"></i><span x-show="sidebarOpen">Standards</span>
+                </a>
+                <a href="{{ route('quality.nonconformities.index') }}" class="sidebar-link {{ request()->routeIs('quality.nonconformities.*') ? 'active' : '' }}">
+                    <i class="fas fa-triangle-exclamation w-4 text-center"></i>
+                    <span x-show="sidebarOpen" class="flex-1">Non-conformities</span>
+                    @if($qualityOpenNc)<span x-show="sidebarOpen" class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-semibold">{{ $qualityOpenNc }}</span>@endif
+                </a>
+                <a href="{{ route('quality.audits.index') }}" class="sidebar-link {{ request()->routeIs('quality.audits.*') ? 'active' : '' }}">
+                    <i class="fas fa-clipboard-list w-4 text-center"></i><span x-show="sidebarOpen">Audits</span>
+                </a>
+                <a href="{{ route('quality.compliance.index') }}" class="sidebar-link {{ request()->routeIs('quality.compliance.*') ? 'active' : '' }}">
+                    <i class="fas fa-scale-balanced w-4 text-center"></i><span x-show="sidebarOpen">Compliance</span>
+                </a>
+                <a href="{{ route('quality.reports.index') }}" class="sidebar-link {{ request()->routeIs('quality.reports.*') ? 'active' : '' }}">
+                    <i class="fas fa-chart-line w-4 text-center"></i><span x-show="sidebarOpen">Reports</span>
+                </a>
+                <a href="{{ route('quality.reviews.index') }}" class="sidebar-link {{ request()->routeIs('quality.reviews.*') ? 'active' : '' }}">
+                    <i class="fas fa-users-rectangle w-4 text-center"></i><span x-show="sidebarOpen">Reviews</span>
+                </a>
+                <a href="{{ route('quality.documents.index') }}" class="sidebar-link {{ request()->routeIs('quality.documents.index') || request()->routeIs('quality.documents.create') || request()->routeIs('quality.documents.show') ? 'active' : '' }}">
+                    <i class="fas fa-file-signature w-4 text-center"></i><span x-show="sidebarOpen">Document Control</span>
+                </a>
+                @role('super-admin|md')
+                <a href="{{ route('quality.team.index') }}" class="sidebar-link {{ request()->routeIs('quality.team.*') ? 'active' : '' }}">
+                    <i class="fas fa-user-shield w-4 text-center"></i><span x-show="sidebarOpen">Quality Team</span>
+                </a>
+                @endrole
+            </div>
+        </div>
+        @endrole
+
+        {{-- Back inside the admin block for Talent and everything below it. --}}
+        @role('super-admin|hr-admin|manager')
 
         <p class="sidebar-group" x-show="sidebarOpen">Talent</p>
         @role('super-admin|hr-admin')
@@ -540,6 +629,27 @@
         </button>
     </div>
 </aside>
+{{-- Keep the sidebar where you left it. On a full page load the nav used to
+     jump back to the top, so after clicking something far down (e.g. inside
+     Performance Management) you had to scroll down again to find your place.
+     We remember the scroll position per browser and restore it before paint. --}}
+<script>
+    (function () {
+        var nav = document.getElementById('sidebar-nav');
+        if (!nav) return;
+        try {
+            var saved = localStorage.getItem('sidebarScroll');
+            if (saved !== null) nav.scrollTop = parseInt(saved, 10) || 0;
+        } catch (e) {}
+        var t;
+        nav.addEventListener('scroll', function () {
+            clearTimeout(t);
+            t = setTimeout(function () {
+                try { localStorage.setItem('sidebarScroll', nav.scrollTop); } catch (e) {}
+            }, 80);
+        });
+    })();
+</script>
 
 {{-- MAIN CONTENT --}}
 <div id="app-main" class="transition-all duration-300" style="margin-left:256px" :style="sidebarOpen ? 'margin-left:256px' : 'margin-left:0px'">

@@ -39,6 +39,7 @@ class Notification extends Model
         'new_application'       => 'recruitment',
         'probation_due'         => 'probation',
         'change_requested'      => 'change_approvals',
+        'quality_alert'         => 'quality',
     ];
 
     /**

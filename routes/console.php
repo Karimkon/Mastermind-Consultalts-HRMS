@@ -45,3 +45,7 @@ Schedule::command('hrms:probation-alerts')->dailyAt('08:45');
 // Place pending applications on the map. The queue normally does this the
 // moment somebody applies; this catches whatever it missed.
 Schedule::command('hrms:resolve-applicant-origins')->everyThirtyMinutes();
+
+// Quality: a full automated quality scan every night, so the dashboard, the
+// non-conformity backlog and the Reports trend are always current.
+Schedule::command('quality:scan')->dailyAt('02:30');
