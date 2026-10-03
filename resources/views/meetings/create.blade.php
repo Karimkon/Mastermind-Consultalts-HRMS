@@ -4,7 +4,7 @@
 <x-page-header title="Schedule Meeting">
     <a href="{{ route('meetings.index') }}" class="btn-secondary"><i class="fas fa-arrow-left mr-1"></i> Back</a>
 </x-page-header>
-<form method="POST" action="{{ route('meetings.store') }}" class="max-w-2xl">
+<form method="POST" action="{{ route('meetings.store') }}" class="max-w-2xl" enctype="multipart/form-data" data-upload-progress>
     @csrf
     <div class="card p-6 space-y-4">
         <div><label class="form-label">Meeting Title *</label><input type="text" name="title" class="form-input" required value="{{ old('title') }}"></div>
@@ -41,7 +41,16 @@
             </select>
             <p class="text-xs text-slate-400 mt-1">Invite emails will be queued to all selected participants.</p>
         </div>
+        {{-- The papers people are meant to have read. Participants can open
+             these from the meeting; nobody else can. --}}
+        <div>
+            <x-file-drop name="files[]" label="Attach documents (optional)" :multiple="true" />
+            <p class="text-xs text-slate-400 mt-1">Only the organizer and the people invited can open them.</p>
+        </div>
+
         <button type="submit" class="btn-primary"><i class="fas fa-calendar-check mr-1"></i> Schedule Meeting</button>
     </div>
 </form>
+<x-transfer-progress />
+
 @endsection

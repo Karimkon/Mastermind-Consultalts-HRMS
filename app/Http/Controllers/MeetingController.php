@@ -1,6 +1,10 @@
 <?php
 namespace App\Http\Controllers;
 
+use Illuminate\Support\Facades\Storage;
+use App\Models\User;
+use App\Models\QualityDocument;
+use App\Models\MeetingFile;
 use App\Models\{Meeting, MeetingParticipant, Employee};
 use App\Mail\MeetingInviteMail;
 use App\Services\NotificationService;
@@ -25,6 +29,90 @@ class MeetingController extends Controller
         return view('meetings.create', compact('employees'));
     }
 
+    /**
+     * Attach files to a meeting that already exists.
+     *
+     * Organizer only. A participant who could add papers could also add them
+     * after everybody had read the pack.
+     */
+    public function uploadFiles(Request $request, Meeting $meeting)
+    {
+        abort_unless($this->canOrganise($request->user(), $meeting), 403);
+
+        $request->validate([
+            'files' => 'required|array|min:1',
+            'files.*' => 'required|file|max:' . QualityDocument::maxUploadKb(),
+        ]);
+
+        $this->storeFiles($request, $meeting);
+
+        return back()->with('success', 'Attached to the meeting.');
+    }
+
+    public function destroyFile(Request $request, Meeting $meeting, MeetingFile $file)
+    {
+        abort_unless($file->meeting_id === $meeting->id, 404);
+        abort_unless($this->canOrganise($request->user(), $meeting), 403);
+
+        Storage::disk('local')->delete($file->path);
+        $file->delete();
+
+        return back()->with('success', 'Attachment removed.');
+    }
+
+    /**
+     * Stream a meeting file.
+     *
+     * The organizer and the invited participants, and nobody else — these are
+     * the papers for one meeting, not company reading. Admins are included
+     * because they already administer the record.
+     */
+    public function downloadFile(Request $request, Meeting $meeting, MeetingFile $file)
+    {
+        abort_unless($file->meeting_id === $meeting->id, 404);
+
+        $user = $request->user();
+        abort_unless(
+            $meeting->involves($user) || $user->hasAnyRole(['super-admin', 'hr-admin']),
+            403,
+            'This file belongs to a meeting you are not part of.'
+        );
+
+        abort_unless(Storage::disk('local')->exists($file->path), 404, 'File not found.');
+
+        return Storage::disk('local')->download($file->path, $file->original_name);
+    }
+
+    /** Who may add or remove papers: the organizer, or an administrator. */
+    private function canOrganise(?User $user, Meeting $meeting): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        return $meeting->organizer_id === $user->employee?->id
+            || $user->hasAnyRole(['super-admin', 'hr-admin']);
+    }
+
+    private function storeFiles(Request $request, Meeting $meeting): void
+    {
+        foreach ((array) $request->file('files', []) as $upload) {
+            if (! $upload) {
+                continue;
+            }
+
+            MeetingFile::create([
+                'meeting_id'    => $meeting->id,
+                // Private disk: a meeting pack is not public, and a guessable
+                // URL under public/ would be.
+                'path'          => $upload->store('meetings/' . $meeting->id, 'local'),
+                'original_name' => $upload->getClientOriginalName(),
+                'mime'          => $upload->getClientMimeType(),
+                'size'          => $upload->getSize(),
+                'uploaded_by'   => $request->user()->id,
+            ]);
+        }
+    }
     public function store(Request $request)
     {
         $request->validate([
@@ -33,6 +121,9 @@ class MeetingController extends Controller
             'end_at'                => 'required|date|after:start_at',
             'recurrence'            => 'nullable|in:daily,weekly,biweekly,monthly',
             'recurrence_end_date'   => 'nullable|date|after:start_at',
+            // Papers for the meeting. No format is refused — an agenda, a board
+            // pack, a spreadsheet, a slide deck — only the size is capped.
+            'files.*'               => 'nullable|file|max:' . QualityDocument::maxUploadKb(),
         ]);
 
         $meeting = Meeting::create([
@@ -46,6 +137,8 @@ class MeetingController extends Controller
             'recurrence'           => $request->recurrence ?: null,
             'recurrence_end_date'  => $request->recurrence_end_date ?: null,
         ]);
+
+        $this->storeFiles($request, $meeting);
 
         if ($request->participants) {
             foreach ($request->participants as $empId) {

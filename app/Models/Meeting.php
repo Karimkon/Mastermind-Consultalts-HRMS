@@ -17,6 +17,20 @@ class Meeting extends Model
 
     public function organizer()    { return $this->belongsTo(Employee::class, 'organizer_id'); }
     public function participants() { return $this->hasMany(MeetingParticipant::class); }
+    public function files()        { return $this->hasMany(MeetingFile::class)->latest(); }
+
+    /** The organizer and everybody invited — who may see the papers. */
+    public function involves(?User $user): bool
+    {
+        $employeeId = $user?->employee?->id;
+
+        if (! $employeeId) {
+            return false;
+        }
+
+        return $this->organizer_id === $employeeId
+            || $this->participants()->where("employee_id", $employeeId)->exists();
+    }
     public function parent()       { return $this->belongsTo(Meeting::class, 'parent_meeting_id'); }
     public function instances()    { return $this->hasMany(Meeting::class, 'parent_meeting_id'); }
 

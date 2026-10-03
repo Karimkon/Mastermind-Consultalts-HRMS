@@ -383,6 +383,13 @@ Route::middleware(['auth','mfa'])->group(function () {
     Route::resource('meetings', MeetingController::class);
     Route::post('meetings/{meeting}/rsvp', [MeetingController::class, 'rsvp'])->name('meetings.rsvp');
     Route::post('meetings/{meeting}/cancel', [MeetingController::class, 'cancel'])->name('meetings.cancel');
+
+    // Papers for a meeting. Adding and removing is the organizer's; the
+    // download is open to the people invited, and checked in the controller
+    // because a meeting pack is not company reading.
+    Route::post('meetings/{meeting}/files', [MeetingController::class, 'uploadFiles'])->name('meetings.files.store');
+    Route::get('meetings/{meeting}/files/{file}', [MeetingController::class, 'downloadFile'])->name('meetings.files.download');
+    Route::delete('meetings/{meeting}/files/{file}', [MeetingController::class, 'destroyFile'])->name('meetings.files.destroy');
     Route::get('calendar', [MeetingController::class, 'calendar'])->name('meetings.calendar');
 
     // Reports
