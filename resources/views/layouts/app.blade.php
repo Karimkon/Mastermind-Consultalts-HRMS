@@ -186,7 +186,7 @@
             <i class="fas fa-book w-4 text-center"></i><span x-show="sidebarOpen">Company Documents</span>
         </a>
         <a href="{{ route('quality.goals.index') }}" class="sidebar-link {{ request()->routeIs('quality.goals.*') ? 'active' : '' }}">
-            <i class="fas fa-bullseye w-4 text-center"></i><span x-show="sidebarOpen">Quality Goals</span>
+            <i class="fas fa-bullseye w-4 text-center"></i><span x-show="sidebarOpen">Goals</span>
         </a>
         @endunlessrole
 
