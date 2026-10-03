@@ -745,6 +745,11 @@ Route::middleware('auth')->prefix('quality')->name('quality.')->group(function (
     // Published company document library - visible to every employee
     Route::get('/library', [App\Http\Controllers\Quality\QualityDocumentController::class, 'library'])->name('documents.library');
 
+    // Adding to the library is limited to the quality manager and the appointed
+    // auditors. The gate lives in the controller because this group admits any
+    // signed-in user - every other member of staff reads and downloads only.
+    Route::post('/library', [App\Http\Controllers\Quality\QualityDocumentController::class, 'libraryUpload'])->name('documents.library.upload');
+
     // A document and its workflow - reachable by its initiator/editor/approver
     Route::get('/documents/{document}', [App\Http\Controllers\Quality\QualityDocumentController::class, 'show'])->name('documents.show');
     Route::post('/documents/{document}/upload', [App\Http\Controllers\Quality\QualityDocumentController::class, 'upload'])->name('documents.upload');

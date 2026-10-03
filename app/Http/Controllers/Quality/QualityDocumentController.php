@@ -37,6 +37,23 @@ class QualityDocumentController extends Controller
         return $this->canManage($u) || $this->canAudit($u);
     }
 
+    /**
+     * Who may add a document straight to the company library.
+     *
+     * The quality manager and the appointed auditors maintain Company Documents;
+     * everybody else reads and downloads. This is wider than canManage() on
+     * purpose - the auditor cannot drive somebody else's document through the
+     * workflow, but may publish into the library he is responsible for.
+     *
+     * Note this bypasses Initiator -> Editor -> Approver. That is the point of
+     * the button, and the bypass is written into the document's own timeline as
+     * a direct publish so it is never silent.
+     */
+    private function canUploadToLibrary(?User $u): bool
+    {
+        return $this->canManage($u) || $this->canAudit($u);
+    }
+
     // ===== Company-wide library (every logged-in employee, never clients) =====
 
     public function library(Request $request)
@@ -49,9 +66,47 @@ class QualityDocumentController extends Controller
             ->orderByDesc('published_at')
             ->paginate(20)->withQueryString();
 
-        return view('quality.documents.library', compact('documents', 'category'));
+        $canUpload = $this->canUploadToLibrary($request->user());
+
+        return view('quality.documents.library', compact('documents', 'category', 'canUpload'));
     }
 
+    /**
+     * Add a document straight to the company library.
+     *
+     * Quality manager and auditors only - the staff-wide route is open to any
+     * signed-in user, so the gate lives here rather than in the middleware.
+     */
+    public function libraryUpload(Request $request)
+    {
+        abort_if($request->user()->hasRole('client'), 403);
+        abort_unless($this->canUploadToLibrary($request->user()), 403);
+
+        $data = $request->validate([
+            'title' => 'required|string|max:255',
+            'category' => 'required|in:' . implode(',', array_keys(QualityDocument::CATEGORIES)),
+            'description' => 'nullable|string',
+            // Any format; size is the only limit. See QualityDocument::maxUploadKb().
+            'file' => 'required|file|max:' . QualityDocument::maxUploadKb(),
+        ]);
+
+        $doc = QualityDocument::create([
+            'doc_number' => QualityDocument::nextNumber(),
+            'title' => $data['title'],
+            'category' => $data['category'],
+            'description' => $data['description'] ?? null,
+            'status' => 'published',
+            'initiator_id' => $request->user()->id,
+            'published_at' => now(),
+        ]);
+
+        $this->storeFile($doc, $request->file('file'), $request->user()->id, 'Uploaded to the company library');
+        $this->event($doc, 'created', 'Uploaded directly to the company library');
+        $this->event($doc, 'published', 'Published on upload, without the editor and approver steps');
+
+        return redirect()->route('quality.documents.library')
+            ->with('success', "{$doc->doc_number} published to Company Documents.");
+    }
     // ===== Management / workflow (quality-manager + admins; auditors read only) =====
 
     public function index(Request $request)
