@@ -156,6 +156,28 @@
         form.addEventListener('submit', function (e) {
             if (form.dataset.sending === '1') { e.preventDefault(); return; }
 
+            // The file field carries no native `required` - a hidden required
+            // control makes Chrome abort the submit silently - so the check
+            // lives here, where it can actually say something.
+            var missing = null;
+            Array.prototype.forEach.call(
+                form.querySelectorAll('[data-file-drop-required]'),
+                function (input) {
+                    if (!input.files || !input.files.length) missing = input;
+                }
+            );
+            if (missing) {
+                e.preventDefault();
+                var zone = missing.closest('[data-file-drop]');
+                var error = zone && zone.querySelector('[data-file-drop-error]');
+                if (error) {
+                    error.textContent = 'Choose a file first.';
+                    error.classList.remove('hidden');
+                }
+                (zone || missing).scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+
             // Nothing actually being uploaded? Let the browser post it normally.
             var hasFile = Array.prototype.some.call(
                 form.querySelectorAll('input[type="file"]'),

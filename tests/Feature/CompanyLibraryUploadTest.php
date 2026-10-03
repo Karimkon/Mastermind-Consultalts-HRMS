@@ -262,6 +262,43 @@ class CompanyLibraryUploadTest extends TestCase
         $response->assertSee('data-pp-bar', false);
     }
 
+    /**
+     * The hidden file field must NOT carry the native `required` attribute.
+     *
+     * Chrome refuses to submit a form containing a required control it cannot
+     * focus - it aborts with "An invalid form control ... is not focusable" and
+     * does nothing at all: no post, no error, no clue. The field is visually
+     * hidden so the drop zone can be the control, so the two cannot coexist.
+     *
+     * This is why the uploader appeared to do nothing while every POST test
+     * here passed: the tests post straight to the route and never go through
+     * the browser's form validation at all.
+     */
+    public function test_the_hidden_file_field_carries_no_native_required(): void
+    {
+        $html = $this->actingAs($this->userWithRoles(['auditor'], 'markup@test.local'))
+            ->get('/quality/library')
+            ->assertOk()
+            ->getContent();
+
+        $start = strpos($html, 'data-file-drop-input');
+        $this->assertNotFalse($start, 'The drop zone input is missing from the page.');
+
+        // The whole <input ...> tag the drop zone uses.
+        $tagStart = strrpos(substr($html, 0, $start), '<input');
+        $tag = substr($html, $tagStart, strpos($html, '>', $start) - $tagStart + 1);
+
+        $this->assertStringContainsString('sr-only', $tag, 'Expected the hidden input.');
+        $this->assertDoesNotMatchRegularExpression(
+            '/\srequired[\s>=]/',
+            $tag,
+            "The hidden file input has the native `required` attribute. Chrome will "
+            . "silently refuse to submit the form. Use data-file-drop-required instead:\n" . $tag
+        );
+        $this->assertStringContainsString('data-file-drop-required', $tag,
+            'The requirement must still be marked, for the script and the server to enforce.');
+    }
+
     public function test_a_submitter_sees_what_is_waiting_on_somebody_else(): void
     {
         Storage::fake('local');

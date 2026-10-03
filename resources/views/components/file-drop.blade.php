@@ -33,11 +33,22 @@
         <label for="{{ $fieldId }}" class="form-label">{{ $label }}</label>
     @endif
 
+    {{-- NOT the native `required` attribute, deliberately.
+
+         The input is visually hidden so the drop zone can be the control, and
+         Chrome refuses to submit a form containing a required field it cannot
+         focus: it aborts with "An invalid form control with name=... is not
+         focusable" and does nothing at all. No error, no post, no clue - the
+         button simply stopped working, which is exactly how it was reported.
+
+         The requirement is enforced in <x-transfer-progress> instead, where it
+         can say so on screen, and by the server, which is the only place it
+         actually counts. --}}
     <input type="file"
            id="{{ $fieldId }}"
            name="{{ $name }}"
            @if($multiple) multiple @endif
-           @if($required) required @endif
+           @if($required) data-file-drop-required @endif
            class="sr-only"
            data-file-drop-input>
 

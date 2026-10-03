@@ -11,8 +11,7 @@
     @if($canUpload)
     {{-- Toggled with .hidden rather than a style, so it works whether or not
          Alpine has booted. --}}
-    <button type="button"
-            onclick="var p=document.getElementById('library-upload'); p.hidden=!p.hidden; if(!p.hidden){p.scrollIntoView({behavior:'smooth',block:'nearest'});}"
+    <button type="button" onclick="toggleLibraryUpload()"
             class="btn-primary"><i class="fas fa-paperclip mr-1"></i> Add a document</button>
     @endif
 </x-page-header>
@@ -52,14 +51,16 @@
                 <textarea name="description" rows="2" class="form-input">{{ old('description') }}</textarea>
             </div>
             <div>
-                <label class="form-label">Send to for approval</label>
-                <select name="approver_id" required class="form-select">
+                <label class="form-label" for="library-approver">Send to for approval</label>
+                {{-- Searchable: there are over a thousand accounts, and scrolling
+                     a list that long to find one person is not a picker. --}}
+                <select name="approver_id" id="library-approver" required class="form-select">
                     <option value="">Choose an approver</option>
                     @foreach($approvers as $u)
                         <option value="{{ $u->id }}" @selected(old('approver_id') == $u->id)>{{ $u->name }}</option>
                     @endforeach
                 </select>
-                <p class="text-xs text-slate-400 mt-1">It cannot be you.</p>
+                <p class="text-xs text-slate-400 mt-1">Type to search. It cannot be you.</p>
             </div>
         </div>
 
@@ -139,5 +140,44 @@
 <div class="mt-4">{{ $documents->links() }}</div>
 
 <x-transfer-progress />
+
+@if($canUpload)
+@push('scripts')
+<script>
+// select2 measures the element when it initialises, and this panel starts
+// hidden — initialising it then gives a box zero pixels wide. So it is set up
+// the first time the panel is opened, with an explicit width rather than the
+// measured one.
+function toggleLibraryUpload() {
+    var panel = document.getElementById('library-upload');
+    if (!panel) return;
+
+    panel.hidden = !panel.hidden;
+    if (panel.hidden) return;
+
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    if (window.jQuery && jQuery.fn.select2 && !panel.dataset.pickerReady) {
+        jQuery('#library-approver').select2({
+            theme: 'classic',
+            width: '100%',
+            placeholder: 'Search by name',
+            allowClear: true,
+        });
+        panel.dataset.pickerReady = '1';
+    }
+}
+
+// A validation error reopens the panel on load, so wire it up then too.
+document.addEventListener('DOMContentLoaded', function () {
+    var panel = document.getElementById('library-upload');
+    if (panel && !panel.hidden) {
+        panel.hidden = true;        // toggleLibraryUpload flips it back open
+        toggleLibraryUpload();
+    }
+});
+</script>
+@endpush
+@endif
 
 @endsection
