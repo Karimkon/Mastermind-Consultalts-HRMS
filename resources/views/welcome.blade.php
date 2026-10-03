@@ -288,11 +288,18 @@ button{cursor:pointer;font-family:inherit}
 /* RESPONSIVE */
 @media(max-width:1024px){.jgrid,.svgrid{grid-template-columns:repeat(2,1fr)}.f-inner{grid-template-columns:1fr 1fr}}
 @media(max-width:980px){.e2e-grid{grid-template-columns:1fr;gap:34px}.e2e-art{order:-1}}
-@media(max-width:768px){.nl,.na{display:none}.brg{display:block}.hero-stage{height:430px}.e2e-h{font-size:1.6rem}.s-title{font-size:2rem}.st-grid{grid-template-columns:repeat(2,1fr)}.ab-grid,.cta-grid,.ct-grid{grid-template-columns:1fr}.tb-c{display:none}}
+@media(max-width:768px){.nl,.na{display:none}.brg{display:block}.hero-stage{height:520px}.slide-ct{align-items:flex-start;padding-top:38px}.s-sub{font-size:.9rem;margin-bottom:20px;display:-webkit-box;-webkit-line-clamp:3;line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.s-arr{display:none}.e2e-h{font-size:1.6rem}.s-title{font-size:2rem}.st-grid{grid-template-columns:repeat(2,1fr)}.ab-grid,.cta-grid,.ct-grid{grid-template-columns:1fr}.tb-c{display:none}}
 @media(max-width:980px){.hero-grid{grid-template-columns:1fr;gap:0}.hero-panel{position:static;display:block;padding:0 0 26px}.hp-card{box-shadow:0 10px 30px rgba(0,0,0,.22)}.hp-spacer{display:none}.hp-list{max-height:none}}
+/* Long words and pasted URLs should wrap rather than widen the page. */
+body{overflow-wrap:break-word}
+img,video,iframe,table{max-width:100%}
+@media(max-width:540px){.jgrid,.svgrid{grid-template-columns:1fr}.hero-stage{height:540px}.s-title{font-size:1.7rem}.s-btns{gap:8px}.s-btns a{flex:1 1 calc(50% - 4px);text-align:center;padding:11px 14px;font-size:.85rem}.sec{padding:50px 0}.f-inner{grid-template-columns:1fr}.cf-row{grid-template-columns:1fr}}
 /* Below 480px the search field and its button no longer fit side by side,
    so they stack rather than being squeezed to nothing. */
 @media(max-width:480px){
+  .hero-stage{height:560px}
+  .s-title{font-size:1.5rem}
+  .s-eye{font-size:.66rem;margin-bottom:11px}
   .j-search{flex-direction:column}
   .j-search input,.btn-srch{width:100%}
   .container,.nw{padding-left:16px;padding-right:16px}
@@ -303,10 +310,6 @@ button{cursor:pointer;font-family:inherit}
   .e2e-h{font-size:1.45rem}
   .st-n{font-size:2.1rem}
 }
-/* Long words and pasted URLs should wrap rather than widen the page. */
-body{overflow-wrap:break-word}
-img,video,iframe,table{max-width:100%}
-@media(max-width:540px){.jgrid,.svgrid{grid-template-columns:1fr}.hero-stage{height:390px}.s-title{font-size:1.75rem}.sec{padding:50px 0}.f-inner{grid-template-columns:1fr}.cf-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
