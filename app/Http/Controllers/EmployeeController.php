@@ -102,6 +102,7 @@ class EmployeeController extends Controller
                 'bank_name'       => $request->bank_name,
                 'bank_account'    => $request->bank_account,
                 'bank_branch'     => $request->bank_branch,
+                'account_name'    => $request->account_name,
                 // The create form collects these but they used to be dropped here,
                 // so every new employee silently defaulted to bank with no account.
                 'mobile_money_number' => $request->mobile_money_number,
@@ -169,7 +170,7 @@ class EmployeeController extends Controller
             'nssf_number','tin_number','ifms_supplier_no','pension_no',
             'fixed_nssf_amount','voluntary_nssf','special_tax_percentage','wht_percentage',
             // Banking & Calculation
-            'bank_name','bank_account','bank_branch','tax_number','payment_mode','mobile_money_number',
+            'bank_name','bank_account','bank_branch','account_name','tax_number','payment_mode','mobile_money_number',
             'ot_calc_hours','absenteeism_calc_hours','ot1_calc_hours','ot2_calc_hours','min_daily_working_hours',
             // PF
             'pf_deduction_type','pf_calculate_on','pf_employee_rate','pf_employer_rate','pf_scheme',

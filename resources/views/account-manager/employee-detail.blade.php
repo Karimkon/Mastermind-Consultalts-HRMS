@@ -397,6 +397,16 @@
                             <label class="form-label">Bank Branch</label>
                             <input type="text" name="bank_branch" class="form-input" value="{{ old('bank_branch', $employee->bank_branch) }}">
                         </div>
+                        {{-- Who the account belongs to. Not always the employee:
+                             on the Roofings September schedule 14 of 74 are paid
+                             into somebody else's account, and both the bank and
+                             mobile money schedules carry a column for it. --}}
+                        <div>
+                            <label class="form-label">Account Name</label>
+                            <input type="text" name="account_name" class="form-input"
+                                   placeholder="Leave blank if the same as the employee"
+                                   value="{{ old('account_name', $employee->account_name) }}">
+                        </div>
                     </div>
                 </div>
 

@@ -107,7 +107,7 @@ class Employee extends Model
         'apply_special_tax','special_tax_percentage',
         'charge_wht','wht_percentage',
         // Banking & Salary Calculation
-        'bank_name','bank_account','bank_branch','mobile_money_number','tax_number','payment_mode',
+        'bank_name','bank_account','bank_branch','account_name','mobile_money_number','tax_number','payment_mode',
         'ot_calc_hours','absenteeism_calc_hours','ot1_calc_hours','ot2_calc_hours','min_daily_working_hours',
         // Provident Fund
         'pf_applicable','pf_deduction_type','pf_calculate_on','pf_employee_rate','pf_employer_rate','pf_scheme',

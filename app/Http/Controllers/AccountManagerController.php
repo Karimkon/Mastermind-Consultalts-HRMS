@@ -182,7 +182,7 @@ class AccountManagerController extends Controller
             'next_of_kin_name', 'next_of_kin_relation', 'next_of_kin_phone', 'next_of_kin_email',
             'status', 'employment_type', 'hire_date', 'contract_end_date', 'work_location',
             'nssf_number', 'tin_number', 'national_id', 'passport_number', 'ifms_supplier_no', 'pension_no',
-            'bank_name', 'bank_account', 'bank_branch', 'mobile_money_number',
+            'bank_name', 'bank_account', 'bank_branch', 'account_name', 'mobile_money_number',
         );
 
         // Checkboxes send nothing when unticked, so they are read explicitly
