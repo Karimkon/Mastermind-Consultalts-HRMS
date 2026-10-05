@@ -29,9 +29,18 @@ return [
         // Switch the whole deduction off without touching a single employee.
         'enabled' => env('PAYROLL_LST_ENABLED', true),
 
-        // The months LST is taken in. July–October is the usual practice:
-        // four equal instalments across the start of the financial year.
-        'months' => [7, 8, 9, 10],
+        // The months LST is taken in. The charge is divided equally between
+        // them, so one month here means the whole annual charge at once.
+        //
+        // October only, by decision: LST was never deducted at all before
+        // this, so July, August and September of this financial year went
+        // uncollected. Spreading what is left over the one month remaining
+        // collects the year in full rather than a quarter of it. 555 people
+        // are above the threshold and pay UGX 13,775,000 between them, the
+        // heaviest being 9.9% of one month's gross; no payslip is driven to
+        // zero. From the next financial year this should go back to
+        // [7, 8, 9, 10] so the charge is spread as it is meant to be.
+        'months' => [10],
 
         // Monthly income up to `up_to` (inclusive) is charged `annual` a year.
         // `up_to` of null is the top band, which has no ceiling. Lowest first.

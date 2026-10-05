@@ -129,11 +129,19 @@ class LocalServiceTaxTest extends TestCase
 
         $figures = $this->slipFor($e, $this->runFor($months[0]));
 
-        // The trap: deducting the annual figure whole, every collection month.
+        // The charge is split equally between the collection months, so the
+        // instalments must always add back up to the annual figure. With one
+        // collection month configured that means the whole charge at once,
+        // which is the current arrangement and is deliberate.
         $annual = $this->annualFor((float) $figures["gross_salary"]);
-        $this->assertNotSame($annual, $this->lstOn($figures), 'the annual charge must be split, not taken whole');
+
         $this->assertEqualsWithDelta($annual, $this->lstOn($figures) * count($months), 1.0,
             'the instalments must add up to the annual charge');
+
+        if (count($months) > 1) {
+            $this->assertNotSame($annual, $this->lstOn($figures),
+                'with several collection months the annual charge must not be taken whole');
+        }
     }
 
     public function test_nothing_is_taken_outside_the_collection_months(): void
