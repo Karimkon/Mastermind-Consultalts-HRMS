@@ -446,6 +446,37 @@ class PayrollService
             }
         }
 
+        // ── Local Service Tax ───────────────────────────────────────
+        //
+        // charge_lst sat on every employee record and on the Statutory tab,
+        // and this method never read it: 1,246 of 1,247 staff were flagged
+        // and not one shilling was ever taken. The same shape of defect as
+        // the NSSF tickbox that charged nothing.
+        //
+        // LST is an ANNUAL charge banded on monthly income, collected in
+        // equal instalments over the first months of the financial year, so
+        // nothing is taken in the other eight. The bands and the months are
+        // config, because a local government may issue its own schedule and
+        // because they change by statute rather than by release.
+        $lst = $this->calculateLst($employee, $gross, $run);
+
+        if ($lst > 0) {
+            $details[] = [
+                'name'    => 'Local Service Tax',
+                'code'    => 'LST',
+                'type'    => 'deduction',
+                'amount'  => $lst,
+                'taxable' => false,
+            ];
+
+            // As with NSSF: when the employer carries it, it is still shown
+            // and still owed to the local government, but it does not come
+            // out of the employee's pay.
+            if (! $employee->lst_paid_by_employer) {
+                $deductions += $lst;
+            }
+        }
+
         $net = max(0, round($gross - $deductions, 0));
 
         // Employer NSSF (10%): if no NSSF_CO component is attached to this
@@ -508,6 +539,45 @@ class PayrollService
             ['payroll_run_id' => $run->id, 'employee_id' => $employee->id],
             $this->calculatePayslip($employee, $run)
         );
+    }
+
+    /**
+     * This month's Local Service Tax instalment for one employee.
+     *
+     * Returns 0 outside the collection months, which is most of the year:
+     * LST is one annual charge spread over a few months, not a monthly
+     * deduction. Within them it is the annual figure for the band this
+     * month's gross falls in, divided by the number of collection months.
+     *
+     * The band is taken from the month's own gross rather than an annual
+     * estimate. For monthly staff the two are the same; for the daily-paid
+     * it means a short month can fall in a lower band than a full one, which
+     * is the honest reading of a schedule written on monthly income and is
+     * the only basis this engine can know at the time it pays.
+     */
+    private function calculateLst(Employee $employee, float $gross, PayrollRun $run): float
+    {
+        $config = config('payroll.lst');
+
+        if (! ($config['enabled'] ?? false) || ! $employee->charge_lst) {
+            return 0.0;
+        }
+
+        $months = $config['months'] ?? [];
+        if (! in_array((int) $run->month, array_map('intval', $months), true) || count($months) === 0) {
+            return 0.0;
+        }
+
+        $annual = 0.0;
+        foreach ($config['bands'] ?? [] as $band) {
+            $ceiling = $band['up_to'] ?? null;
+            if ($ceiling === null || $gross <= $ceiling) {
+                $annual = (float) ($band['annual'] ?? 0);
+                break;
+            }
+        }
+
+        return round($annual / count($months), 0);
     }
 
     private function calculatePAYE(float $monthlyTaxable): float
