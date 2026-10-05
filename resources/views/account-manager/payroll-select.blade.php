@@ -10,10 +10,101 @@
 
 <x-page-header title="Who is on this payroll?"
                subtitle="{{ $period }} · {{ $clientName }}">
+    @if($run->client_id)
+    <button type="button" onclick="toggleAddEmployee()" class="btn-secondary">
+        <i class="fas fa-user-plus mr-1"></i> Add an employee
+    </button>
+    @endif
     <a href="{{ route('account-manager.payroll.show', $run) }}" class="btn-secondary">
         <i class="fas fa-arrow-left mr-1"></i> Back to run
     </a>
 </x-page-header>
+
+@if(session('success'))
+<div class="mb-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 text-sm">{{ session('success') }}</div>
+@endif
+
+{{-- Adding somebody who was never loaded: a new hire, or one the spreadsheet
+     missed. It writes the same records the bulk import writes, so there is one
+     kind of employee in the system and not two — and it is their own form,
+     outside the selection form, because a form cannot be nested in another. --}}
+@if($run->client_id)
+<div id="addEmployee" class="mb-6 rounded-xl bg-white border border-slate-200 p-5" @if(! $errors->hasAny(['first_name','last_name','rate','email','salary_type'])) hidden @endif>
+    <h3 class="font-semibold text-slate-700 mb-1">Add an employee to {{ $clientName }}</h3>
+    <p class="text-xs text-slate-400 mb-4">
+        Saved into Employee Central and assigned to this client, so they are there
+        for every future run as well as this one.
+    </p>
+
+    <form method="POST" action="{{ route('account-manager.payroll.employees.add', $run) }}" class="space-y-4">
+        @csrf
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label class="form-label">First name</label>
+                <input name="first_name" required value="{{ old('first_name') }}" class="form-input">
+            </div>
+            <div>
+                <label class="form-label">Last name</label>
+                <input name="last_name" required value="{{ old('last_name') }}" class="form-input">
+            </div>
+            <div>
+                <label class="form-label">Engagement</label>
+                <select name="employment_type" class="form-select">
+                    @foreach(['casual' => 'Casual', 'contract' => 'Contract', 'full_time' => 'Full time', 'part_time' => 'Part time'] as $k => $v)
+                        <option value="{{ $k }}" @selected(old('employment_type', 'casual') === $k)>{{ $v }}</option>
+                    @endforeach
+                </select>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label class="form-label">Paid</label>
+                <select name="salary_type" class="form-select">
+                    @foreach(['daily' => 'Per day', 'monthly' => 'Per month', 'hourly' => 'Per hour'] as $k => $v)
+                        <option value="{{ $k }}" @selected(old('salary_type', 'daily') === $k)>{{ $v }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Rate (UGX)</label>
+                <input name="rate" type="number" min="1" step="1" required value="{{ old('rate') }}" class="form-input">
+                <p class="text-xs text-slate-400 mt-1">Without this, payroll calculates nothing for them.</p>
+            </div>
+            <div>
+                <label class="form-label">Days worked this month</label>
+                <input name="days_worked" type="number" min="0" max="{{ $daysInMonth }}"
+                       value="{{ old('days_worked') }}" class="form-input" placeholder="Leave blank to add without paying yet">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+                <label class="form-label">Started on</label>
+                <input name="hire_date" type="date" value="{{ old('hire_date', today()->toDateString()) }}" class="form-input">
+            </div>
+            <div>
+                <label class="form-label">Phone (optional)</label>
+                <input name="phone" value="{{ old('phone') }}" class="form-input">
+            </div>
+            <div>
+                <label class="form-label">National ID (optional)</label>
+                <input name="national_id" value="{{ old('national_id') }}" class="form-input">
+            </div>
+            <div>
+                <label class="form-label">Email (optional)</label>
+                <input name="email" type="email" value="{{ old('email') }}" class="form-input">
+                <p class="text-xs text-slate-400 mt-1">Gives them a login and a payslip by email.</p>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2">
+            <button type="button" onclick="toggleAddEmployee()" class="btn-secondary">Cancel</button>
+            <button class="btn-primary"><i class="fas fa-user-plus mr-1"></i> Add employee</button>
+        </div>
+    </form>
+</div>
+@endif
 
 @if(session('error'))<div class="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{{ session('error') }}</div>@endif
 @if($errors->any())<div class="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{{ $errors->first() }}</div>@endif
@@ -171,6 +262,16 @@ function filterRows(term) {
 function updateCount() {
     document.getElementById('chosenCount').textContent =
         document.querySelectorAll('.row-check:checked').length;
+}
+
+function toggleAddEmployee() {
+    const panel = document.getElementById('addEmployee');
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        panel.querySelector('[name="first_name"]')?.focus();
+    }
 }
 
 // ===== Autosave =====

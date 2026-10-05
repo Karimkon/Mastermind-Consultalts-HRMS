@@ -736,6 +736,115 @@ class AccountManagerController extends Controller
                 : "{$count} " . ($count === 1 ? 'employee is' : 'employees are') . ' selected for this run.');
     }
 
+    /**
+     * Add an employee who is missing, without leaving the payroll screen.
+     *
+     * An account manager preparing a run finds somebody who was never loaded —
+     * a new hire, or one the spreadsheet missed. Until now the only options were
+     * a bulk CSV import or asking HR, which means abandoning a half-finished
+     * selection to go and do something else.
+     *
+     * This creates the same records the bulk import creates, so there is one
+     * kind of employee in the system and not two: an employees row (which IS
+     * Employee Central), a client assignment, a salary record, and a login when
+     * an email is given.
+     */
+    public function addEmployeeToRun(\Illuminate\Http\Request $request, PayrollRun $run)
+    {
+        $clients = $this->managedClients();
+        abort_unless(is_null($run->client_id) || $clients->contains('id', $run->client_id), 403);
+
+        $client = $clients->firstWhere('id', $run->client_id);
+        abort_unless($client, 403, 'A payroll run must belong to a client before employees can be added to it.');
+
+        if ($run->isLocked() || $run->isImported() || ! in_array($run->status, ['draft', 'processing'])) {
+            return back()->with('error', 'This run can no longer be changed.');
+        }
+
+        $daysInMonth = \Carbon\Carbon::create($run->year, $run->month, 1)->daysInMonth;
+
+        $data = $request->validate([
+            'first_name'      => 'required|string|max:100',
+            'last_name'       => 'required|string|max:100',
+            'employment_type' => 'nullable|in:casual,contract,full_time,part_time',
+            'salary_type'     => 'required|in:daily,hourly,monthly',
+            'rate'            => 'required|numeric|min:1',
+            'hire_date'       => 'nullable|date',
+            'phone'           => 'nullable|string|max:30',
+            'national_id'     => 'nullable|string|max:50',
+            // A login is optional, but without one there is no address to send a
+            // payslip to, so an employee added without an email quietly drops
+            // out of every payslip email run.
+            'email'           => 'nullable|email|unique:users,email',
+            'days_worked'     => 'nullable|integer|min:0|max:' . $daysInMonth,
+        ], [
+            'rate.required'  => 'Enter what this person is paid, or payroll will calculate nothing for them.',
+            'email.unique'   => 'That email already belongs to somebody else.',
+        ]);
+
+        $employee = \Illuminate\Support\Facades\DB::transaction(function () use ($data, $client, $run) {
+            // Same prefixing the bulk import uses, so numbering stays consistent
+            // for the client: UNOC becomes UNO0019, Roofings RUL0440.
+            $prefix = strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $client->company_name), 0, 3));
+            $count = \App\Models\Employee::where('emp_number', 'like', "{$prefix}%")->count() + 1;
+            do {
+                $empNumber = $prefix . str_pad($count, 4, '0', STR_PAD_LEFT);
+                $count++;
+            } while (\App\Models\Employee::where('emp_number', $empNumber)->exists());
+
+            $employee = \App\Models\Employee::create([
+                'emp_number'      => $empNumber,
+                'first_name'      => $data['first_name'],
+                'last_name'       => $data['last_name'],
+                'employment_type' => $data['employment_type'] ?? 'casual',
+                'hire_date'       => $data['hire_date'] ?? today()->toDateString(),
+                'status'          => 'active',
+                'phone'           => $data['phone'] ?? null,
+                'national_id'     => $data['national_id'] ?? null,
+            ]);
+
+            if (! empty($data['email'])) {
+                $user = User::create([
+                    'name'     => trim($data['first_name'] . ' ' . $data['last_name']),
+                    'email'    => $data['email'],
+                    'password' => Hash::make('Password@123'),
+                ]);
+                $user->assignRole('employee');
+                $employee->update(['user_id' => $user->id]);
+            }
+
+            $client->employees()->attach($employee->id, ['assigned_by' => auth()->id()]);
+
+            // Without this the engine calculates nothing and the person appears
+            // on the run with a payslip of zero.
+            EmployeeSalary::create([
+                'employee_id'    => $employee->id,
+                'basic_salary'   => $data['rate'],
+                'salary_type'    => $data['salary_type'],
+                'effective_from' => $data['hire_date'] ?? today()->toDateString(),
+                'is_current'     => true,
+                'created_by'     => auth()->id(),
+            ]);
+
+            // Put them straight on the run if days were given, so adding
+            // somebody mid-selection does not mean finding them again after.
+            if (! empty($data['days_worked'])) {
+                \App\Models\PayrollManualDays::updateOrCreate(
+                    ['payroll_run_id' => $run->id, 'employee_id' => $employee->id],
+                    ['days_worked' => (int) $data['days_worked']]
+                );
+            }
+
+            return $employee;
+        });
+
+        return redirect()
+            ->route('account-manager.payroll.select', $run)
+            ->with('success', $employee->first_name . ' ' . $employee->last_name
+                . ' (' . $employee->emp_number . ') was added to ' . $client->company_name
+                . ' and saved in Employee Central.'
+                . (empty($data['days_worked']) ? ' Tick them to put them on this run.' : ''));
+    }
     /** The employees the engine would consider for this run, in the same order. */
     private function runEligibleEmployees(PayrollRun $run)
     {

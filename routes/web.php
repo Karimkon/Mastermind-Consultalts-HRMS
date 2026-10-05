@@ -463,6 +463,8 @@ Route::middleware(['auth','mfa'])->group(function () {
         // Choose who is in the run, and their days worked, before processing.
         Route::get("/payroll/{run}/select", [AccountManagerController::class, "selectEmployees"])->name("payroll.select");
         Route::post("/payroll/{run}/select", [AccountManagerController::class, "storeEmployeeSelection"])->name("payroll.select.store");
+        // Add an employee who is missing, without leaving the selection screen.
+        Route::post("/payroll/{run}/employees", [AccountManagerController::class, "addEmployeeToRun"])->name("payroll.employees.add");
         Route::post("/payroll/{run}/process", [AccountManagerController::class, "processPayroll"])->name("payroll.process");
         Route::get("/payroll/{run}/manual-days-template", [AccountManagerController::class, "manualDaysTemplate"])->name("payroll.manual-days-template");
         Route::post("/payroll/{run}/import-manual-days", [AccountManagerController::class, "importManualDays"])->name("payroll.import-manual-days");
