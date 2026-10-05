@@ -39,7 +39,7 @@ class PayrollController extends Controller
             ->when($request->year,      fn($q) => $q->where('year', $request->year))
             ->when($request->client_id, fn($q) => $q->where('client_id', $request->client_id))
             ->when($request->status,    fn($q) => $q->where('status', $request->status))
-            ->orderByDesc('year')->orderByDesc('month')
+            ->latestActivity()
             ->paginate(20);
 
         return view('payroll.index', compact('runs', 'clients'));

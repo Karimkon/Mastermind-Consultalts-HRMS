@@ -63,12 +63,12 @@ class Notification extends Model
 
             if (\Illuminate\Support\Facades\Route::has($route)) {
                 if ($key === null) {
-                    return route($route);
+                    return route($route, [], false);
                 }
 
                 $id = is_array($this->data) ? ($this->data[$key] ?? null) : null;
                 if ($id) {
-                    return route($route, $id);
+                    return route($route, $id, false);
                 }
             }
         }

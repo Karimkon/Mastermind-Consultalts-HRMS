@@ -48,7 +48,7 @@ class NotificationLinkTest extends TestCase
     {
         $n = $this->notice('payroll_stage', ['payroll_run_id' => 33]);
 
-        $this->assertSame(route('payroll.show', 33), $n->link);
+        $this->assertSame(route('payroll.show', 33, false), $n->link);
     }
 
     public function test_a_payslip_notice_opens_the_employees_own_payslips(): void
@@ -57,14 +57,14 @@ class NotificationLinkTest extends TestCase
         // payroll officer's per-slip route, which they cannot open.
         $n = $this->notice('payroll_processed', ['payslip_id' => 1156]);
 
-        $this->assertSame(route('employee.payslips'), $n->link);
+        $this->assertSame(route('employee.payslips', [], false), $n->link);
     }
 
     public function test_leave_notices_open_the_leave_request(): void
     {
         foreach (['leave_submitted', 'leave_status', 'leave_adjusted', 'leave_cover_nominated'] as $type) {
             $n = $this->notice($type, ['leave_id' => 12]);
-            $this->assertSame(route('leaves.show', 12), $n->link, $type . ' should link to the leave');
+            $this->assertSame(route('leaves.show', 12, false), $n->link, $type . ' should link to the leave');
         }
     }
 
@@ -72,14 +72,14 @@ class NotificationLinkTest extends TestCase
     {
         $n = $this->notice('meeting_invite', ['meeting_id' => 4]);
 
-        $this->assertSame(route('meetings.show', 4), $n->link);
+        $this->assertSame(route('meetings.show', 4, false), $n->link);
     }
 
     public function test_a_new_application_opens_the_candidate(): void
     {
         $n = $this->notice('new_application', ['candidate_id' => 9, 'job_id' => 3]);
 
-        $this->assertSame(route('recruitment.candidates.show', 9), $n->link);
+        $this->assertSame(route('recruitment.candidates.show', 9, false), $n->link);
     }
 
     // ===== stored urls: kept when useful, overruled when stale =====
@@ -99,7 +99,7 @@ class NotificationLinkTest extends TestCase
         // precisely so those stop leading off the site.
         $n = $this->notice('pip', ['pip_id' => 3, 'url' => 'https://mastermind.autos/pips/3']);
 
-        $this->assertSame(route('pips.show', 3), $n->link);
+        $this->assertSame(route('pips.show', 3, false), $n->link);
         $this->assertStringNotContainsString('mastermind.autos', (string) $n->link);
     }
 
@@ -128,7 +128,7 @@ class NotificationLinkTest extends TestCase
         ]);
 
         // chat takes no parameter, so it still resolves.
-        $this->assertSame(route('chat.index'), $n->link);
+        $this->assertSame(route('chat.index', [], false), $n->link);
     }
 
     // ===== what the bell is actually served =====
@@ -146,10 +146,10 @@ class NotificationLinkTest extends TestCase
 
         $byId = collect($payload['notifications'])->keyBy('id');
 
-        $this->assertSame(route('payroll.show', 33), $byId[$unread->id]['link']);
+        $this->assertSame(route('payroll.show', 33, false), $byId[$unread->id]['link']);
         $this->assertNull($byId[$unread->id]['read_at']);
 
-        $this->assertSame(route('leaves.show', 12), $byId[$read->id]['link']);
+        $this->assertSame(route('leaves.show', 12, false), $byId[$read->id]['link']);
         $this->assertNotNull($byId[$read->id]['read_at']);
     }
 }
