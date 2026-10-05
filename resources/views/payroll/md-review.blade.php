@@ -80,7 +80,7 @@
             <th class="px-4 py-3 text-left w-8"></th>
             <th class="px-4 py-3 text-left">Employee</th>
             <th class="px-4 py-3 text-left">Department</th>
-            <th class="px-4 py-3 text-left">Role</th>
+            <th class="px-4 py-3 text-left">Designation</th>
             <th class="px-4 py-3 text-right">Basic</th>
             <th class="px-4 py-3 text-right">Gross</th>
             <th class="px-4 py-3 text-right">Deductions</th>

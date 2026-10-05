@@ -195,7 +195,7 @@ table { border-collapse:collapse; }
 <thead>
 <tr>
   <th class="gl" style="width:22%">NAME</th>
-  <th style="width:13%">ROLE</th>
+  <th style="width:13%">DESIGNATION</th>
   <th style="width:13%">DEPLOYMENT</th>
   <th style="width:11%">PERIOD</th>
   <th style="width:11%">PAY DATE</th>

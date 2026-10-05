@@ -141,8 +141,69 @@
         .form-textarea { display:block; width:100%; border-radius:0.5rem; border:1px solid #d1d5db; padding:0.5rem 0.75rem; font-size:0.875rem; color:#111827; transition:border-color .15s; outline:none; }
         .form-textarea:focus { border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.15); }
 
-        /* Select2 fix */
-        .select2-container--classic .select2-selection--single { border-radius:0.5rem !important; border-color:#d1d5db !important; height:38px !important; line-height:36px !important; }
+        /* ── Select2, made to match the rest of the form ──────────────
+           Only the closed box was ever styled, so the dropdown that opened
+           out of it was Select2's own default: a different font, a different
+           blue, 1px borders and no padding. These rules cover the panel, the
+           search field and the option rows as well, and inherit the body
+           font so a dropdown reads like the page it is on. */
+        .select2-container { width: 100% !important; font-family: inherit; }
+
+        .select2-container--classic .select2-selection--single,
+        .select2-container--default .select2-selection--single {
+            height: 38px !important; line-height: 1.25rem;
+            padding: 0.5rem 0.75rem; border: 1px solid #d1d5db !important;
+            border-radius: 0.5rem !important; background: #fff !important;
+            font-size: 0.875rem; color: #111827; outline: none;
+            transition: border-color .15s, box-shadow .15s;
+        }
+        .select2-container--classic.select2-container--open .select2-selection--single,
+        .select2-container--default.select2-container--open .select2-selection--single,
+        .select2-container--classic.select2-container--focus .select2-selection--single {
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+        }
+        .select2-container--classic .select2-selection--single .select2-selection__rendered,
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            padding: 0; line-height: 1.25rem; color: #111827;
+        }
+        .select2-container--classic .select2-selection--single .select2-selection__placeholder {
+            color: #9ca3af;
+        }
+        .select2-container--classic .select2-selection--single .select2-selection__arrow,
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px !important; right: 6px; border: 0 !important; background: none !important;
+        }
+
+        /* The panel. It was the part that looked broken: the options were
+           clipped mid-word because the panel inherited the collapsed width. */
+        .select2-container--classic .select2-dropdown,
+        .select2-container--default .select2-dropdown {
+            border: 1px solid #d1d5db !important; border-radius: 0.5rem;
+            box-shadow: 0 10px 20px -5px rgba(15,23,42,.15), 0 4px 6px -4px rgba(15,23,42,.1);
+            overflow: hidden; font-size: 0.875rem; min-width: 16rem;
+        }
+        .select2-container--classic .select2-search--dropdown,
+        .select2-container--default .select2-search--dropdown { padding: 0.5rem; border-bottom: 1px solid #f1f5f9; }
+        .select2-container--classic .select2-search--dropdown .select2-search__field,
+        .select2-container--default .select2-search--dropdown .select2-search__field {
+            border: 1px solid #d1d5db !important; border-radius: 0.375rem;
+            padding: 0.375rem 0.5rem; font-size: 0.875rem; font-family: inherit; outline: none;
+        }
+        .select2-container--classic .select2-results__option,
+        .select2-container--default .select2-results__option {
+            padding: 0.5rem 0.75rem; line-height: 1.35;
+            white-space: normal; word-break: normal; overflow-wrap: anywhere;
+        }
+        .select2-container--classic .select2-results__option--highlighted[aria-selected],
+        .select2-container--default .select2-results__option--highlighted[aria-selected] {
+            background: #eff6ff !important; color: #1d4ed8 !important;
+        }
+        .select2-container--classic .select2-results__option[aria-selected=true],
+        .select2-container--default .select2-results__option[aria-selected=true] {
+            background: #f8fafc !important; color: #0f172a !important; font-weight: 600;
+        }
+        .select2-results__options { max-height: 16rem !important; overflow-y: auto; overflow-x: hidden; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
@@ -861,7 +922,18 @@ function notificationBell() {
 
 // Select2 global init
 $(document).ready(function () {
-    $(".select2").select2({ theme: "classic", placeholder: "Select...", allowClear: true });
+    /* width:'100%' rather than the default 'resolve'. These selects sit in
+       tab panels that are display:none at load, so resolve measures them at
+       zero and the control renders about 110px wide with its options cut off
+       mid-word. dropdownAutoWidth then lets the open list be as wide as its
+       longest option instead of as narrow as the field. */
+    $(".select2").select2({
+        theme: "classic",
+        placeholder: "Select...",
+        allowClear: true,
+        width: "100%",
+        dropdownAutoWidth: true,
+    });
     $(".select2-ajax-employees").select2({
         theme: "classic", placeholder: "Search employee...", allowClear: true,
         ajax: {

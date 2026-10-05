@@ -103,6 +103,22 @@ class HrReviewBreakdownTest extends TestCase
         $response->assertSee('73,500', false);
     }
 
+    public function test_the_job_title_column_is_called_designation_not_role(): void
+    {
+        $hr  = $this->hrAdmin();
+        $run = $this->processedRun();
+        $this->slip($run, paye: 49000, nssf: 24500, deductions: 73500);
+
+        $html = $this->review($hr, $run)->assertOk()->getContent();
+
+        // The column renders designation?->title, so it has to say so. "Role"
+        // already means something else here -- Roles & Permissions, which is
+        // login access, not a job title -- and searching Employee Central for
+        // "role" turned up only that, with no route to the field behind it.
+        $this->assertStringContainsString('>Designation<', $html);
+        $this->assertStringNotContainsString('>Role<', $html);
+    }
+
     public function test_the_columns_are_in_the_order_they_add_up_in(): void
     {
         $hr  = $this->hrAdmin();

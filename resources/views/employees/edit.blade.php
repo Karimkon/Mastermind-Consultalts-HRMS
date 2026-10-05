@@ -275,13 +275,35 @@
                                value="{{ old('work_location', $employee->work_location) }}">
                     </div>
                     <div>
-                        <label class="form-label">Department <span class="text-red-500">*</span></label>
-                        <select name="department_id" class="form-input select2">
+                        {{-- Creating one meant leaving this employee for
+                             Administration > Departments and coming back,
+                             losing anything typed in the meantime. Only the
+                             two roles that may actually create one are
+                             offered the button: editing an employee allows
+                             manager and payroll-officer too, and for them it
+                             would only ever return a 403. --}}
+                        <label class="form-label flex items-center justify-between gap-2">
+                            <span>Department <span class="text-red-500">*</span></span>
+                            @role('super-admin|hr-admin')
+                            <button type="button" onclick="openQuickAdd('department')"
+                                    class="text-xs font-medium text-blue-600 hover:underline">+ New</button>
+                            @endrole
+                        </label>
+                        <select name="department_id" id="departmentSelect" class="form-input select2">
                             <option value="">— Select Department —</option>
                             @foreach($departments as $d)
                             <option value="{{ $d->id }}" @selected(old('department_id',$employee->department_id)==$d->id)>{{ $d->name }}</option>
                             @endforeach
                         </select>
+                        @role('super-admin|hr-admin')
+                        <div id="quickAdd-department" hidden class="mt-2 flex items-center gap-2">
+                            <input type="text" id="quickAddInput-department" maxlength="100"
+                                   class="form-input flex-1" placeholder="New department name">
+                            <button type="button" onclick="saveQuickAdd('department')" class="btn-primary text-xs px-3 py-2">Add</button>
+                            <button type="button" onclick="closeQuickAdd('department')" class="btn-secondary text-xs px-3 py-2">Cancel</button>
+                        </div>
+                        <p id="quickAddMsg-department" hidden class="mt-1 text-xs"></p>
+                        @endrole
                     </div>
                     <div>
                         <label class="form-label">Sub Department</label>
@@ -289,13 +311,28 @@
                                value="{{ old('sub_department', $employee->sub_department) }}">
                     </div>
                     <div>
-                        <label class="form-label">Designation <span class="text-red-500">*</span></label>
-                        <select name="designation_id" class="form-input select2">
+                        <label class="form-label flex items-center justify-between gap-2">
+                            <span>Designation <span class="text-red-500">*</span></span>
+                            @role('super-admin|hr-admin')
+                            <button type="button" onclick="openQuickAdd('designation')"
+                                    class="text-xs font-medium text-blue-600 hover:underline">+ New</button>
+                            @endrole
+                        </label>
+                        <select name="designation_id" id="designationSelect" class="form-input select2">
                             <option value="">— Select Designation —</option>
                             @foreach($designations as $d)
                             <option value="{{ $d->id }}" @selected(old('designation_id',$employee->designation_id)==$d->id)>{{ $d->title }}</option>
                             @endforeach
                         </select>
+                        @role('super-admin|hr-admin')
+                        <div id="quickAdd-designation" hidden class="mt-2 flex items-center gap-2">
+                            <input type="text" id="quickAddInput-designation" maxlength="100"
+                                   class="form-input flex-1" placeholder="New job title">
+                            <button type="button" onclick="saveQuickAdd('designation')" class="btn-primary text-xs px-3 py-2">Add</button>
+                            <button type="button" onclick="closeQuickAdd('designation')" class="btn-secondary text-xs px-3 py-2">Cancel</button>
+                        </div>
+                        <p id="quickAddMsg-designation" hidden class="mt-1 text-xs"></p>
+                        @endrole
                     </div>
                     <div>
                         <label class="form-label">Employee Category</label>
@@ -1064,6 +1101,104 @@
 
 @push('scripts')
 <script>
+/* ── Adding a department or designation without leaving this employee ──
+   Both endpoints already existed and answered with a redirect; they answer
+   JSON now, so the new row can be dropped straight into the <select> and
+   picked. Nothing else on the form is touched, so a half-filled Placement
+   tab survives adding a job title that was missing from the list. */
+const QUICK_ADD = {
+    department:  { url: "{{ route('admin.departments.store') }}",  field: 'name',  select: 'departmentSelect',  label: 'Department' },
+    designation: { url: "{{ route('admin.designations.store') }}", field: 'title', select: 'designationSelect', label: 'Designation' },
+};
+
+function quickAddEls(kind) {
+    return {
+        box:   document.getElementById('quickAdd-' + kind),
+        input: document.getElementById('quickAddInput-' + kind),
+        msg:   document.getElementById('quickAddMsg-' + kind),
+        sel:   document.getElementById(QUICK_ADD[kind].select),
+    };
+}
+
+function quickAddSay(kind, text, ok) {
+    const { msg } = quickAddEls(kind);
+    if (!msg) return;
+    msg.textContent = text;
+    msg.className = 'mt-1 text-xs ' + (ok ? 'text-emerald-600' : 'text-red-600');
+    msg.hidden = !text;
+}
+
+function openQuickAdd(kind) {
+    const { box, input } = quickAddEls(kind);
+    if (!box) return;
+    box.hidden = false;
+    quickAddSay(kind, '', true);
+    input.value = '';
+    input.focus();
+}
+
+function closeQuickAdd(kind) {
+    const { box } = quickAddEls(kind);
+    if (box) box.hidden = true;
+    quickAddSay(kind, '', true);
+}
+
+function saveQuickAdd(kind) {
+    const cfg = QUICK_ADD[kind];
+    const { input, sel } = quickAddEls(kind);
+    const name = (input.value || '').trim();
+
+    if (!name) { quickAddSay(kind, 'Give it a name first.', false); input.focus(); return; }
+
+    const body = {};
+    body[cfg.field] = name;
+
+    fetch(cfg.url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+        },
+        body: JSON.stringify(body),
+    })
+    .then(r => r.json().then(d => ({ ok: r.ok, status: r.status, d })))
+    .then(({ ok, status, d }) => {
+        if (!ok) {
+            if (status === 403) return quickAddSay(kind, 'You do not have permission to add one.', false);
+            const first = d.errors ? Object.values(d.errors)[0][0] : (d.message || 'Could not save that.');
+            return quickAddSay(kind, first, false);
+        }
+
+        const label = d.name || d.title;
+
+        /* firstOrCreate on the server, so asking for one that already exists
+           returns the existing row rather than making a second of it. Select
+           that one instead of appending a duplicate to the list. */
+        let option = [...sel.options].find(o => o.value === String(d.id));
+        if (!option) {
+            option = new Option(label, d.id, false, false);
+            sel.add(option);
+        }
+
+        sel.value = String(d.id);
+        if (window.jQuery && jQuery(sel).data('select2')) jQuery(sel).trigger('change.select2');
+
+        quickAddSay(kind, d.created ? cfg.label + ' added and selected.' : 'That one already existed — selected it.', true);
+        setTimeout(() => closeQuickAdd(kind), 1800);
+    })
+    .catch(() => quickAddSay(kind, 'Could not reach the server.', false));
+}
+
+/* Enter saves, Escape closes, so it behaves like the field it sits under. */
+document.addEventListener('keydown', function (e) {
+    const id = e.target && e.target.id;
+    if (!id || id.indexOf('quickAddInput-') !== 0) return;
+    const kind = id.replace('quickAddInput-', '');
+    if (e.key === 'Enter')  { e.preventDefault(); saveQuickAdd(kind); }
+    if (e.key === 'Escape') { e.preventDefault(); closeQuickAdd(kind); }
+});
+
 const statusActiveClasses = {
     'active':           'border-green-400 bg-green-50 text-green-700',
     'on_leave':         'border-yellow-400 bg-yellow-50 text-yellow-700',

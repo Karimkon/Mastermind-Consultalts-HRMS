@@ -17,8 +17,27 @@ class DepartmentController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate(['name' => 'required|string|max:100']);
-        Department::create($request->only('name', 'parent_id', 'head_id'));
+        $data = $request->validate(['name' => 'required|string|max:100']);
+
+        // One of these already existing is not an error worth a red screen:
+        // two people adding "Operations" minutes apart should both end up
+        // pointing at the same department, not at two of them.
+        $department = Department::firstOrCreate(
+            ['name' => $data['name']],
+            $request->only('parent_id', 'head_id')
+        );
+
+        // Answering JSON lets the employee form add one without navigating
+        // away; the Departments screen still posts a form and wants the
+        // redirect it has always had.
+        if ($request->expectsJson()) {
+            return response()->json([
+                'id'      => $department->id,
+                'name'    => $department->name,
+                'created' => $department->wasRecentlyCreated,
+            ], $department->wasRecentlyCreated ? 201 : 200);
+        }
+
         return back()->with('success', 'Department created.');
     }
 
@@ -37,8 +56,21 @@ class DepartmentController extends Controller
 
     public function storeDesignation(Request $request)
     {
-        $request->validate(['title' => 'required|string|max:100']);
-        Designation::create($request->only('title', 'department_id', 'grade'));
+        $data = $request->validate(['title' => 'required|string|max:100']);
+
+        $designation = Designation::firstOrCreate(
+            ['title' => $data['title']],
+            $request->only('department_id', 'grade')
+        );
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'id'      => $designation->id,
+                'title'   => $designation->title,
+                'created' => $designation->wasRecentlyCreated,
+            ], $designation->wasRecentlyCreated ? 201 : 200);
+        }
+
         return back()->with('success', 'Designation created.');
     }
 
