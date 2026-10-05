@@ -158,6 +158,22 @@ class Client extends Model
         };
     }
 
+    /**
+     * The pay basis this client's payroll_type implies, or null when it
+     * implies none, which the payroll engine takes as its default.
+     *
+     * 'mixed' says outright that the basis varies per person, and anything
+     * else — 'casual' is in the data, on a client with 176 staff — is not a
+     * formula the engine has. Both mean the employee's own salary record is
+     * the only thing that can decide, so neither yields a default.
+     */
+    public function defaultSalaryType(): ?string
+    {
+        return in_array($this->payroll_type, ['daily', 'hourly', 'monthly'], true)
+            ? $this->payroll_type
+            : null;
+    }
+
     public function user()           { return $this->belongsTo(User::class); }
     public function accountManager() { return $this->belongsTo(User::class, 'account_manager_id'); }
     public function supervisor()     { return $this->belongsTo(Employee::class, 'supervisor_employee_id'); }

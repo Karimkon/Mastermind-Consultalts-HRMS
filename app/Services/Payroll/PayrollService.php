@@ -111,14 +111,35 @@ class PayrollService
         $salary = EmployeeSalary::where('employee_id', $employee->id)
             ->where('is_current', true)->latest()->first();
 
-        $salaryType = $salary ? ($salary->salary_type ?? 'monthly') : 'monthly';
-        $rateValue  = $salary ? (float) $salary->basic_salary : 0;
-
         // Client-level settings
         $client     = $run->client;
         $grossUpPaye = $client?->gross_up_paye ?? false;
         $gpaRate    = (float) ($client?->gpa_wmc_rate ?? 0);   // e.g. 2.0 = 2%
         $billMult   = (float) ($client?->billing_rate_multiplier ?? 1.0);
+
+        // ── Which formula pays this person ──────────────────────────
+        //
+        // The client's payroll_type was decorative. Bidco was set to "Daily
+        // (Casual)" while all 67 staff sat on monthly 455,000, and this line
+        // read 'monthly' off the salary record and paid the monthly formula
+        // without a word. The setting is now the default basis, so a client
+        // that has said how it pays is believed when the salary record is
+        // silent — previously that fell to a hardcoded 'monthly' regardless.
+        //
+        // It is deliberately only the DEFAULT, and does not override a basis
+        // the salary record states. basic_salary carries no unit of its own —
+        // salary_type IS its unit — so letting a label reinterpret a rate that
+        // disagrees with it changes what the number means. UNOC is labelled
+        // 'daily' and carries monthly figures up to 4,488,723, which read as a
+        // daily rate is 121,195,521 for one month. Where the two disagree the
+        // rate's own unit decides and the selection screen reports it, because
+        // a mismatch is a data error somebody has to fix, not one this method
+        // can settle by picking a side.
+        $salaryType = $salary && $salary->salary_type
+            ? $salary->salary_type
+            : ($client?->defaultSalaryType() ?? 'monthly');
+
+        $rateValue  = $salary ? (float) $salary->basic_salary : 0;
 
         $start = Carbon::create($run->year, $run->month, 1)->startOfDay();
         $end   = $start->copy()->endOfMonth()->endOfDay();

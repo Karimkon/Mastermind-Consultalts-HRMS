@@ -119,6 +119,34 @@
 <form method="POST" action="{{ route('account-manager.payroll.select.store', $run) }}" id="selectForm">
     @csrf
 
+    {{-- A pay basis that contradicts the client's setting. This was invisible
+         until now: Bidco was set to "Daily (Casual)" with all 67 staff on
+         monthly 455,000, and the run paid the monthly formula without saying
+         so. It is reported rather than corrected, because a rate carries no
+         unit without its salary_type and so the engine cannot tell which half
+         of the disagreement is the wrong one. --}}
+    @if(count($basisMismatch))
+    <div class="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900">
+        <p class="font-semibold">
+            <i class="fas fa-triangle-exclamation mr-1"></i>
+            {{ count($basisMismatch) }} of the {{ $employees->count() }} people listed for
+            {{ $clientName }} {{ count($basisMismatch) === 1 ? 'is' : 'are' }}
+            not on the pay basis it is set to
+        </p>
+        <p class="mt-1">
+            This client is set to <strong>{{ $run->client->payroll_type_label }}</strong>,
+            so payroll expects a <strong>{{ $basisExpected }}</strong> rate. The figures
+            below use the rate each person actually carries, which is the only one whose
+            unit is known — so nothing here is miscalculated, but it is not being paid
+            the way the client setting says it is.
+        </p>
+        <p class="mt-2 text-xs">
+            Change the rates on <strong>Salary Setup</strong> if the rates are wrong, or
+            the payroll type on <strong>Client Settings</strong> if the setting is.
+        </p>
+    </div>
+    @endif
+
     <div class="rounded-xl bg-white border border-slate-200 overflow-hidden">
         <div class="flex flex-wrap items-center gap-3 p-4 border-b border-slate-100">
             <div class="flex items-center gap-2">
@@ -247,10 +275,18 @@
                              what will be paid, not an approximation of it. --}}
                         @php($rate = $rates[$e->id] ?? ['amount' => 0, 'type' => null])
                         @php($fig = $preview['rows'][$e->id] ?? null)
+                        @php($basisOff = $basisMismatch[$e->id] ?? null)
                         <td class="px-4 py-3 text-right text-sm text-slate-500 whitespace-nowrap">
                             @if($rate['amount'] > 0)
                                 {{ number_format($rate['amount']) }}
                                 <span class="text-xs text-slate-400">/{{ ['daily' => 'day', 'monthly' => 'mth', 'hourly' => 'hr'][$rate['type']] ?? $rate['type'] }}</span>
+                                @if($basisOff)
+                                    <p class="text-[11px] font-medium text-amber-600"
+                                       title="This client is set to {{ $run->client->payroll_type_label ?? '' }}, so payroll expects a {{ $basisOff['expected'] }} rate. This one is {{ $basisOff['has'] }} and is being paid as such.">
+                                        <i class="fas fa-triangle-exclamation"></i>
+                                        expected {{ $basisOff['expected'] }}
+                                    </p>
+                                @endif
                             @else
                                 <span class="text-amber-600 text-xs" title="Payroll will calculate nothing without a rate">no rate</span>
                             @endif

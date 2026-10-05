@@ -678,8 +678,12 @@ class AccountManagerController extends Controller
         $preview = $this->payrollPreview($run);
         $rates = $this->currentRates($employees);
 
+        $basisExpected = $run->client?->defaultSalaryType();
+        $basisMismatch = $this->basisMismatches($rates, $basisExpected);
+
         return view('account-manager.payroll-select',
-            compact('run', 'employees', 'existing', 'daysInMonth', 'preview', 'rates'));
+            compact('run', 'employees', 'existing', 'daysInMonth', 'preview', 'rates',
+                    'basisExpected', 'basisMismatch'));
     }
 
     public function storeEmployeeSelection(\Illuminate\Http\Request $request, PayrollRun $run)
@@ -1014,6 +1018,49 @@ class AccountManagerController extends Controller
             'amount' => (float) ($salaries[$e->id]->basic_salary ?? 0),
             'type'   => $salaries[$e->id]->salary_type ?? null,
         ]])->all();
+    }
+
+    /**
+     * Who is not on the pay basis the client is set to.
+     *
+     * This disagreement used to be silent, and expensive. Bidco was set to
+     * "Daily (Casual)" with all 67 staff on monthly 455,000: the engine paid
+     * the monthly formula, nobody was told, and the run looked correct.
+     *
+     * The engine cannot settle it by preferring the label, because a rate has
+     * no unit without salary_type — UNOC is labelled 'daily' over monthly
+     * figures up to 4,488,723, and 27 of those is 121m. So the figures stay
+     * keyed to the rate's own unit and the disagreement is reported to the
+     * person about to commit the run, who is the one who can fix it.
+     *
+     * Only a client with a definite basis has anything to disagree with:
+     * 'mixed' and the legacy 'casual' yield no expectation, so no warning.
+     */
+    private function basisMismatches(array $rates, ?string $expected): array
+    {
+        if ($expected === null) {
+            return [];
+        }
+
+        $off = [];
+
+        foreach ($rates as $employeeId => $rate) {
+            // Nobody with no rate at all is reported here: "no rate" is already
+            // shown against them, and it is the larger problem of the two.
+            //
+            // Nor is a record that states no basis: the engine now takes the
+            // client's own type for those, so there is nothing to disagree
+            // about. Only a stated basis can contradict the setting.
+            if ($rate['type'] === null || $rate['type'] === '' || $rate['amount'] <= 0) {
+                continue;
+            }
+
+            if ($rate['type'] !== $expected) {
+                $off[$employeeId] = ['has' => $rate['type'], 'expected' => $expected];
+            }
+        }
+
+        return $off;
     }
     /** Everybody on the run's client, whatever their state. */
     private function runClientEmployees(PayrollRun $run)
