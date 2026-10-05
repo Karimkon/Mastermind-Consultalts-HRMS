@@ -675,7 +675,11 @@ class AccountManagerController extends Controller
 
         $daysInMonth = \Carbon\Carbon::create($run->year, $run->month, 1)->daysInMonth;
 
-        return view('account-manager.payroll-select', compact('run', 'employees', 'existing', 'daysInMonth'));
+        $preview = $this->payrollPreview($run);
+        $rates = $this->currentRates($employees);
+
+        return view('account-manager.payroll-select',
+            compact('run', 'employees', 'existing', 'daysInMonth', 'preview', 'rates'));
     }
 
     public function storeEmployeeSelection(\Illuminate\Http\Request $request, PayrollRun $run)
@@ -727,9 +731,14 @@ class AccountManagerController extends Controller
         // half-finished selection across 439 employees because somebody closed a
         // laptop is not an acceptable way to lose an afternoon.
         if ($request->expectsJson()) {
+            // The figures come back with the receipt, so the costing columns
+            // follow the days as they are typed rather than going stale until
+            // somebody reloads. They are recalculated AFTER the save because
+            // the engine reads the days it was just given.
             return response()->json([
                 'selected' => $count,
                 'saved_at' => now()->format('H:i'),
+                'preview'  => $this->payrollPreview($run->fresh()),
             ]);
         }
 
@@ -939,6 +948,73 @@ class AccountManagerController extends Controller
         return back()->with('success', $message);
     }
 
+    /**
+     * What each selected person would be paid, worked out by the payroll engine.
+     *
+     * Not recalculated here. PayrollService::calculatePayslip() is the same code
+     * that produces the real payslip, called without saving one — a preview that
+     * disagreed with the payslip would be worse than no preview at all, and
+     * working the figures out again in JavaScript would guarantee exactly that.
+     *
+     * Only the selected are costed. Somebody not on the run has no figures, and
+     * costing all 439 on every keystroke would make the screen crawl.
+     */
+    private function payrollPreview(PayrollRun $run): array
+    {
+        $selected = \App\Models\PayrollManualDays::where('payroll_run_id', $run->id)
+            ->where('days_worked', '>', 0)
+            ->pluck('employee_id');
+
+        if ($selected->isEmpty()) {
+            return ['rows' => [], 'totals' => ['gross' => 0, 'nssf' => 0, 'paye' => 0, 'net' => 0, 'count' => 0]];
+        }
+
+        $employees = \App\Models\Employee::payrollEligible()->whereIn('id', $selected)->get();
+        $payroll = app(\App\Services\Payroll\PayrollService::class);
+
+        $rows = [];
+        $totals = ['gross' => 0, 'nssf' => 0, 'paye' => 0, 'net' => 0, 'count' => 0];
+
+        foreach ($employees as $employee) {
+            try {
+                $figures = $payroll->calculatePayslip($employee, $run);
+            } catch (\Throwable $e) {
+                // One employee with broken data must not blank the whole screen.
+                report($e);
+                continue;
+            }
+
+            $rows[$employee->id] = [
+                'days'  => (int) ($figures['worked_days'] ?? 0),
+                'gross' => (float) ($figures['gross_salary'] ?? 0),
+                'nssf'  => (float) ($figures['employee_nssf'] ?? 0),
+                'paye'  => (float) ($figures['tax_amount'] ?? 0),
+                'net'   => (float) ($figures['net_salary'] ?? 0),
+            ];
+
+            $totals['gross'] += $rows[$employee->id]['gross'];
+            $totals['nssf']  += $rows[$employee->id]['nssf'];
+            $totals['paye']  += $rows[$employee->id]['paye'];
+            $totals['net']   += $rows[$employee->id]['net'];
+            $totals['count']++;
+        }
+
+        return ['rows' => $rows, 'totals' => $totals];
+    }
+
+    /** What each employee is on, so the rate can be shown beside the days. */
+    private function currentRates($employees): array
+    {
+        $salaries = \App\Models\EmployeeSalary::whereIn('employee_id', $employees->pluck('id'))
+            ->where('is_current', true)
+            ->get()
+            ->keyBy('employee_id');
+
+        return $employees->mapWithKeys(fn ($e) => [$e->id => [
+            'amount' => (float) ($salaries[$e->id]->basic_salary ?? 0),
+            'type'   => $salaries[$e->id]->salary_type ?? null,
+        ]])->all();
+    }
     /** Everybody on the run's client, whatever their state. */
     private function runClientEmployees(PayrollRun $run)
     {

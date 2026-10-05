@@ -166,7 +166,12 @@
                         <th>Employee</th>
                         <th class="w-56">Status</th>
                         <th>Placement</th>
-                        <th class="w-32">Days worked</th>
+                        <th class="w-28">Days worked</th>
+                        <th class="text-right">Rate</th>
+                        <th class="text-right">Gross</th>
+                        <th class="text-right">NSSF</th>
+                        <th class="text-right">PAYE</th>
+                        <th class="text-right">Net pay</th>
                     </tr>
                 </thead>
                 <tbody id="rows">
@@ -232,16 +237,59 @@
                             <input type="number" name="days[{{ $e->id }}]"
                                    value="{{ $eligible ? ($existing[$e->id] ?? '') : '' }}"
                                    min="0" max="{{ $daysInMonth }}" placeholder="0"
-                                   class="form-input w-24 days-input"
+                                   class="form-input w-20 days-input"
                                    @disabled(! $isSelected)>
+                        </td>
+
+                        {{-- What this person costs. The figures come from
+                             PayrollService::calculatePayslip — the same code that
+                             produces the real payslip — so what is shown here is
+                             what will be paid, not an approximation of it. --}}
+                        @php($rate = $rates[$e->id] ?? ['amount' => 0, 'type' => null])
+                        @php($fig = $preview['rows'][$e->id] ?? null)
+                        <td class="px-4 py-3 text-right text-sm text-slate-500 whitespace-nowrap">
+                            @if($rate['amount'] > 0)
+                                {{ number_format($rate['amount']) }}
+                                <span class="text-xs text-slate-400">/{{ ['daily' => 'day', 'monthly' => 'mth', 'hourly' => 'hr'][$rate['type']] ?? $rate['type'] }}</span>
+                            @else
+                                <span class="text-amber-600 text-xs" title="Payroll will calculate nothing without a rate">no rate</span>
+                            @endif
+                        </td>
+                        <td class="px-4 py-3 text-right text-sm tabular-nums" data-cost="gross" data-employee="{{ $e->id }}">
+                            {{ $fig ? number_format($fig['gross']) : '—' }}
+                        </td>
+                        <td class="px-4 py-3 text-right text-sm tabular-nums text-slate-500" data-cost="nssf" data-employee="{{ $e->id }}">
+                            {{ $fig ? number_format($fig['nssf']) : '—' }}
+                        </td>
+                        <td class="px-4 py-3 text-right text-sm tabular-nums text-amber-700" data-cost="paye" data-employee="{{ $e->id }}">
+                            {{ $fig ? number_format($fig['paye']) : '—' }}
+                        </td>
+                        <td class="px-4 py-3 text-right text-sm tabular-nums font-semibold text-slate-800" data-cost="net" data-employee="{{ $e->id }}">
+                            {{ $fig ? number_format($fig['net']) : '—' }}
                         </td>
                     </tr>
                     @empty
-                    <tr><td colspan="5" class="px-4 py-10 text-center text-sm text-slate-400">
+                    <tr><td colspan="10" class="px-4 py-10 text-center text-sm text-slate-400">
                         No employees are assigned to this client.
                     </td></tr>
                     @endforelse
                 </tbody>
+
+                {{-- What the run comes to. Worth having in front of somebody
+                     before they submit it to HR, rather than after. --}}
+                <tfoot>
+                    <tr class="bg-slate-50 border-t-2 border-slate-200 font-semibold text-sm">
+                        <td colspan="4" class="px-4 py-3 text-slate-600">
+                            Total for <span data-total="count">{{ $preview['totals']['count'] }}</span> selected
+                        </td>
+                        <td class="px-4 py-3"></td>
+                        <td class="px-4 py-3"></td>
+                        <td class="px-4 py-3 text-right tabular-nums" data-total="gross">{{ number_format($preview['totals']['gross']) }}</td>
+                        <td class="px-4 py-3 text-right tabular-nums text-slate-500" data-total="nssf">{{ number_format($preview['totals']['nssf']) }}</td>
+                        <td class="px-4 py-3 text-right tabular-nums text-amber-700" data-total="paye">{{ number_format($preview['totals']['paye']) }}</td>
+                        <td class="px-4 py-3 text-right tabular-nums text-emerald-700" data-total="net">{{ number_format($preview['totals']['net']) }}</td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
     </div>
@@ -358,6 +406,27 @@ function toggleAddEmployee() {
     }
 }
 
+// The costing columns are repainted from what the server sends back after each
+// save. They are never worked out here: the figures must be the engine's, or the
+// screen would quietly disagree with the payslip it is previewing.
+function paintCosts(preview) {
+    const money = (n) => Number(n || 0).toLocaleString();
+
+    document.querySelectorAll('[data-cost]').forEach(function (cell) {
+        const id = cell.dataset.employee;
+        const row = preview.rows ? preview.rows[id] : null;
+        cell.textContent = row ? money(row[cell.dataset.cost]) : '\u2014';
+    });
+
+    const t = preview.totals || {};
+    ['gross', 'nssf', 'paye', 'net'].forEach(function (key) {
+        const el = document.querySelector('[data-total="' + key + '"]');
+        if (el) el.textContent = money(t[key]);
+    });
+    const count = document.querySelector('[data-total="count"]');
+    if (count) count.textContent = t.count || 0;
+}
+
 // ===== Autosave =====
 //
 // 439 employees is an afternoon's work. Losing it to a closed laptop, a flat
@@ -402,6 +471,7 @@ async function save(isBeacon) {
         if (!r.ok) throw new Error('status ' + r.status);
         const d = await r.json();
         setSaveState('Saved ' + d.saved_at, 'saved');
+        if (d.preview) paintCosts(d.preview);
     } catch (e) {
         // Say so loudly. A silent autosave failure is worse than none at all,
         // because it buys false confidence.

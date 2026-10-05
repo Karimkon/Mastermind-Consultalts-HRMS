@@ -95,7 +95,15 @@ class PayrollService
         return $employees->count();
     }
 
-    public function processEmployee(Employee $employee, PayrollRun $run): Payslip
+    /**
+     * Work out what this employee would be paid, without writing anything.
+     *
+     * Split out of processEmployee() so the payroll screen can show the real
+     * figures before a run is processed. There is one calculation and both
+     * callers use it: a preview that disagreed with the payslip would be worse
+     * than no preview at all.
+     */
+    public function calculatePayslip(Employee $employee, PayrollRun $run): array
     {
         $salary = EmployeeSalary::where('employee_id', $employee->id)
             ->where('is_current', true)->latest()->first();
@@ -413,9 +421,7 @@ class PayrollService
         // PAYE prints before NSSF on the payslip — see Payslip::orderComponents().
         $details = Payslip::orderComponents($details);
 
-        return Payslip::updateOrCreate(
-            ['payroll_run_id' => $run->id, 'employee_id' => $employee->id],
-            [
+        return [
                 'basic_salary'        => $basic,
                 'total_allowances'    => round($allowances, 0),
                 'gross_salary'        => round($gross, 0),
@@ -431,7 +437,15 @@ class PayrollService
                 'leave_deduction'     => $leaveDeduction,
                 'prorate_factor'      => $prorateFactor,
                 'overtime_hours_paid' => (int) round($totalOvertimeHours),
-            ]
+        ];
+    }
+
+    /** Calculate, then save. Every existing caller still lands here. */
+    public function processEmployee(Employee $employee, PayrollRun $run): Payslip
+    {
+        return Payslip::updateOrCreate(
+            ['payroll_run_id' => $run->id, 'employee_id' => $employee->id],
+            $this->calculatePayslip($employee, $run)
         );
     }
 
