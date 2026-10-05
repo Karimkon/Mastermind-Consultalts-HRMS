@@ -147,7 +147,13 @@
            blue, 1px borders and no padding. These rules cover the panel, the
            search field and the option rows as well, and inherit the body
            font so a dropdown reads like the page it is on. */
-        .select2-container { width: 100% !important; font-family: inherit; }
+        /* Font only. The width of the inline container is set by Select2 from
+           the width:'100%' option, and the OPEN dropdown lives in a second
+           element that also carries this class and is positioned with an
+           inline pixel width -- overriding that here made the panel as wide
+           as the page and flipped it upward. */
+        .select2-container { font-family: inherit; }
+        .select2-container--open { max-width: 100vw; }
 
         .select2-container--classic .select2-selection--single,
         .select2-container--default .select2-selection--single {
@@ -181,7 +187,7 @@
         .select2-container--default .select2-dropdown {
             border: 1px solid #d1d5db !important; border-radius: 0.5rem;
             box-shadow: 0 10px 20px -5px rgba(15,23,42,.15), 0 4px 6px -4px rgba(15,23,42,.1);
-            overflow: hidden; font-size: 0.875rem; min-width: 16rem;
+            overflow: hidden; font-size: 0.875rem;
         }
         .select2-container--classic .select2-search--dropdown,
         .select2-container--default .select2-search--dropdown { padding: 0.5rem; border-bottom: 1px solid #f1f5f9; }
@@ -925,14 +931,14 @@ $(document).ready(function () {
     /* width:'100%' rather than the default 'resolve'. These selects sit in
        tab panels that are display:none at load, so resolve measures them at
        zero and the control renders about 110px wide with its options cut off
-       mid-word. dropdownAutoWidth then lets the open list be as wide as its
-       longest option instead of as narrow as the field. */
+       mid-word. The list then follows the field: long titles wrap over two
+       lines rather than widening the panel, which is what dropdownAutoWidth
+       did here -- it opened one as wide as the page. */
     $(".select2").select2({
         theme: "classic",
         placeholder: "Select...",
         allowClear: true,
         width: "100%",
-        dropdownAutoWidth: true,
     });
     $(".select2-ajax-employees").select2({
         theme: "classic", placeholder: "Search employee...", allowClear: true,
