@@ -75,7 +75,7 @@
 </div>
 
 {{-- Employee table --}}
-<div class="card overflow-hidden">
+<div class="card overflow-x-auto">
     <table class="w-full text-sm" id="employeeTable">
         <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
         <tr>
@@ -85,6 +85,15 @@
             <th class="px-4 py-3 text-left">Role</th>
             <th class="px-4 py-3 text-right">Basic</th>
             <th class="px-4 py-3 text-right">Gross</th>
+            {{-- Deductions arrived as one number, so HR could see that 73,500
+                 was taken and not what it was taken for. The parts are shown
+                 before the total and add up to it exactly: on 122 of 2,605
+                 payslips there is something beyond PAYE and NSSF, which is
+                 what "Other" is for -- without it the row would not reconcile
+                 and the two statutory figures would look like the whole of it. --}}
+            <th class="px-4 py-3 text-right">PAYE</th>
+            <th class="px-4 py-3 text-right">NSSF 5%</th>
+            <th class="px-4 py-3 text-right">Other</th>
             <th class="px-4 py-3 text-right">Deductions</th>
             <th class="px-4 py-3 text-right font-bold text-emerald-700">Net Pay</th>
             <th class="px-4 py-3 text-center">Days</th>
@@ -92,11 +101,22 @@
         </thead>
         <tbody class="divide-y divide-slate-100" id="tableBody">
         @foreach($payslips as $slip)
+        @php
+            // Whatever is deducted beyond the two statutory figures, so the
+            // row reconciles: PAYE + NSSF + Other is exactly Deductions.
+            $otherDed = round($slip->total_deductions - $slip->tax_amount - ($slip->employee_nssf ?? 0));
+        @endphp
         <tr class="employee-row hover:bg-slate-50 transition-colors"
             id="row-{{ $slip->id }}"
             data-name="{{ strtolower($slip->employee->full_name) }}"
             data-emp="{{ strtolower($slip->employee->emp_number) }}"
             data-dept="{{ $slip->employee->department?->name }}"
+            data-basic="{{ $slip->basic_salary }}"
+            data-gross="{{ $slip->gross_salary }}"
+            data-paye="{{ $slip->tax_amount }}"
+            data-nssf="{{ $slip->employee_nssf ?? 0 }}"
+            data-other="{{ $otherDed }}"
+            data-ded="{{ $slip->total_deductions }}"
             data-net="{{ $slip->net_salary }}">
             <td class="px-4 py-2.5">
                 <input type="checkbox" name="selected_payslips[]" value="{{ $slip->id }}"
@@ -116,7 +136,10 @@
             <td class="px-4 py-2.5 text-xs text-slate-500">{{ $slip->employee->designation?->title ?? '—' }}</td>
             <td class="px-4 py-2.5 text-right text-slate-600">{{ number_format($slip->basic_salary) }}</td>
             <td class="px-4 py-2.5 text-right text-slate-700">{{ number_format($slip->gross_salary) }}</td>
-            <td class="px-4 py-2.5 text-right text-orange-600">{{ number_format($slip->total_deductions) }}</td>
+            <td class="px-4 py-2.5 text-right text-slate-500">{{ $slip->tax_amount ? number_format($slip->tax_amount) : '—' }}</td>
+            <td class="px-4 py-2.5 text-right text-slate-500">{{ $slip->employee_nssf ? number_format($slip->employee_nssf) : '—' }}</td>
+            <td class="px-4 py-2.5 text-right text-slate-500">{{ $otherDed ? number_format($otherDed) : '—' }}</td>
+            <td class="px-4 py-2.5 text-right text-orange-600 font-medium">{{ number_format($slip->total_deductions) }}</td>
             <td class="px-4 py-2.5 text-right font-bold text-emerald-700">{{ number_format($slip->net_salary) }}</td>
             <td class="px-4 py-2.5 text-center text-xs">
                 <span class="text-green-600">{{ $slip->worked_days }}P</span> /
@@ -127,13 +150,25 @@
         </tbody>
         <tfoot class="bg-slate-50 border-t-2 border-slate-300">
         <tr>
-            <td colspan="7" class="px-4 py-3 text-sm font-semibold text-slate-600">
+            <td colspan="4" class="px-4 py-3 text-sm font-semibold text-slate-600">
                 Approving payment for <span id="footerCount" class="text-blue-700">{{ $payslips->count() }}</span> employees
                 @php $withheldPrev = $payslips->where('payment_status','withheld')->count(); @endphp
                 @if($withheldPrev)
                 &nbsp;<span class="text-red-500 text-xs">({{ $withheldPrev }} previously withheld)</span>
                 @endif
             </td>
+            {{-- Every column is totalled over the employees actually ticked, and
+                 all of them move together when somebody is withheld. A static
+                 total beside a live one is worse than no total at all. --}}
+            @php
+                $sumOther = $payslips->sum(fn ($s) => round($s->total_deductions - $s->tax_amount - ($s->employee_nssf ?? 0)));
+            @endphp
+            <td class="px-4 py-3 text-right text-sm font-semibold text-slate-600" id="foot-basic">{{ number_format($payslips->sum('basic_salary')) }}</td>
+            <td class="px-4 py-3 text-right text-sm font-semibold text-slate-600" id="foot-gross">{{ number_format($payslips->sum('gross_salary')) }}</td>
+            <td class="px-4 py-3 text-right text-sm font-semibold text-slate-600" id="foot-paye">{{ number_format($payslips->sum('tax_amount')) }}</td>
+            <td class="px-4 py-3 text-right text-sm font-semibold text-slate-600" id="foot-nssf">{{ number_format($payslips->sum('employee_nssf')) }}</td>
+            <td class="px-4 py-3 text-right text-sm font-semibold text-slate-600" id="foot-other">{{ number_format($sumOther) }}</td>
+            <td class="px-4 py-3 text-right text-sm font-semibold text-orange-600" id="foot-ded">{{ number_format($payslips->sum('total_deductions')) }}</td>
             <td class="px-4 py-3 text-right font-bold text-emerald-700 text-base" id="footerNet">
                 UGX {{ number_format($payslips->sum('net_salary')) }}
             </td>
@@ -161,9 +196,23 @@ function updateCount() {
     document.getElementById('selectedCount').textContent = checked.length;
     document.getElementById('footerCount').textContent   = checked.length;
 
-    let total = 0;
-    checked.forEach(cb => { total += parseFloat(cb.closest('tr').dataset.net || 0); });
-    const fmt = 'UGX ' + Math.round(total).toLocaleString();
+    /* Every money column is re-totalled from the ticked rows, not just net:
+       the point of the breakdown is that HR can see what the PAYE and NSSF
+       bill comes to for the people actually being paid. */
+    const cols  = ['basic', 'gross', 'paye', 'nssf', 'other', 'ded', 'net'];
+    const sums  = Object.fromEntries(cols.map(c => [c, 0]));
+
+    checked.forEach(cb => {
+        const d = cb.closest('tr').dataset;
+        cols.forEach(c => { sums[c] += parseFloat(d[c] || 0); });
+    });
+
+    cols.forEach(c => {
+        const el = document.getElementById('foot-' + c);
+        if (el) el.textContent = Math.round(sums[c]).toLocaleString();
+    });
+
+    const fmt = 'UGX ' + Math.round(sums.net).toLocaleString();
     document.getElementById('totalNet').textContent  = fmt;
     document.getElementById('footerNet').textContent = fmt;
 
