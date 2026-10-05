@@ -54,7 +54,7 @@ class HrReviewBreakdownTest extends TestCase
         ]);
     }
 
-    private function slip(PayrollRun $run, float $paye, float $nssf, float $deductions): Payslip
+    private function slip(PayrollRun $run, float $paye, float $nssf, float $deductions, array $components = []): Payslip
     {
         static $n = 0;
         $n++;
@@ -77,6 +77,7 @@ class HrReviewBreakdownTest extends TestCase
             'net_salary'     => 490000 - $deductions,
             'worked_days'    => 28,
             'absent_days'    => 4,
+            'component_details' => $components,
         ]);
     }
 
@@ -160,7 +161,7 @@ class HrReviewBreakdownTest extends TestCase
         $html = $this->review($hr, $run)->assertOk()->getContent();
 
         preg_match('/data-paye="([\d.]+)"/', $html, $p);
-        preg_match('/data-nssf="([\d.]+)"/', $html, $n);
+        preg_match('/data-nssfemp="([\d.]+)"/', $html, $n);
         preg_match('/data-other="(-?[\d.]+)"/', $html, $o);
         preg_match('/data-ded="([\d.]+)"/', $html, $d);
 
@@ -182,7 +183,7 @@ class HrReviewBreakdownTest extends TestCase
 
         $html = $this->review($hr, $run)->assertOk()->getContent();
 
-        foreach (['foot-basic', 'foot-gross', 'foot-paye', 'foot-nssf', 'foot-other', 'foot-ded'] as $id) {
+        foreach (['foot-basic', 'foot-gross', 'foot-paye', 'foot-nssfemp', 'foot-other', 'foot-ded'] as $id) {
             $this->assertStringContainsString('id="' . $id . '"', $html, $id . ' total is missing');
         }
 
@@ -190,6 +191,91 @@ class HrReviewBreakdownTest extends TestCase
         $this->assertStringContainsString('98,000', $html, 'PAYE total');
         $this->assertStringContainsString('49,000', $html, 'NSSF total');
         $this->assertStringContainsString('147,000', $html, 'deductions total');
+    }
+
+    // ===== withholding tax and local service tax =====
+
+    public function test_wht_gets_its_own_column_when_the_run_carries_it(): void
+    {
+        $hr  = $this->hrAdmin();
+        $run = $this->processedRun();
+        // WHT has no payslip column of its own -- it is a line inside
+        // component_details, written by the engine at 6% of gross.
+        $this->slip($run, paye: 49000, nssf: 24500, deductions: 102900, components: [
+            ['name' => 'Withholding Tax (6%)', 'code' => 'WHT', 'type' => 'deduction', 'amount' => 29400],
+        ]);
+
+        $response = $this->review($hr, $run)->assertOk();
+
+        $response->assertSee('>WHT<', false);
+        $response->assertSee('29,400', false);
+    }
+
+    public function test_wht_has_no_column_on_a_run_without_it(): void
+    {
+        $hr  = $this->hrAdmin();
+        $run = $this->processedRun();
+        $this->slip($run, paye: 49000, nssf: 24500, deductions: 73500);
+
+        // A column of dashes reads as a figure somebody checked.
+        $this->review($hr, $run)->assertOk()->assertDontSee('>WHT<', false);
+    }
+
+    public function test_lst_would_get_a_column_the_moment_it_is_calculated(): void
+    {
+        $hr  = $this->hrAdmin();
+        $run = $this->processedRun();
+        // Nothing writes an LST line today -- charge_lst is ticked on 1,246
+        // employees and the engine never reads it. The column is driven off
+        // the component code, so it appears by itself once it does.
+        $this->slip($run, paye: 49000, nssf: 24500, deductions: 83500, components: [
+            ['name' => 'Local Service Tax', 'code' => 'LST', 'type' => 'deduction', 'amount' => 10000],
+        ]);
+
+        $this->review($hr, $run)->assertOk()
+            ->assertSee('>LST<', false)
+            ->assertSee('10,000', false);
+    }
+
+    public function test_wht_is_not_swept_into_other(): void
+    {
+        $hr  = $this->hrAdmin();
+        $run = $this->processedRun();
+        $slip = $this->slip($run, paye: 49000, nssf: 24500, deductions: 102900, components: [
+            ['name' => 'Withholding Tax (6%)', 'code' => 'WHT', 'type' => 'deduction', 'amount' => 29400],
+        ]);
+
+        // 49,000 + 24,500 + 29,400 = 102,900, so Other is nothing.
+        $this->assertSame(29400.0, $slip->deductionPart('WHT'));
+        $this->assertSame(0.0, $slip->otherDeductions());
+    }
+
+    public function test_the_parts_still_reconcile_with_wht_and_a_further_deduction(): void
+    {
+        $hr  = $this->hrAdmin();
+        $run = $this->processedRun();
+        $slip = $this->slip($run, paye: 49000, nssf: 24500, deductions: 152900, components: [
+            ['name' => 'Withholding Tax (6%)', 'code' => 'WHT', 'type' => 'deduction', 'amount' => 29400],
+            ['name' => 'Salary advance', 'code' => 'ADVANCE', 'type' => 'deduction', 'amount' => 50000],
+        ]);
+
+        $named = $slip->deductionPart('PAYE') + $slip->deductionPart('NSSF_EMP')
+               + $slip->deductionPart('WHT') + $slip->deductionPart('LST');
+
+        $this->assertSame(50000.0, $slip->otherDeductions(), 'the advance lands in Other');
+        $this->assertEqualsWithDelta((float) $slip->total_deductions, $named + $slip->otherDeductions(), 0.5);
+    }
+
+    public function test_an_employer_cost_line_is_not_counted_as_a_deduction(): void
+    {
+        $hr  = $this->hrAdmin();
+        $run = $this->processedRun();
+        // Employer NSSF is the company's cost, not the employee's deduction.
+        $slip = $this->slip($run, paye: 49000, nssf: 24500, deductions: 73500, components: [
+            ['name' => 'NSSF (Employer 10%)', 'code' => 'NSSF_CO', 'type' => 'employer_cost', 'amount' => 49000],
+        ]);
+
+        $this->assertSame(0.0, $slip->otherDeductions());
     }
 
     public function test_nothing_deducted_shows_a_dash_rather_than_a_zero(): void

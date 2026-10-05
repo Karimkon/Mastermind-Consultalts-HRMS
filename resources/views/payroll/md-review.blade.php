@@ -75,6 +75,10 @@
 {{-- Employee table --}}
 <div class="card overflow-hidden">
     <table class="w-full text-sm" id="employeeTable">
+        @php
+            // Which deduction parts this run actually carries.
+            $parts = \App\Models\Payslip::partsInUse($payslips);
+        @endphp
         <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
         <tr>
             <th class="px-4 py-3 text-left w-8"></th>
@@ -83,7 +87,7 @@
             <th class="px-4 py-3 text-left">Designation</th>
             <th class="px-4 py-3 text-right">Basic</th>
             <th class="px-4 py-3 text-right">Gross</th>
-            <th class="px-4 py-3 text-right">Deductions</th>
+            @include('payroll.partials.deduction-heads', ['parts' => $parts])
             <th class="px-4 py-3 text-right font-bold text-emerald-700">Net Pay</th>
             <th class="px-4 py-3 text-center">Days</th>
             <th class="px-4 py-3 text-center">Status</th>
@@ -116,7 +120,7 @@
             <td class="px-4 py-2.5 text-xs text-slate-500">{{ $slip->employee->designation?->title ?? '—' }}</td>
             <td class="px-4 py-2.5 text-right text-slate-600">{{ number_format($slip->basic_salary) }}</td>
             <td class="px-4 py-2.5 text-right text-slate-700">{{ number_format($slip->gross_salary) }}</td>
-            <td class="px-4 py-2.5 text-right text-orange-600">{{ number_format($slip->total_deductions) }}</td>
+            @include('payroll.partials.deduction-cells', ['slip' => $slip, 'parts' => $parts])
             <td class="px-4 py-2.5 text-right font-bold text-emerald-700">{{ number_format($slip->net_salary) }}</td>
             <td class="px-4 py-2.5 text-center text-xs">
                 <span class="text-green-600">{{ $slip->worked_days }}P</span> /
@@ -136,7 +140,10 @@
         </tbody>
         <tfoot class="bg-slate-50 border-t-2 border-slate-300">
         <tr>
-            <td colspan="7" class="px-4 py-3 text-sm font-semibold text-slate-600">
+            {{-- 6 fixed columns before the deductions block (tick, employee,
+                 department, designation, basic, gross), then one per part,
+                 then Other and the total. --}}
+            <td colspan="{{ 6 + count($parts) + 2 }}" class="px-4 py-3 text-sm font-semibold text-slate-600">
                 Final approval for <span id="footerCount" class="text-green-700">{{ $payslips->where('payment_status','pending')->count() }}</span> employees
                 @php $withheldPrev = $payslips->where('payment_status','withheld')->count(); @endphp
                 @if($withheldPrev)

@@ -10,6 +10,86 @@ class Payslip extends Model
     public function payrollRun() { return $this->belongsTo(PayrollRun::class); }
 
     /**
+     * The statutory deductions, in the order a reviewer reads them.
+     *
+     * PAYE and NSSF have columns of their own. Withholding tax and local
+     * service tax do not -- they are lines inside component_details -- so
+     * they are read back by code. Keyed by code, valued by heading.
+     */
+    public const DEDUCTION_PARTS = [
+        'PAYE'     => 'PAYE',
+        'NSSF_EMP' => 'NSSF 5%',
+        'WHT'      => 'WHT',
+        'LST'      => 'LST',
+    ];
+
+    /** The two that are shown only on runs that actually carry them. */
+    public const OPTIONAL_PARTS = ['WHT', 'LST'];
+
+    /** What this payslip was deducted under one component code. */
+    public function deductionFor(string $code): float
+    {
+        foreach ((array) $this->component_details as $line) {
+            if (($line['code'] ?? null) === $code && ($line['type'] ?? null) === 'deduction') {
+                return (float) ($line['amount'] ?? 0);
+            }
+        }
+
+        return 0.0;
+    }
+
+    /** One part of the deduction, whichever way this system records it. */
+    public function deductionPart(string $code): float
+    {
+        return match ($code) {
+            // Read the column, not the component line: NSSF is now charged
+            // from the employee's own flag and a salary set up before that
+            // has the figure in the column with no line beside it.
+            'PAYE'     => (float) $this->tax_amount,
+            'NSSF_EMP' => (float) $this->employee_nssf,
+            default    => $this->deductionFor($code),
+        };
+    }
+
+    /**
+     * Whatever is deducted beyond the named parts.
+     *
+     * Not decoration: 122 of 2,605 live payslips carry something past the
+     * statutory lines, the largest 333,333. Without it a row would not
+     * reconcile and the statutory figures would look like the whole of it.
+     */
+    public function otherDeductions(): float
+    {
+        $named = 0.0;
+        foreach (array_keys(self::DEDUCTION_PARTS) as $code) {
+            $named += $this->deductionPart($code);
+        }
+
+        return round((float) $this->total_deductions - $named);
+    }
+
+    /**
+     * Which optional parts this set of payslips actually uses.
+     *
+     * A column of dashes reads as a figure that was checked and found to be
+     * nothing. WHT and LST are shown only where there is something to show.
+     */
+    public static function partsInUse($payslips): array
+    {
+        $parts = [];
+
+        foreach (self::DEDUCTION_PARTS as $code => $label) {
+            if (! in_array($code, self::OPTIONAL_PARTS, true)) { $parts[$code] = $label; continue; }
+
+            foreach ($payslips as $slip) {
+                if ($slip->deductionPart($code) > 0) { $parts[$code] = $label; break; }
+            }
+        }
+
+        return $parts;
+    }
+
+    /**
      * Deductions are printed in the order management signed off on:
      * PAYE first, then NSSF, then everything else.  Applied on read so that
      * payslips generated before this rule was introduced print correctly too.
