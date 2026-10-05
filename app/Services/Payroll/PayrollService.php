@@ -35,6 +35,9 @@ class PayrollService
         [10000000, PHP_INT_MAX, 0.40, 2902000],
     ];
 
+    /** The employee's statutory share. The employer's is twice this. */
+    public const NSSF_EMPLOYEE_RATE = 0.05;
+
     public function processRun(PayrollRun $run): int
     {
         // An imported run holds payslips this engine did not produce and cannot
@@ -285,6 +288,43 @@ class PayrollService
 
                 if ($component->type === 'allowance') $allowances += $amount;
                 else $deductions += $amount;
+            }
+        }
+
+        // ── NSSF from the employee's own settings ───────────────────
+        //
+        // Until now NSSF was deducted ONLY when an NSSF_EMP component had been
+        // attached to the salary, on the Salary Setup screen. The "Charge NSSF"
+        // tickbox in Employee Central was read by nobody.
+        //
+        // So the tickbox lied. On Bidco all 67 staff were flagged to be charged
+        // and none had the component, so nothing was deducted — neither the
+        // employee's 5% nor the employer's 10% that follows from it. System-wide
+        // only 440 of 1,244 salaries carried any components at all.
+        //
+        // The flag is where somebody configures this, so the flag is what
+        // decides. An attached component still wins, so the salaries that were
+        // set up deliberately keep the figures they had.
+        if ($employeeNssf == 0 && $employee->charge_nssf && ! $employee->do_not_charge_nssf_employee) {
+            $employeeNssf = $employee->force_fixed_nssf && $employee->fixed_nssf_amount > 0
+                ? round((float) $employee->fixed_nssf_amount, 0)
+                : round($basic * self::NSSF_EMPLOYEE_RATE, 0);
+
+            if ($employeeNssf > 0) {
+                $details[] = [
+                    'name'    => 'NSSF (Employee 5%)',
+                    'code'    => 'NSSF_EMP',
+                    'type'    => 'deduction',
+                    'amount'  => $employeeNssf,
+                    'taxable' => false,
+                ];
+
+                // When the employer carries the employee's share it is still
+                // remitted and still shown, but it does not come out of the
+                // employee's pay — so it is not added to their deductions.
+                if (! $employee->nssf_paid_by_employer) {
+                    $deductions += $employeeNssf;
+                }
             }
         }
 

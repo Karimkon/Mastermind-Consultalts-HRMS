@@ -184,7 +184,7 @@ get through, but it bypasses the host's upload scanning. Decided against.
   detect a staff email and point at "Mastermind staff login" instead.
 - **Zero applicant accounts exist.** Worth checking whether the careers flow is
   broken earlier than the CV upload step (§2).
-- **Payroll:** 10 of 12 statutory switches are read by nobody (`charge_lst` is
+- **Payroll:** `charge_nssf` is now honoured (2026-10-05) — it previously required an NSSF_EMP component attached on Salary Setup, and 0 of Bidco`s 67 had one. The remaining statutory switches are still read by nobody (`charge_lst` is
   set on 1,246 of 1,247 employees and Local Service Tax is never deducted);
   `processRun()` filters employees on `now()` rather than the run period; WHT is
   stored only in `component_details` so reports summing `tax_amount` miss it; no
