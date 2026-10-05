@@ -131,7 +131,7 @@ class AccountManagerApiController extends Controller
                     $q->whereIn('client_id', $clientIds)->orWhereNull('client_id');
                 }
             })
-            ->latest()
+            ->latestActivity()
             ->paginate(20);
 
         return response()->json([

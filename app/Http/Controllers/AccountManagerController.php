@@ -524,7 +524,7 @@ class AccountManagerController extends Controller
             })
             ->when($empType && $empType !== 'all',  fn($q) => $q->where('employment_type', $empType))
             ->when($statusF,                         fn($q) => $q->where('status', $statusF))
-            ->latest()
+            ->latestActivity()
             ->paginate(30);
 
         $activeClient = $clientId ? $clients->firstWhere('id', $clientId) : null;

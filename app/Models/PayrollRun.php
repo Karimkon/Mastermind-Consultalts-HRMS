@@ -36,6 +36,27 @@ class PayrollRun extends Model {
     public function locker()          { return $this->belongsTo(User::class, 'locked_by'); }
     public function client()          { return $this->belongsTo(Client::class); }
 
+    /**
+     * Newest first, by when the run was last actually moved along.
+     *
+     * The payroll list ordered by period alone, so October's three runs sat in
+     * whatever order they happened to be created in and the one submitted to
+     * HR at midday appeared below one submitted that morning. Submitting is
+     * the event people come to this screen looking for, so it leads.
+     *
+     * The fallbacks matter as much as the first column. A run that was
+     * imported rather than processed has no processed_at, and a draft has
+     * neither — ordering on processed_at alone would sink a draft somebody is
+     * still working on to the bottom of the list. Each falls back to the last
+     * time it changed, so recent work stays where it can be seen.
+     */
+    public function scopeLatestActivity($query)
+    {
+        return $query
+            ->orderByRaw('COALESCE(processed_at, imported_at, updated_at, created_at) DESC')
+            ->orderByDesc('id');
+    }
+
     // Status stages: draft → processed → hr_approved → finance_approved → md_approved(locked) → paid
     public function isLocked(): bool   { return !is_null($this->locked_at); }
 

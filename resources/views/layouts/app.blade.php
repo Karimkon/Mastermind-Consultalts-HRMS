@@ -682,27 +682,47 @@
                     <span x-show="count > 0" x-text="count" class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold"></span>
                 </button>
                 <div x-show="open" @click.outside="open = false" x-transition class="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-slate-200 py-2 z-50">
-                    <div class="px-4 py-2 border-b border-slate-100 flex justify-between items-center">
-                        <span class="font-semibold text-sm text-slate-700">Notifications</span>
-                        <button @click="markAllRead()" class="text-xs text-blue-600 hover:underline">Mark all read</button>
+                    <div class="px-4 py-2 border-b border-slate-100 flex justify-between items-center gap-2">
+                        <span class="font-semibold text-sm text-slate-700">
+                            Notifications<span x-show="count > 0" class="ml-1 font-normal text-blue-600"
+                                               x-text="'(' + count + ' unread)'"></span>
+                        </span>
+                        <div class="flex items-center gap-3">
+                            {{-- Read and unread were told apart only by a 40% tint,
+                                 so a panel of ten looked like ten of the same thing
+                                 and there was no way to see just what was new. --}}
+                            <button type="button" @click="unreadOnly = !unreadOnly"
+                                    class="text-xs text-slate-500 hover:underline"
+                                    x-text="unreadOnly ? 'Show all' : 'Unread only'"></button>
+                            <button type="button" @click="markAllRead()" class="text-xs text-blue-600 hover:underline">Mark all read</button>
+                        </div>
                     </div>
                     <div class="max-h-72 overflow-y-auto">
-                        {{-- Every notification is written with a `url` in its data,
-                             but this row carried cursor-pointer and no handler, so
-                             it looked clickable and went nowhere. An appraisal
-                             notice that cannot be opened is a dead end for anyone
-                             whose menu has no link to the card. --}}
-                        <template x-for="n in items" :key="n.id">
-                            <a :href="n.data && n.data.url ? n.data.url : null"
+                        {{-- The row read `data.url`, and almost nothing writes one:
+                             of 546 notices on the live system 34 had a url and 512
+                             went nowhere, this payroll one among them. The link is
+                             now worked out on the model from the id each notice
+                             already carries, so "Payroll awaiting HR approval"
+                             opens the run it is about. --}}
+                        <template x-for="n in visible" :key="n.id">
+                            <a :href="n.link || null"
                                @click="markOneRead(n)"
-                               class="block px-4 py-3 hover:bg-slate-50 border-b border-slate-50"
-                               :class="[!n.read_at ? 'bg-blue-50/40' : '',
-                                        n.data && n.data.url ? 'cursor-pointer' : 'cursor-default']">
-                                <p class="text-sm font-medium text-slate-800" x-text="n.title"></p>
-                                <p class="text-xs text-slate-500 mt-0.5" x-text="n.body"></p>
+                               class="flex gap-2.5 px-4 py-3 hover:bg-slate-50 border-b border-slate-50"
+                               :class="[n.read_at ? '' : 'bg-blue-50/60',
+                                        n.link ? 'cursor-pointer' : 'cursor-default']">
+                                <span class="mt-1.5 w-2 h-2 rounded-full flex-shrink-0"
+                                      :class="n.read_at ? 'bg-slate-200' : 'bg-blue-600'"
+                                      :title="n.read_at ? 'Read' : 'Unread'"></span>
+                                <span class="min-w-0 flex-1">
+                                    <p class="text-sm" :class="n.read_at ? 'text-slate-500' : 'font-semibold text-slate-800'"
+                                       x-text="n.title"></p>
+                                    <p class="text-xs mt-0.5" :class="n.read_at ? 'text-slate-400' : 'text-slate-600'"
+                                       x-text="n.body"></p>
+                                </span>
                             </a>
                         </template>
-                        <div x-show="items.length === 0" class="px-4 py-6 text-center text-sm text-slate-400">No notifications</div>
+                        <div x-show="visible.length === 0" class="px-4 py-6 text-center text-sm text-slate-400"
+                             x-text="unreadOnly ? 'Nothing unread' : 'No notifications'"></div>
                     </div>
                 </div>
             </div>
@@ -786,6 +806,14 @@ function notificationBell() {
         open: false,
         count: 0,
         items: [],
+        unreadOnly: false,
+
+        /* The filter is applied here rather than by re-fetching: the ten newest
+           are already loaded, and asking the server again to hide six of them
+           would make the panel flicker for nothing. */
+        get visible() {
+            return this.unreadOnly ? this.items.filter(n => !n.read_at) : this.items;
+        },
 
         init() {
             this.load();

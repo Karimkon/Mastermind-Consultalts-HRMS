@@ -132,7 +132,7 @@ class DashboardController extends Controller
             'processed_runs'  => PayrollRun::where('status', 'processed')->count(),
             'approved_runs'   => PayrollRun::where('status', 'approved')->count(),
         ];
-        $recentRuns      = PayrollRun::latest()->limit(5)->get();
+        $recentRuns      = PayrollRun::latestActivity()->limit(5)->get();
         $pendingLeaves   = collect();
         $recentEmployees = collect();
         $upcomingMeetings= collect();

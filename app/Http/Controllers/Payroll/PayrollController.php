@@ -13,7 +13,7 @@ class PayrollController extends Controller
 {
     public function index()
     {
-        $runs = PayrollRun::withCount("payslips")->orderByDesc("year")->orderByDesc("month")->paginate(12);
+        $runs = PayrollRun::withCount("payslips")->latestActivity()->paginate(12);
         return view("payroll.index", compact("runs"));
     }
 

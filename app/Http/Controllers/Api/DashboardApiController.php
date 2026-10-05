@@ -165,7 +165,7 @@ class DashboardApiController extends Controller
                 'processed_runs'  => PayrollRun::where('status', 'processed')->count(),
                 'approved_runs'   => PayrollRun::where('status', 'approved')->count(),
             ],
-            'recent_runs' => PayrollRun::latest()->limit(8)->get()->map(fn($r) => [
+            'recent_runs' => PayrollRun::latestActivity()->limit(8)->get()->map(fn($r) => [
                 'id'      => $r->id,
                 'title'   => $r->title,
                 'month'   => $r->month,

@@ -7,7 +7,74 @@ class Notification extends Model
     protected $table    = 'notifications';
     protected $fillable = ['user_id', 'type', 'title', 'body', 'data', 'read_at'];
     protected $casts    = ['data' => 'array', 'read_at' => 'datetime'];
+
+    /** Serialised with every notice, so the bell has somewhere to send you. */
+    protected $appends  = ['link'];
+
     public function user() { return $this->belongsTo(User::class); }
+
+    /**
+     * Where each kind of notice leads: [route name, the data key holding its id].
+     *
+     * A null key means the route takes no parameter — "your payslip is ready"
+     * goes to the list of your payslips, because the notice is addressed to
+     * the employee and the per-slip route is the payroll officer's.
+     *
+     * Only notices whose data key is known are listed. A type left out keeps
+     * whatever absolute url it was written with, and a type with neither is
+     * simply not a link — which is honest, and better than a route() that
+     * throws inside the bell.
+     */
+    private const LINKS = [
+        'payroll_stage'         => ['payroll.show',       'payroll_run_id'],
+        'payroll_processed'     => ['employee.payslips',  null],
+        'leave_submitted'       => ['leaves.show',        'leave_id'],
+        'leave_status'          => ['leaves.show',        'leave_id'],
+        'leave_adjusted'        => ['leaves.show',        'leave_id'],
+        'leave_cover_nominated' => ['leaves.show',        'leave_id'],
+        'meeting_invite'        => ['meetings.show',      'meeting_id'],
+        'new_application'       => ['recruitment.candidates.show', 'candidate_id'],
+        'chat'                  => ['chat.index',         null],
+        'appraisal'             => ['appraisals.show',    'appraisal_id'],
+        'review_submitted'      => ['appraisals.show',    'appraisal_id'],
+        'pip'                   => ['pips.show',          'pip_id'],
+    ];
+
+    /**
+     * The page this notice is about, or null when there is not one.
+     *
+     * The bell row has carried an href since the appraisal fix, but it read
+     * `data.url` and almost nothing writes one: of 546 notices on the live
+     * system, 34 had a url and 512 were dead ends. Every type does carry the
+     * id of the thing it is about, so the link is worked out from that instead
+     * of backfilling the rows — which also covers everything written from here
+     * on, and rows nobody would have thought to backfill.
+     *
+     * The derived route is preferred over a stored url deliberately. Those
+     * were written absolute, and the pip notices still point at
+     * mastermind.autos, a host this system no longer answers on.
+     */
+    public function getLinkAttribute(): ?string
+    {
+        $map = self::LINKS[$this->type] ?? null;
+
+        if ($map) {
+            [$route, $key] = $map;
+
+            if (\Illuminate\Support\Facades\Route::has($route)) {
+                if ($key === null) {
+                    return route($route);
+                }
+
+                $id = is_array($this->data) ? ($this->data[$key] ?? null) : null;
+                if ($id) {
+                    return route($route, $id);
+                }
+            }
+        }
+
+        return is_array($this->data) ? ($this->data['url'] ?? null) : null;
+    }
 
     /**
      * Which part of the menu each kind of notice belongs to.

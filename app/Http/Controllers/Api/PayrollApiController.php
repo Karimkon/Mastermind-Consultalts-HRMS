@@ -11,7 +11,7 @@ class PayrollApiController extends Controller
 {
     public function index()
     {
-        $runs = PayrollRun::latest()->paginate(20);
+        $runs = PayrollRun::latestActivity()->paginate(20);
         return response()->json([
             'data' => $runs->through(fn($r) => [
                 'id'          => $r->id,
