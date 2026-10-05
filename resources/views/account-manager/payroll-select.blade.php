@@ -12,7 +12,7 @@
                subtitle="{{ $period }} · {{ $clientName }}">
     @if($run->client_id)
     <button type="button" onclick="toggleAddEmployee()" class="btn-secondary">
-        <i class="fas fa-user-plus mr-1"></i> Add an employee
+        <i class="fas fa-user-plus mr-1"></i> Add new employee
     </button>
     @endif
     <a href="{{ route('account-manager.payroll.show', $run) }}" class="btn-secondary">
@@ -30,7 +30,7 @@
      outside the selection form, because a form cannot be nested in another. --}}
 @if($run->client_id)
 <div id="addEmployee" class="mb-6 rounded-xl bg-white border border-slate-200 p-5" @if(! $errors->hasAny(['first_name','last_name','rate','email','salary_type'])) hidden @endif>
-    <h3 class="font-semibold text-slate-700 mb-1">Add an employee to {{ $clientName }}</h3>
+    <h3 class="font-semibold text-slate-700 mb-1">Add new employee to {{ $clientName }}</h3>
     <p class="text-xs text-slate-400 mb-4">
         Saved into Employee Central and assigned to this client, so they are there
         for every future run as well as this one.
@@ -100,7 +100,7 @@
 
         <div class="flex items-center justify-end gap-2">
             <button type="button" onclick="toggleAddEmployee()" class="btn-secondary">Cancel</button>
-            <button class="btn-primary"><i class="fas fa-user-plus mr-1"></i> Add employee</button>
+            <button class="btn-primary"><i class="fas fa-user-plus mr-1"></i> Add new employee</button>
         </div>
     </form>
 </div>
