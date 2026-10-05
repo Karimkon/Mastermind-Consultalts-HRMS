@@ -5,6 +5,78 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Employee extends Model
 {
+
+    /**
+     * Who may be paid at all.
+     *
+     * This rule lived in PayrollService::processRun() and again in
+     * AccountManagerController, and was about to be written a third time for the
+     * selection screen. Three copies of the test that decides whether somebody
+     * gets paid is two too many — they drift, and the drift is silent.
+     *
+     * Not to be confused with being SELECTED for a run. This is the floor: a
+     * blacklisted or terminated employee cannot be paid however they are ticked.
+     */
+    public function scopePayrollEligible($query)
+    {
+        $today = now()->toDateString();
+
+        return $query
+            ->whereIn('status', ['active', 'on_leave'])
+            ->where('is_blacklisted', false)
+            ->where(function ($q) use ($today) {
+                $q->where('on_hold', false)
+                  ->orWhere(function ($q2) use ($today) {
+                      $q2->where('on_hold', true)
+                         ->whereNotNull('hold_end_date')
+                         ->where('hold_end_date', '<', $today);
+                  });
+            })
+            ->where(function ($q) use ($today) {
+                $q->whereNull('contract_end_date')->orWhere('contract_end_date', '>=', $today);
+            });
+    }
+
+    /** The same rule for one employee already in memory. */
+    public function isPayrollEligible(): bool
+    {
+        if (! in_array($this->status, ['active', 'on_leave'], true)) {
+            return false;
+        }
+        if ($this->is_blacklisted) {
+            return false;
+        }
+        if ($this->on_hold && (! $this->hold_end_date || $this->hold_end_date->toDateString() >= now()->toDateString())) {
+            return false;
+        }
+        if ($this->contract_end_date && $this->contract_end_date->toDateString() < now()->toDateString()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /** Why they cannot be paid, for a screen that has to explain itself. */
+    public function payrollIneligibilityReason(): ?string
+    {
+        if ($this->is_blacklisted) {
+            return 'Blacklisted';
+        }
+        if ($this->on_hold && (! $this->hold_end_date || $this->hold_end_date->toDateString() >= now()->toDateString())) {
+            return 'On hold';
+        }
+        if ($this->status === 'terminated') {
+            return 'Terminated';
+        }
+        if ($this->status === 'suspended') {
+            return 'Suspended';
+        }
+        if ($this->contract_end_date && $this->contract_end_date->toDateString() < now()->toDateString()) {
+            return 'Contract ended ' . $this->contract_end_date->format('d M Y');
+        }
+
+        return null;
+    }
     use SoftDeletes;
 
     protected $fillable = [

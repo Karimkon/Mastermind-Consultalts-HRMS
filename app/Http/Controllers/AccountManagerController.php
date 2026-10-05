@@ -662,7 +662,11 @@ class AccountManagerController extends Controller
         $clientIds = $this->managedClients()->pluck('id')->toArray();
         abort_unless(is_null($run->client_id) || in_array($run->client_id, $clientIds), 403);
 
-        $employees = $this->runEligibleEmployees($run);
+        // Everybody on the client, including the blacklisted, the suspended and
+        // the terminated. They cannot be ticked, but they have to be VISIBLE and
+        // searchable — otherwise somebody taken off payroll has disappeared, and
+        // putting them back means going to find another screen.
+        $employees = $this->runClientEmployees($run);
 
         // What is already chosen, so reopening the screen shows the real state
         // rather than a blank form.
@@ -845,20 +849,109 @@ class AccountManagerController extends Controller
                 . ' and saved in Employee Central.'
                 . (empty($data['days_worked']) ? ' Tick them to put them on this run.' : ''));
     }
+    /**
+     * Change whether somebody can be paid at all, from the payroll screen.
+     *
+     * An account manager preparing a run is exactly the person who knows that
+     * somebody has left, been suspended, or should not be paid again — and the
+     * payroll screen is where they find out. Sending them to another screen, or
+     * to HR, to act on it is how a leaver stays on payroll for another month.
+     *
+     * Every one of these is reversible from the same place, which is the point:
+     * "reinstate" clears all of it and puts them back on the list.
+     */
+    public function updateEmployeeStatus(\Illuminate\Http\Request $request, PayrollRun $run, \App\Models\Employee $employee)
+    {
+        $clients = $this->managedClients();
+        abort_unless(is_null($run->client_id) || $clients->contains('id', $run->client_id), 403);
+        abort_unless(in_array($employee->id, $this->managedEmployeeIds()), 403);
+
+        $data = $request->validate([
+            'action' => 'required|in:blacklist,hold,suspend,terminate,reinstate',
+            'reason' => 'nullable|string|max:500',
+            'hold_end_date' => 'nullable|date|after:today',
+        ]);
+
+        $reason = $data['reason'] ?? null;
+
+        switch ($data['action']) {
+            case 'blacklist':
+                $employee->update([
+                    'is_blacklisted'   => true,
+                    'blacklist_date'   => today(),
+                    'blacklist_reason' => $reason,
+                ]);
+                $message = $employee->full_name . ' is blacklisted and will not be paid.';
+                break;
+
+            case 'hold':
+                $employee->update([
+                    'on_hold'       => true,
+                    'hold_date'     => today(),
+                    'hold_end_date' => $data['hold_end_date'] ?? null,
+                    'hold_reason'   => $reason,
+                ]);
+                $message = $employee->full_name . ' is on hold'
+                    . (! empty($data['hold_end_date'])
+                        ? ' until ' . \Carbon\Carbon::parse($data['hold_end_date'])->format('d M Y') . '.'
+                        : ' until it is lifted.');
+                break;
+
+            case 'suspend':
+                $employee->update(['status' => 'suspended']);
+                $message = $employee->full_name . ' is suspended and will not be paid.';
+                break;
+
+            case 'terminate':
+                $employee->update(['status' => 'terminated']);
+                $message = $employee->full_name . ' is marked as terminated and will not be paid.';
+                break;
+
+            case 'reinstate':
+                // Everything off at once. Clearing only one of three and leaving
+                // the others set is how somebody stays mysteriously unpayable.
+                $employee->update([
+                    'status'         => 'active',
+                    'is_blacklisted' => false,
+                    'blacklist_date' => null,
+                    'on_hold'        => false,
+                    'hold_date'      => null,
+                    'hold_end_date'  => null,
+                ]);
+                $message = $employee->full_name . ' is active again and can be put on payroll.';
+                break;
+        }
+
+        // Taking somebody off payroll takes them off THIS run too, otherwise the
+        // tick stays behind and the next person to look is told they are on it.
+        if ($data['action'] !== 'reinstate') {
+            \App\Models\PayrollManualDays::where('payroll_run_id', $run->id)
+                ->where('employee_id', $employee->id)->delete();
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message'  => $message,
+                'eligible' => $employee->fresh()->isPayrollEligible(),
+            ]);
+        }
+
+        return back()->with('success', $message);
+    }
+
+    /** Everybody on the run's client, whatever their state. */
+    private function runClientEmployees(PayrollRun $run)
+    {
+        return \App\Models\Employee::with(['department', 'designation'])
+            ->when($run->client_id, fn ($q) => $q->whereHas('clients', fn ($c) => $c->where('clients.id', $run->client_id)))
+            ->orderBy('first_name')->orderBy('last_name')
+            ->get();
+    }
     /** The employees the engine would consider for this run, in the same order. */
     private function runEligibleEmployees(PayrollRun $run)
     {
-        $today = now()->toDateString();
-
         return \App\Models\Employee::with(['department', 'designation'])
-            ->whereIn('status', ['active', 'on_leave'])
-            ->where('is_blacklisted', false)
-            ->where(function ($q) use ($today) {
-                $q->where('on_hold', false)
-                  ->orWhere(fn ($q2) => $q2->where('on_hold', true)
-                      ->whereNotNull('hold_end_date')->where('hold_end_date', '<', $today));
-            })
-            ->where(fn ($q) => $q->whereNull('contract_end_date')->orWhere('contract_end_date', '>=', $today))
+            ->payrollEligible()
             ->when($run->client_id, fn ($q) => $q->whereHas('clients', fn ($c) => $c->where('clients.id', $run->client_id)))
             ->orderBy('first_name')->orderBy('last_name')
             ->get();

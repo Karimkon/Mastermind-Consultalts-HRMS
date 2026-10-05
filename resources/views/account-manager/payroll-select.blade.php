@@ -164,6 +164,7 @@
                     <tr class="table-header">
                         <th class="w-10"></th>
                         <th>Employee</th>
+                        <th class="w-56">Status</th>
                         <th>Placement</th>
                         <th class="w-32">Days worked</th>
                     </tr>
@@ -175,31 +176,68 @@
                          and a row of zero is not a selection, which is exactly what the
                          engine now decides too. Showing them ticked would promise a
                          payslip that will not be produced. --}}
-                    @php($isSelected = (int) ($existing[$e->id] ?? 0) > 0)
-                    <tr class="table-row" data-name="{{ strtolower($e->full_name . ' ' . $e->emp_number) }}">
+                    @php
+                        $eligible = $e->isPayrollEligible();
+                        $blocked  = $e->payrollIneligibilityReason();
+                        // Somebody who cannot be paid cannot be ticked, whatever
+                        // was saved earlier.
+                        $isSelected = $eligible && (int) ($existing[$e->id] ?? 0) > 0;
+                    @endphp
+                    <tr class="table-row {{ $eligible ? '' : 'bg-slate-50' }}"
+                        data-name="{{ strtolower($e->full_name . ' ' . $e->emp_number . ' ' . ($blocked ?? 'active')) }}">
                         <td class="px-4 py-3">
                             <input type="checkbox" name="include[]" value="{{ $e->id }}"
                                    class="row-check w-4 h-4 accent-blue-600"
                                    onchange="rowToggled(this)"
-                                   @checked($isSelected)>
+                                   @checked($isSelected) @disabled(! $eligible)>
                         </td>
                         <td class="px-4 py-3">
-                            <p class="font-medium text-slate-800">{{ $e->full_name }}</p>
+                            <p class="font-medium {{ $eligible ? 'text-slate-800' : 'text-slate-400' }}">{{ $e->full_name }}</p>
                             <p class="text-xs text-slate-400">{{ $e->emp_number }}</p>
                         </td>
+
+                        {{-- Status, and the way to change it. The account manager
+                             preparing a run is the person who knows somebody has
+                             left or should not be paid, and this is where they
+                             find out — so it is actionable here rather than on
+                             another screen. --}}
+                        <td class="px-4 py-3">
+                            @if($eligible)
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700">Active</span>
+                                    <select class="form-select text-xs py-1 w-32"
+                                            onchange="changeStatus({{ $e->id }}, this)">
+                                        <option value="">Change&hellip;</option>
+                                        <option value="hold">Put on hold</option>
+                                        <option value="suspend">Suspend</option>
+                                        <option value="terminate">Terminate</option>
+                                        <option value="blacklist">Blacklist</option>
+                                    </select>
+                                </div>
+                            @else
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700">{{ $blocked }}</span>
+                                    <button type="button" class="text-xs text-blue-600 font-medium underline"
+                                            onclick="changeStatus({{ $e->id }}, null, 'reinstate')">
+                                        Make active
+                                    </button>
+                                </div>
+                            @endif
+                        </td>
+
                         <td class="px-4 py-3 text-sm text-slate-500">
                             {{ $e->department->name ?? $e->designation->title ?? '—' }}
                         </td>
                         <td class="px-4 py-3">
                             <input type="number" name="days[{{ $e->id }}]"
-                                   value="{{ $existing[$e->id] ?? '' }}"
+                                   value="{{ $eligible ? ($existing[$e->id] ?? '') : '' }}"
                                    min="0" max="{{ $daysInMonth }}" placeholder="0"
                                    class="form-input w-24 days-input"
                                    @disabled(! $isSelected)>
                         </td>
                     </tr>
                     @empty
-                    <tr><td colspan="4" class="px-4 py-10 text-center text-sm text-slate-400">
+                    <tr><td colspan="5" class="px-4 py-10 text-center text-sm text-slate-400">
                         No employees are assigned to this client.
                     </td></tr>
                     @endforelse
@@ -262,6 +300,52 @@ function filterRows(term) {
 function updateCount() {
     document.getElementById('chosenCount').textContent =
         document.querySelectorAll('.row-check:checked').length;
+}
+
+// Changing whether somebody can be paid. Posted on its own rather than with the
+// selection, because it is a decision about the person and not about this run —
+// and because a form cannot be nested inside the selection form.
+async function changeStatus(employeeId, select, forced) {
+    const action = forced || (select ? select.value : '');
+    if (!action) return;
+
+    const labels = {
+        hold: 'put on hold', suspend: 'suspended',
+        terminate: 'marked as terminated', blacklist: 'blacklisted',
+        reinstate: 'made active again',
+    };
+
+    const row = document.querySelector('input[name="include[]"][value="' + employeeId + '"]')?.closest('tr');
+    const who = row ? row.querySelector('p')?.textContent?.trim() : 'This employee';
+
+    let reason = null;
+    if (action !== 'reinstate') {
+        reason = prompt(who + ' will be ' + labels[action] + ' and taken off this payroll.\n\nReason (optional):');
+        if (reason === null) {                 // cancelled
+            if (select) select.value = '';
+            return;
+        }
+    }
+
+    const body = new FormData();
+    body.append('_token', document.querySelector('meta[name="csrf-token"]').content);
+    body.append('action', action);
+    if (reason) body.append('reason', reason);
+
+    try {
+        const r = await fetch('{{ route('account-manager.payroll.employees.status', [$run, '__ID__']) }}'.replace('__ID__', employeeId), {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            body,
+        });
+        if (!r.ok) throw new Error('status ' + r.status);
+        // Reload so the row, the count and the saved state all agree. Patching
+        // one row by hand is how a screen starts lying about what it shows.
+        window.location.reload();
+    } catch (e) {
+        alert('That change could not be saved. Please try again.');
+        if (select) select.value = '';
+    }
 }
 
 function toggleAddEmployee() {

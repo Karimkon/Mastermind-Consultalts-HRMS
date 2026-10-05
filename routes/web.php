@@ -465,6 +465,8 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::post("/payroll/{run}/select", [AccountManagerController::class, "storeEmployeeSelection"])->name("payroll.select.store");
         // Add an employee who is missing, without leaving the selection screen.
         Route::post("/payroll/{run}/employees", [AccountManagerController::class, "addEmployeeToRun"])->name("payroll.employees.add");
+        // Blacklist, hold, suspend, terminate - and reverse any of them.
+        Route::post("/payroll/{run}/employees/{employee}/status", [AccountManagerController::class, "updateEmployeeStatus"])->name("payroll.employees.status");
         Route::post("/payroll/{run}/process", [AccountManagerController::class, "processPayroll"])->name("payroll.process");
         Route::get("/payroll/{run}/manual-days-template", [AccountManagerController::class, "manualDaysTemplate"])->name("payroll.manual-days-template");
         Route::post("/payroll/{run}/import-manual-days", [AccountManagerController::class, "importManualDays"])->name("payroll.import-manual-days");

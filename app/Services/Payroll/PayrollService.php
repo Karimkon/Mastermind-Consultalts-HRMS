@@ -49,18 +49,8 @@ class PayrollService
             );
         }
 
-        $today = now()->toDateString();
-        $query = Employee::whereIn('status', ['active', 'on_leave'])
-            ->where('is_blacklisted', false)
-            ->where(function ($q) use ($today) {
-                $q->where('on_hold', false)
-                  ->orWhere(function ($q2) use ($today) {
-                      $q2->where('on_hold', true)->whereNotNull('hold_end_date')->where('hold_end_date', '<', $today);
-                  });
-            })
-            ->where(function ($q) use ($today) {
-                $q->whereNull('contract_end_date')->orWhere('contract_end_date', '>=', $today);
-            });
+        // The one definition of who may be paid. See Employee::scopePayrollEligible.
+        $query = Employee::payrollEligible();
 
         if ($run->client_id) {
             $query->whereHas('clients', fn($q) => $q->where('clients.id', $run->client_id));
