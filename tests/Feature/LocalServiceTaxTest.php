@@ -34,6 +34,19 @@ class LocalServiceTaxTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * LST ships switched off, pending a decision on the schedule and on
+     * charging a whole year at once. These tests are about the mechanism, so
+     * they switch it on for themselves — otherwise turning it off in config
+     * would make them pass by doing nothing at all.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['payroll.lst.enabled' => true]);
+    }
+
     private function employee(float $rate, array $flags = []): Employee
     {
         static $n = 0;
@@ -101,6 +114,17 @@ class LocalServiceTaxTest extends TestCase
         }
 
         return 0.0;
+    }
+
+    public function test_it_ships_switched_off(): void
+    {
+        // setUp turns it on for every other test here. This one asks what the
+        // config actually ships with, because charging 555 people a whole
+        // year of LST at once has to be a decision somebody takes on purpose.
+        $shipped = require base_path('config/payroll.php');
+
+        $this->assertFalse($shipped['lst']['enabled'],
+            'LST must ship off until the schedule and the timing are confirmed');
     }
 
     // ===== it is charged, at last =====

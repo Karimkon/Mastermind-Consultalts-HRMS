@@ -26,8 +26,21 @@ return [
 
     'lst' => [
 
-        // Switch the whole deduction off without touching a single employee.
-        'enabled' => env('PAYROLL_LST_ENABLED', true),
+        // OFF. Nothing deducts LST while this is false, whatever charge_lst
+        // says on the 1,246 employees carrying it.
+        //
+        // Switched off deliberately, not because the code is unfinished: the
+        // engine, the bands and the payslip line are all in place and tested.
+        // What is not settled is whether to charge a whole year at once, and
+        // whether the schedule below matches what the local government
+        // actually issues — the figures are the published national ones, not
+        // a Mastermind assessment.
+        //
+        // Turning it on is this one word, and nothing else. No payroll
+        // already processed is affected either way: LST is worked out when a
+        // run is processed, so only runs processed after it is switched on
+        // will carry it.
+        'enabled' => env('PAYROLL_LST_ENABLED', false),
 
         // The months LST is taken in. The charge is divided equally between
         // them, so one month here means the whole annual charge at once.
