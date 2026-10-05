@@ -648,6 +648,112 @@ class AccountManagerController extends Controller
         ]);
     }
 
+    /**
+     * Choose who is in this payroll run, and how many days each of them worked.
+     *
+     * Before this the only way in was a spreadsheet, and processing paid every
+     * eligible employee whether or not they had worked — 439 staff on site for
+     * six of them produced 433 payslips of zero, all of which went to HR to be
+     * reviewed. Zero is not a fact about somebody's pay, it is the absence of
+     * one.
+     */
+    public function selectEmployees(PayrollRun $run)
+    {
+        $clientIds = $this->managedClients()->pluck('id')->toArray();
+        abort_unless(is_null($run->client_id) || in_array($run->client_id, $clientIds), 403);
+
+        $employees = $this->runEligibleEmployees($run);
+
+        // What is already chosen, so reopening the screen shows the real state
+        // rather than a blank form.
+        $existing = \App\Models\PayrollManualDays::where('payroll_run_id', $run->id)
+            ->pluck('days_worked', 'employee_id');
+
+        $daysInMonth = \Carbon\Carbon::create($run->year, $run->month, 1)->daysInMonth;
+
+        return view('account-manager.payroll-select', compact('run', 'employees', 'existing', 'daysInMonth'));
+    }
+
+    public function storeEmployeeSelection(\Illuminate\Http\Request $request, PayrollRun $run)
+    {
+        $clientIds = $this->managedClients()->pluck('id')->toArray();
+        abort_unless(is_null($run->client_id) || in_array($run->client_id, $clientIds), 403);
+
+        if ($run->isLocked() || $run->isImported() || ! in_array($run->status, ['draft', 'processing'])) {
+            return $request->expectsJson()
+                ? response()->json(['error' => 'This run can no longer be changed.'], 422)
+                : back()->with('error', 'This run can no longer be changed.');
+        }
+
+        $daysInMonth = \Carbon\Carbon::create($run->year, $run->month, 1)->daysInMonth;
+
+        $data = $request->validate([
+            'days'   => 'array',
+            'days.*' => 'nullable|integer|min:0|max:' . $daysInMonth,
+        ], [
+            'days.*.max' => "A month cannot have more than {$daysInMonth} days.",
+        ]);
+
+        // Only employees this account manager actually manages, whatever the
+        // form posts back.
+        $allowed = $this->runEligibleEmployees($run)->pluck('id')->flip();
+
+        $chosen = collect($request->input('include', []))
+            ->filter(fn ($id) => $allowed->has((int) $id))
+            ->map(fn ($id) => (int) $id);
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($run, $chosen, $data) {
+            // Anybody unticked leaves the run entirely, rather than staying on
+            // with zero days and producing an empty payslip.
+            \App\Models\PayrollManualDays::where('payroll_run_id', $run->id)
+                ->whereNotIn('employee_id', $chosen->isEmpty() ? [0] : $chosen->all())
+                ->delete();
+
+            foreach ($chosen as $employeeId) {
+                \App\Models\PayrollManualDays::updateOrCreate(
+                    ['payroll_run_id' => $run->id, 'employee_id' => $employeeId],
+                    ['days_worked' => (int) ($data['days'][$employeeId] ?? 0)]
+                );
+            }
+        });
+
+        $count = $chosen->count();
+
+        // Autosave posts here too. It wants a receipt, not a redirect — losing a
+        // half-finished selection across 439 employees because somebody closed a
+        // laptop is not an acceptable way to lose an afternoon.
+        if ($request->expectsJson()) {
+            return response()->json([
+                'selected' => $count,
+                'saved_at' => now()->format('H:i'),
+            ]);
+        }
+
+        return redirect()
+            ->route('account-manager.payroll.show', $run)
+            ->with('success', $count === 0
+                ? 'Nobody is selected for this run yet.'
+                : "{$count} " . ($count === 1 ? 'employee is' : 'employees are') . ' selected for this run.');
+    }
+
+    /** The employees the engine would consider for this run, in the same order. */
+    private function runEligibleEmployees(PayrollRun $run)
+    {
+        $today = now()->toDateString();
+
+        return \App\Models\Employee::with(['department', 'designation'])
+            ->whereIn('status', ['active', 'on_leave'])
+            ->where('is_blacklisted', false)
+            ->where(function ($q) use ($today) {
+                $q->where('on_hold', false)
+                  ->orWhere(fn ($q2) => $q2->where('on_hold', true)
+                      ->whereNotNull('hold_end_date')->where('hold_end_date', '<', $today));
+            })
+            ->where(fn ($q) => $q->whereNull('contract_end_date')->orWhere('contract_end_date', '>=', $today))
+            ->when($run->client_id, fn ($q) => $q->whereHas('clients', fn ($c) => $c->where('clients.id', $run->client_id)))
+            ->orderBy('first_name')->orderBy('last_name')
+            ->get();
+    }
     public function importManualDays(\Illuminate\Http\Request $request, PayrollRun $run)
     {
         $clientIds = $this->managedClients()->pluck('id')->toArray();

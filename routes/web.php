@@ -460,6 +460,9 @@ Route::middleware(['auth','mfa'])->group(function () {
         Route::put("/employees/{employee}", [AccountManagerController::class, "updateEmployee"])->name("employees.update");
         Route::get("/payroll", [AccountManagerController::class, "payroll"])->name("payroll");
         Route::get("/payroll/{run}", [AccountManagerController::class, "payrollShow"])->name("payroll.show");
+        // Choose who is in the run, and their days worked, before processing.
+        Route::get("/payroll/{run}/select", [AccountManagerController::class, "selectEmployees"])->name("payroll.select");
+        Route::post("/payroll/{run}/select", [AccountManagerController::class, "storeEmployeeSelection"])->name("payroll.select.store");
         Route::post("/payroll/{run}/process", [AccountManagerController::class, "processPayroll"])->name("payroll.process");
         Route::get("/payroll/{run}/manual-days-template", [AccountManagerController::class, "manualDaysTemplate"])->name("payroll.manual-days-template");
         Route::post("/payroll/{run}/import-manual-days", [AccountManagerController::class, "importManualDays"])->name("payroll.import-manual-days");

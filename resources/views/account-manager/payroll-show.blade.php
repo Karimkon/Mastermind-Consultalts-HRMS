@@ -35,8 +35,18 @@
         </div>
     </div>
 
+    {{-- Choosing who is on the run, which is the step that was missing: the AM
+         had no way to say "only these six worked", so every eligible employee
+         was processed and HR received hundreds of payslips of zero. --}}
+    <a href="{{ route('account-manager.payroll.select', $run) }}" class="btn-secondary flex items-center gap-1">
+        <i class="fas fa-user-check text-indigo-600"></i>
+        {{ $manualDaysCount ? 'Edit selection &amp; days' : 'Select employees &amp; days' }}
+    </a>
+
     <form method="POST" action="{{ route('account-manager.payroll.process', $run) }}"
-          onsubmit="return confirm('Process payroll for {{ $eligibleCount }} employees and submit to HR for review?')">
+          onsubmit="return confirm('{{ $manualDaysCount
+                ? 'Process payroll for the ' . $manualDaysCount . ' selected employees and submit to HR for review?'
+                : 'No employees have been selected, so ALL ' . $eligibleCount . ' eligible employees will be processed — including anybody who did not work, who will get a payslip of zero. Continue?' }}')">
         @csrf
         <button class="btn-primary flex items-center gap-2">
             <i class="fas fa-play"></i> Run &amp; Submit to HR

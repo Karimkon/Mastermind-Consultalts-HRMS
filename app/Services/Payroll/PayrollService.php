@@ -66,6 +66,35 @@ class PayrollService
             $query->whereHas('clients', fn($q) => $q->where('clients.id', $run->client_id));
         }
 
+        // Who is actually in this run.
+        //
+        // A payroll_manual_days row IS the selection: the account manager enters
+        // days for the people who worked, and that is the same list. Before
+        // this, every eligible employee was processed whichever way, so a client
+        // with 439 staff and six people on site produced 433 payslips of zero —
+        // and all 433 went to HR to be reviewed. Zero is not a fact about
+        // somebody's pay, it is the absence of one.
+        //
+        // When a run has no rows at all, nothing is selected and the old
+        // behaviour stands: everyone eligible is processed. That keeps the
+        // clients who run off attendance rather than manual days working exactly
+        // as they did.
+        // Days of zero is not a selection. The spreadsheet import writes a row
+        // for everybody on the client, so on Roofings run 31 that was 433 rows of
+        // which only 20 carried any days — treating a row as a selection would
+        // still have paid 433 people and produced 413 payslips of zero.
+        //
+        // Somebody who worked no days is not paid and needs no payslip. If a
+        // run genuinely has to record a zero, it is a leave or absence record,
+        // not a payslip.
+        $selected = PayrollManualDays::where('payroll_run_id', $run->id)
+            ->where('days_worked', '>', 0)
+            ->pluck('employee_id');
+
+        if ($selected->isNotEmpty()) {
+            $query->whereIn('id', $selected);
+        }
+
         $employees = $query->get();
 
         foreach ($employees as $employee) {
