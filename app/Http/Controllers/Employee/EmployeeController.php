@@ -28,12 +28,7 @@ class EmployeeController extends Controller
             $query->where("status", $request->status);
         }
         if ($request->filled("search")) {
-            $s = $request->search;
-            $query->where(function ($q) use ($s) {
-                $q->where("first_name", "like", "%$s%")
-                  ->orWhere("last_name", "like", "%$s%")
-                  ->orWhere("emp_number", "like", "%$s%");
-            });
+            $query->searchFor($request->search);
         }
         if ($request->filled("employment_type")) {
             $query->where("employment_type", $request->employment_type);

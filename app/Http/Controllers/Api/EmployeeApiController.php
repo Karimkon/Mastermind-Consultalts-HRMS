@@ -12,12 +12,7 @@ class EmployeeApiController extends Controller
         $query = Employee::with(['user', 'department', 'designation', 'clients']);
 
         if ($request->search) {
-            $s = $request->search;
-            $query->where(fn($q) =>
-                $q->where('first_name', 'like', "%$s%")
-                  ->orWhere('last_name', 'like', "%$s%")
-                  ->orWhere('emp_number', 'like', "%$s%")
-            );
+            $query->searchFor($request->search);
         }
         if ($request->department_id) $query->where('department_id', $request->department_id);
         if ($request->status && $request->status !== 'all') $query->where('status', $request->status);

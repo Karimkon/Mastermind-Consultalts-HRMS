@@ -15,29 +15,7 @@ class EmployeeController extends Controller
             // authoritative names - the linked user account is optional, and
             // hundreds of staff imported from payroll sheets have none, so
             // searching only the user name hid them entirely.
-            ->when($request->search, function ($q) use ($request) {
-                $term = trim($request->search);
-
-                $q->where(function ($w) use ($term) {
-                    $w->where('first_name', 'like', "%{$term}%")
-                      ->orWhere('last_name', 'like', "%{$term}%")
-                      ->orWhere('emp_number', 'like', "%{$term}%")
-                      ->orWhere('personal_email', 'like', "%{$term}%")
-                      ->orWhereHas('user', fn($u) => $u->where('name', 'like', "%{$term}%")
-                                                       ->orWhere('email', 'like', "%{$term}%"));
-
-                    $words = preg_split('/\s+/', $term, -1, PREG_SPLIT_NO_EMPTY) ?: [];
-
-                    if (count($words) > 1) {
-                        $w->orWhere(function ($all) use ($words) {
-                            foreach ($words as $word) {
-                                $all->where(fn($e) => $e->where('first_name', 'like', "%{$word}%")
-                                                        ->orWhere('last_name', 'like', "%{$word}%"));
-                            }
-                        });
-                    }
-                });
-            })
+            ->when($request->search, fn($q) => $q->searchFor($request->search))
             ->when($request->department_id, fn($q) => $q->where('department_id', $request->department_id))
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->type, fn($q) => $q->where('employment_type', $request->type))

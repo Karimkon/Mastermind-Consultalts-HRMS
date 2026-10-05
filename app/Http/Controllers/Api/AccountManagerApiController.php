@@ -45,11 +45,7 @@ class AccountManagerApiController extends Controller
 
         $q = Employee::with(['department', 'designation', 'user', 'salary'])
             ->whereIn('id', $empIds)
-            ->when($request->search, fn($q) => $q->where(function ($q2) use ($request) {
-                $q2->where('first_name', 'like', "%{$request->search}%")
-                   ->orWhere('last_name',  'like', "%{$request->search}%")
-                   ->orWhere('emp_number', 'like', "%{$request->search}%");
-            }))
+            ->when($request->search, fn($q) => $q->searchFor($request->search))
             ->when($request->status, fn($q) => $q->where('status', $request->status));
 
         $paginated = $q->paginate(20);

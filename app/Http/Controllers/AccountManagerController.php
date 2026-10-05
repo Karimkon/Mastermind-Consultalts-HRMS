@@ -90,11 +90,7 @@ class AccountManagerController extends Controller
 
         $employees = Employee::with(['department', 'designation', 'user'])
             ->whereIn('id', $empIds)
-            ->when($request->search, fn($q) => $q->where(function ($q2) use ($request) {
-                $q2->where('first_name', 'like', "%{$request->search}%")
-                   ->orWhere('last_name',  'like', "%{$request->search}%")
-                   ->orWhere('emp_number', 'like', "%{$request->search}%");
-            }))
+            ->when($request->search, fn($q) => $q->searchFor($request->search))
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->placement, fn($q) => $q->where('department_id', (int) $request->placement));
 

@@ -166,6 +166,46 @@ class Employee extends Model
     public function user()        { return $this->belongsTo(User::class); }
     public function department()  { return $this->belongsTo(Department::class); }
     public function designation() { return $this->belongsTo(Designation::class); }
+
+    /**
+     * Find an employee by name, staff number or email.
+     *
+     * Matching first_name OR last_name against the whole term — which four
+     * of the five screens did — means a full name finds nobody: "Lastone
+     * Juma" is in neither column on its own. Worse, these names are written
+     * in both orders. Every payroll schedule says "Juma Lastone" while the
+     * record says "Lastone Juma", so whichever way somebody typed it they
+     * stood a good chance of concluding the person was not in the system.
+     *
+     * A multi-word term is therefore also matched word by word, each word
+     * against either name part, in any order. "Juma Lastone", "Lastone
+     * Juma" and "lastone" all find the same person.
+     */
+    public function scopeSearchFor($query, ?string $term)
+    {
+        $term = trim((string) $term);
+        if ($term === '') return $query;
+
+        return $query->where(function ($w) use ($term) {
+            $w->where('first_name', 'like', "%{$term}%")
+              ->orWhere('last_name', 'like', "%{$term}%")
+              ->orWhere('emp_number', 'like', "%{$term}%")
+              ->orWhere('personal_email', 'like', "%{$term}%")
+              ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$term}%")
+                                                ->orWhere('email', 'like', "%{$term}%"));
+
+            $words = preg_split('/\s+/', $term, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+            if (count($words) > 1) {
+                $w->orWhere(function ($all) use ($words) {
+                    foreach ($words as $word) {
+                        $all->where(fn ($e) => $e->where('first_name', 'like', "%{$word}%")
+                                                 ->orWhere('last_name', 'like', "%{$word}%"));
+                    }
+                });
+            }
+        });
+    }
     public function manager()     { return $this->belongsTo(Employee::class, 'manager_id'); }
     public function orgPosition() { return $this->belongsTo(OrgPosition::class, 'org_position_id'); }
     public function subordinates(){ return $this->hasMany(Employee::class, 'manager_id'); }
