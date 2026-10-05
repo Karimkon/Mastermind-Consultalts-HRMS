@@ -602,15 +602,20 @@
         </div>
     </div>
     <table class="w-full">
+        @php
+            // Which deduction parts this run carries, so the run page and the
+            // approval screens show the same columns for the same run.
+            $parts = \App\Models\Payslip::partsInUse($payroll->payslips);
+        @endphp
         <thead class="bg-slate-50">
             <tr>
                 <th class="table-head px-6 py-3 text-left">Employee</th>
                 <th class="table-head px-4 py-3 text-right">Basic</th>
                 <th class="table-head px-4 py-3 text-right">Allowances</th>
                 <th class="table-head px-4 py-3 text-right">Gross</th>
-                <th class="table-head px-4 py-3 text-right">Deductions</th>
-                <th class="table-head px-4 py-3 text-right">PAYE</th>
-                <th class="table-head px-4 py-3 text-right">NSSF 5%</th>
+                @include('payroll.partials.deduction-heads', [
+                    'parts' => $parts, 'headClass' => 'table-head px-4 py-3 text-right',
+                ])
                 <th class="table-head px-4 py-3 text-right">Net Pay</th>
                 <th class="table-head px-4 py-3 text-center">Days</th>
                 <th class="table-head px-4 py-3 text-left">Payslip</th>
@@ -631,9 +636,7 @@
                 <td class="px-4 py-3 text-right text-sm text-slate-600">UGX {{ number_format($slip->basic_salary, 0) }}</td>
                 <td class="px-4 py-3 text-right text-sm text-green-600">+{{ number_format($slip->total_allowances, 0) }}</td>
                 <td class="px-4 py-3 text-right text-sm font-semibold text-slate-800">UGX {{ number_format($slip->gross_salary, 0) }}</td>
-                <td class="px-4 py-3 text-right text-sm text-red-500">-{{ number_format($slip->total_deductions - $slip->tax_amount, 0) }}</td>
-                <td class="px-4 py-3 text-right text-sm text-orange-500">-{{ number_format($slip->tax_amount, 0) }}</td>
-                <td class="px-4 py-3 text-right text-sm text-purple-600">-{{ number_format($slip->employeeNssf(), 0) }}</td>
+                @include('payroll.partials.deduction-cells', ['slip' => $slip, 'parts' => $parts])
                 <td class="px-4 py-3 text-right text-sm font-bold text-emerald-700">UGX {{ number_format($slip->net_salary, 0) }}</td>
                 <td class="px-4 py-3 text-center text-xs text-slate-500">
                     <span class="text-green-600 font-medium">{{ $slip->worked_days }}P</span> /

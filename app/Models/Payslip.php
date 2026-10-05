@@ -42,11 +42,14 @@ class Payslip extends Model
     public function deductionPart(string $code): float
     {
         return match ($code) {
-            // Read the column, not the component line: NSSF is now charged
-            // from the employee's own flag and a salary set up before that
-            // has the figure in the column with no line beside it.
-            'PAYE'     => (float) $this->tax_amount,
-            'NSSF_EMP' => (float) $this->employee_nssf,
+            // Prefer the column, fall back to the component line. NSSF is
+            // charged from the employee's own flag now, so a salary set up
+            // before that has the figure in the column with no line beside
+            // it -- and an imported run can have the line and no column.
+            // employeeNssf() already does exactly this, so it is reused
+            // rather than reimplemented beside it.
+            'PAYE'     => (float) $this->tax_amount ?: $this->deductionFor('PAYE'),
+            'NSSF_EMP' => $this->employeeNssf(),
             default    => $this->deductionFor($code),
         };
     }
