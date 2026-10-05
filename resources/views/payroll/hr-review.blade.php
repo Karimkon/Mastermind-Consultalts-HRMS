@@ -10,7 +10,13 @@
     <i class="fas fa-user-check text-xl mt-0.5 flex-shrink-0"></i>
     <div>
         <p class="font-semibold text-sm">HR Payroll Review</p>
+        @if($canAct)
         <p class="text-sm mt-0.5">All employees are selected by default. <strong>Uncheck</strong> any employee whose payment should be withheld this cycle — e.g. disciplinary case, dispute, or absence without leave. Enter a reason for withheld employees, then click <strong>"Approve &amp; Submit to Finance"</strong>.</p>
+        @else
+        {{-- Telling somebody to press a button he has not been given is worse
+             than telling him nothing. --}}
+        <p class="text-sm mt-0.5">What HR is reviewing for this run, as they see it. Approving or withholding anybody here is HR's to do — this is a read-only view.</p>
+        @endif
     </div>
 </div>
 
@@ -22,7 +28,7 @@
     <div class="flex flex-wrap items-center gap-4 justify-between">
         {{-- Select all + counter --}}
         <div class="flex items-center gap-4">
-            <label class="flex items-center gap-2 cursor-pointer select-none">
+            <label class="flex items-center gap-2 cursor-pointer select-none" @class(['hidden' => ! $canAct])>
                 <input type="checkbox" id="selectAll" checked onchange="toggleAll(this)"
                        class="w-4 h-4 rounded text-blue-600 border-slate-300">
                 <span class="text-sm font-semibold text-slate-700">Select All / Deselect All</span>
@@ -36,7 +42,14 @@
             </span>
         </div>
 
-        {{-- Withheld reason + submit --}}
+        {{-- Withheld reason + submit. Hidden for somebody admitted to
+             look but not to act: the MD can read every stage, and pressing
+             another stage's approve button would only earn him a 403. --}}
+        @if(! $canAct)
+        <div class="text-sm text-slate-500 italic">
+            <i class="fas fa-eye mr-1"></i> Viewing only — HR approves this stage.
+        </div>
+        @else
         <div class="flex flex-wrap items-end gap-3">
             <div>
                 <label class="text-xs text-slate-500 block mb-0.5">Reason for withheld employees</label>
@@ -50,6 +63,7 @@
                 <i class="fas fa-check-double"></i> Approve &amp; Submit to Finance
             </button>
         </div>
+        @endif
     </div>
 
     {{-- Search/filter bar --}}

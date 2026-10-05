@@ -393,13 +393,18 @@ class PayrollController extends Controller
      */
     public function hrReview(PayrollRun $payroll)
     {
-        $this->denyMd();
-        abort_unless(auth()->user()->hasAnyRole(['super-admin','hr-admin']), 403);
+        // The MD is admitted to look. $canAct below is what stops him acting:
+        // he must not approve a stage that is not his.
+        abort_unless(auth()->user()->hasAnyRole(['super-admin','hr-admin','md']), 403);
         if ($payroll->status !== 'processed') {
             return back()->with('error', 'Payroll must be submitted to HR before review.');
         }
         $payslips = $payroll->payslips()->with('employee.department')->orderBy('employee_id')->get();
-        return view('payroll.hr-review', compact('payroll', 'payslips'));
+        // Admitted to look is not the same as entitled to act: the MD is
+        // allowed onto the earlier stages read-only.
+        $canAct = auth()->user()->hasAnyRole(['super-admin','hr-admin']) && ! auth()->user()->hasRole('md');
+
+        return view('payroll.hr-review', compact('payroll', 'payslips', 'canAct'));
     }
 
     /**
@@ -444,13 +449,16 @@ class PayrollController extends Controller
      */
     public function financeReview(PayrollRun $payroll)
     {
-        $this->denyMd();
-        abort_unless(auth()->user()->hasAnyRole(['super-admin','payroll-officer']), 403);
+        abort_unless(auth()->user()->hasAnyRole(['super-admin','payroll-officer','md']), 403);
         if ($payroll->status !== 'hr_approved') {
             return back()->with('error', 'Payroll must be HR-approved before Finance review.');
         }
         $payslips = $payroll->payslips()->with('employee.department')->orderBy('employee_id')->get();
-        return view('payroll.finance-review', compact('payroll', 'payslips'));
+        // Admitted to look is not the same as entitled to act: the MD is
+        // allowed onto the earlier stages read-only.
+        $canAct = auth()->user()->hasAnyRole(['super-admin','payroll-officer']) && ! auth()->user()->hasRole('md');
+
+        return view('payroll.finance-review', compact('payroll', 'payslips', 'canAct'));
     }
 
     /**
@@ -502,7 +510,11 @@ class PayrollController extends Controller
             return back()->with('error', 'Payroll must be Finance-approved before MD review.');
         }
         $payslips = $payroll->payslips()->with('employee.department')->orderBy('employee_id')->get();
-        return view('payroll.md-review', compact('payroll', 'payslips'));
+        // Admitted to look is not the same as entitled to act: the MD is
+        // allowed onto the earlier stages read-only.
+        $canAct = auth()->user()->hasAnyRole(['super-admin','md']);
+
+        return view('payroll.md-review', compact('payroll', 'payslips', 'canAct'));
     }
 
     /**
@@ -622,8 +634,7 @@ class PayrollController extends Controller
      */
     public function markPaid(PayrollRun $payroll)
     {
-        $this->denyMd();
-        abort_unless(auth()->user()->hasAnyRole(['super-admin','payroll-officer']), 403);
+        abort_unless(auth()->user()->hasAnyRole(['super-admin','payroll-officer','md']), 403);
         if (!in_array($payroll->status, ['md_approved','approved'])) {
             return back()->with('error', 'Payroll must be MD-approved before marking as paid.');
         }

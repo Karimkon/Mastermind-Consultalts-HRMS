@@ -61,6 +61,7 @@
             <td class="px-4 py-2.5">
                 <input type="checkbox" name="selected_payslips[]" value="{{ $slip->id }}"
                        {{ !$isWithheld ? 'checked' : '' }} onchange="updateCount()"
+                       @disabled(! ($canAct ?? true))
                        class="w-4 h-4 rounded text-{{ $accent }}-600 border-slate-300 slip-checkbox">
             </td>
             <td class="px-4 py-2.5">

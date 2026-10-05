@@ -177,6 +177,87 @@ class ReviewScreensMatchTest extends TestCase
         $this->assertStringContainsString('MD Final Approval', $this->open('md'));
     }
 
+    // ===== what the MD may and may not do =====
+
+    public function test_the_md_may_read_the_hr_stage(): void
+    {
+        // It used to 403 with "MD accounts can only view payroll and give
+        // final approval" — on a screen that is nothing but viewing payroll.
+        [, $run] = $this->stage('hr');
+        $md = $this->userWith('md');
+
+        $html = $this->actingAs($md)->get("/payroll/{$run->id}/hr-review")->assertOk()->getContent();
+
+        $this->assertStringContainsString('490,000', $html, 'he must see the figures');
+        $this->assertStringContainsString('Viewing only', $html, 'and be told why he cannot act');
+    }
+
+    public function test_the_md_may_read_the_finance_stage(): void
+    {
+        [, $run] = $this->stage('finance');
+        $md = $this->userWith('md');
+
+        $html = $this->actingAs($md)->get("/payroll/{$run->id}/finance-review")->assertOk()->getContent();
+
+        $this->assertStringContainsString('Viewing only', $html);
+    }
+
+    public function test_the_md_is_offered_no_button_that_would_refuse_him(): void
+    {
+        [, $run] = $this->stage('hr');
+        $md = $this->userWith('md');
+
+        $html = $this->actingAs($md)->get("/payroll/{$run->id}/hr-review")->assertOk()->getContent();
+
+        // No approve button, no withheld reason, and the rows cannot be ticked.
+        $this->assertStringNotContainsString('Approve &amp; Submit to Finance', $html);
+        $this->assertStringNotContainsString('name="withheld_reason"', $html);
+        $this->assertStringContainsString('disabled', $html, 'the tick boxes are disabled');
+    }
+
+    public function test_the_md_still_cannot_approve_as_hr(): void
+    {
+        // The point of the rule: one person must not walk a run through every
+        // stage alone. Reading a stage is not approving it.
+        [, $run] = $this->stage('hr');
+        $md = $this->userWith('md');
+
+        $this->actingAs($md)->post("/payroll/{$run->id}/hr-approve")->assertForbidden();
+        $this->assertSame('processed', $run->fresh()->status, 'the run has not moved');
+    }
+
+    public function test_the_md_still_cannot_build_or_alter_a_run(): void
+    {
+        [, $run] = $this->stage('hr');
+        $md = $this->userWith('md');
+
+        foreach (['/payroll/create', "/payroll/{$run->id}/edit", '/salary'] as $path) {
+            $this->actingAs($md)->get($path)->assertForbidden();
+        }
+
+        $this->actingAs($md)->post("/payroll/{$run->id}/process")->assertForbidden();
+    }
+
+    public function test_the_md_may_act_on_his_own_stage(): void
+    {
+        [$md, $run] = $this->stage('md');
+
+        $html = $this->actingAs($md)->get("/payroll/{$run->id}/md-review")->assertOk()->getContent();
+
+        $this->assertStringContainsString('MD Final Approval', $html, 'his own approve button is there');
+        $this->assertStringNotContainsString('Viewing only', $html);
+    }
+
+    public function test_the_md_may_mark_a_run_paid(): void
+    {
+        $md = $this->userWith('md');
+        $run = $this->runAt('md_approved');
+
+        $this->actingAs($md)->post("/payroll/{$run->id}/mark-paid")->assertRedirect();
+
+        $this->assertSame('paid', $run->fresh()->status);
+        $this->assertSame(2, $run->payslips()->where('payment_status', 'paid')->count());
+    }
     public function test_the_wrong_approver_is_refused(): void
     {
         // An HR admin has no business on the MD's final approval.
