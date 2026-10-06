@@ -546,28 +546,48 @@ class QualityDocumentController extends Controller
             'document' => $document,
             'file'     => $file,
             'kind'     => $this->previewKind($file),
+            'label'    => $this->formatLabel($file),
         ]);
     }
 
     /**
-     * What the browser can actually show: 'pdf', 'image' or 'none'.
+     * Which renderer the viewer should use for this file.
      *
-     * Read from the stored extension rather than the mime column, because the
-     * mime is whatever the uploading browser claimed and is not always set.
+     * The server has no LibreOffice, so Word and Excel cannot be converted on
+     * the way out — but the browser can read them directly given the right
+     * library, so they are rendered client-side rather than refused. Read from
+     * the stored extension rather than the mime column, because the mime is
+     * whatever the uploading browser claimed and is not always set.
+     *
+     * 'none' is now only the handful nothing can open in a page: the legacy
+     * binary .doc and .xls, and PowerPoint.
      */
     private function previewKind(QualityDocumentFile $file): string
     {
         $ext = strtolower(pathinfo($file->original_name ?: $file->path, PATHINFO_EXTENSION));
 
-        if ($ext === 'pdf') {
-            return 'pdf';
-        }
+        return match (true) {
+            $ext === 'pdf' => 'pdf',
+            in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'], true) => 'image',
+            $ext === 'docx' => 'word',
+            in_array($ext, ['xlsx', 'csv'], true) => 'sheet',
+            in_array($ext, ['txt', 'md', 'log', 'json', 'xml'], true) => 'text',
+            default => 'none',
+        };
+    }
 
-        if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'], true)) {
-            return 'image';
-        }
+    /** A human name for a format the viewer cannot open, for the fallback panel. */
+    private function formatLabel(QualityDocumentFile $file): string
+    {
+        $ext = strtolower(pathinfo($file->original_name ?: $file->path, PATHINFO_EXTENSION));
 
-        return 'none';
+        return match ($ext) {
+            'doc'  => 'a Word 97–2003 document',
+            'xls'  => 'an Excel 97–2003 workbook',
+            'ppt', 'pptx' => 'a PowerPoint presentation',
+            ''     => 'a file with no extension',
+            default => 'a .' . $ext . ' file',
+        };
     }
     /**
      * Show a file in the browser instead of downloading it.

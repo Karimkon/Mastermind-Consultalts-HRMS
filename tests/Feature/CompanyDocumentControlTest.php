@@ -303,8 +303,12 @@ class CompanyDocumentControlTest extends TestCase
     private function publishedNamed(string $title, string $filename): QualityDocument
     {
         $ext  = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-        $mime = $ext === 'pdf' ? 'application/pdf'
-            : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        $mime = match ($ext) {
+            'pdf'  => 'application/pdf',
+            'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'pptx' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            default => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        };
 
         $this->actingAs($this->ehs())->post('/quality/library', [
             'title'    => $title,
@@ -354,15 +358,40 @@ class CompanyDocumentControlTest extends TestCase
             ->assertSee('<iframe', false);
     }
 
-    public function test_a_word_file_says_so_instead_of_quietly_downloading(): void
+    public function test_a_word_file_is_rendered_in_the_page(): void
     {
         $doc = $this->publishedNamed('Emergency evacuation plan', 'plan.docx');
 
         $this->actingAs($this->user([], 'staff@test.local'))
             ->get($this->viewUrl($doc))
             ->assertOk()
+            // The browser reads the .docx itself; the page carries the renderer
+            // and somewhere to put it, and never tells anyone to download.
+            ->assertSee('docx-preview', false)
+            ->assertSee('doc-render', false)
+            ->assertDontSee('cannot be shown in the browser', false);
+    }
+
+    public function test_a_spreadsheet_is_rendered_in_the_page(): void
+    {
+        $doc = $this->publishedNamed('Risk register', 'risks.xlsx');
+
+        $this->actingAs($this->user([], 'staff@test.local'))
+            ->get($this->viewUrl($doc))
+            ->assertOk()
+            ->assertSee('xlsx.full.min.js', false)
+            ->assertDontSee('cannot be shown in the browser', false);
+    }
+
+    public function test_a_powerpoint_is_the_one_format_that_still_says_no(): void
+    {
+        $doc = $this->publishedNamed('Induction deck', 'induction.pptx');
+
+        $this->actingAs($this->user([], 'staff@test.local'))
+            ->get($this->viewUrl($doc))
+            ->assertOk()
             ->assertSee('cannot be shown in the browser', false)
-            ->assertDontSee('<iframe', false);
+            ->assertSee('a PowerPoint presentation', false);
     }
 
     public function test_the_viewer_is_closed_to_people_the_library_is_closed_to(): void
