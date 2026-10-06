@@ -188,7 +188,7 @@
                     {{-- Preview opens it in the browser; Download saves it. The
                          library offered only the second, so finding the right
                          policy meant saving several and opening each. --}}
-                    <a href="{{ route('quality.documents.preview', ['document' => $doc->id, 'file' => $doc->currentFile()->id]) }}"
+                    <a href="{{ route('quality.documents.view', ['document' => $doc->id, 'file' => $doc->currentFile()->id]) }}"
                        target="_blank" rel="noopener"
                        class="text-sm text-blue-600 font-medium"><i class="fas fa-eye mr-1"></i> Preview</a>
                     <a href="{{ route('quality.documents.download', ['document' => $doc->id, 'file' => $doc->currentFile()->id]) }}"

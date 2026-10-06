@@ -299,6 +299,81 @@ class CompanyDocumentControlTest extends TestCase
         $this->assertStringContainsString('inline', $response->headers->get('content-disposition'));
     }
 
+    /** A published document whose file carries the given name. */
+    private function publishedNamed(string $title, string $filename): QualityDocument
+    {
+        $ext  = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        $mime = $ext === 'pdf' ? 'application/pdf'
+            : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+        $this->actingAs($this->ehs())->post('/quality/library', [
+            'title'    => $title,
+            'category' => 'policy',
+            'file'     => UploadedFile::fake()->create($filename, 8, $mime),
+        ])->assertSessionHasNoErrors();
+
+        $doc = QualityDocument::where('title', $title)->firstOrFail();
+        $this->move($this->ceo(), $doc, 'approve');
+        $this->move($this->ceo(), $doc, 'publish');
+
+        return $doc->fresh();
+    }
+
+    private function viewUrl(QualityDocument $doc): string
+    {
+        return route('quality.documents.view', [
+            'document' => $doc->id,
+            'file'     => $doc->currentFile()->id,
+        ]);
+    }
+
+    public function test_the_preview_button_opens_a_page_and_does_not_send_a_file(): void
+    {
+        $doc = $this->publishedNamed('OSH policy', 'policy.pdf');
+
+        $response = $this->actingAs($this->user([], 'staff@test.local'))->get($this->viewUrl($doc));
+
+        $response->assertOk();
+        $response->assertSee('OSH policy');
+
+        // A page, not a file. Nothing here tells the browser to save anything.
+        $this->assertStringNotContainsString(
+            'attachment',
+            (string) $response->headers->get('Content-Disposition'),
+            'the preview page must not be served as a download'
+        );
+    }
+
+    public function test_a_pdf_is_embedded_in_the_viewer(): void
+    {
+        $doc = $this->publishedNamed('OSH policy', 'policy.pdf');
+
+        $this->actingAs($this->user([], 'staff@test.local'))
+            ->get($this->viewUrl($doc))
+            ->assertOk()
+            ->assertSee('<iframe', false);
+    }
+
+    public function test_a_word_file_says_so_instead_of_quietly_downloading(): void
+    {
+        $doc = $this->publishedNamed('Emergency evacuation plan', 'plan.docx');
+
+        $this->actingAs($this->user([], 'staff@test.local'))
+            ->get($this->viewUrl($doc))
+            ->assertOk()
+            ->assertSee('cannot be shown in the browser', false)
+            ->assertDontSee('<iframe', false);
+    }
+
+    public function test_the_viewer_is_closed_to_people_the_library_is_closed_to(): void
+    {
+        $doc = $this->publishedNamed('OSH policy', 'policy.pdf');
+
+        $this->actingAs($this->user(['client'], 'client@test.local'))
+            ->get($this->viewUrl($doc))
+            ->assertForbidden();
+    }
+
     public function test_an_unpublished_file_is_not_previewable_by_staff(): void
     {
         $doc = $this->submit($this->ehs());

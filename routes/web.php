@@ -775,6 +775,8 @@ Route::middleware('auth')->prefix('quality')->name('quality.')->group(function (
     Route::put('/documents/{document}', [App\Http\Controllers\Quality\QualityDocumentController::class, 'update'])->name('documents.update');
     Route::delete('/documents/{document}', [App\Http\Controllers\Quality\QualityDocumentController::class, 'destroy'])->name('documents.destroy');
     Route::get('/documents/{document}/files/{file}/preview', [App\Http\Controllers\Quality\QualityDocumentController::class, 'preview'])->name('documents.preview');
+    // The page that shows a file; 'preview' above streams the bytes it embeds.
+    Route::get('/documents/{document}/files/{file}/view', [App\Http\Controllers\Quality\QualityDocumentController::class, 'view'])->name('documents.view');
 
     // Quality goals - creation is manager-only (enforced in controller), the rest
     // is for the assignee and initiator.

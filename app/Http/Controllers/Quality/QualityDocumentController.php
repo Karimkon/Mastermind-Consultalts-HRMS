@@ -519,6 +519,57 @@ class QualityDocumentController extends Controller
             ->with('success', "{$document->doc_number} removed from Company Documents.");
     }
     /**
+     * The viewer page.
+     *
+     * Content-Disposition: inline is a request, not an instruction. Chrome's
+     * "Download PDF files instead of automatically opening them" overrides it,
+     * and nothing renders a Word file inline, so pointing the browser at the
+     * raw file made Preview behave as a second Download button. This wraps the
+     * same bytes in a page of ours: a PDF or image is embedded and shown, and a
+     * format the browser genuinely cannot display says so plainly instead of
+     * quietly saving a file.
+     */
+    public function view(Request $request, QualityDocument $document, QualityDocumentFile $file)
+    {
+        abort_unless($file->quality_document_id === $document->id, 404);
+
+        $u = $request->user();
+        abort_if($u->hasRole('client'), 403);
+
+        if (! $document->isPublished()) {
+            abort_unless($this->canSee($u, $document), 403);
+        }
+
+        abort_unless(Storage::disk('local')->exists($file->path), 404, 'File not found.');
+
+        return view('quality.documents.view', [
+            'document' => $document,
+            'file'     => $file,
+            'kind'     => $this->previewKind($file),
+        ]);
+    }
+
+    /**
+     * What the browser can actually show: 'pdf', 'image' or 'none'.
+     *
+     * Read from the stored extension rather than the mime column, because the
+     * mime is whatever the uploading browser claimed and is not always set.
+     */
+    private function previewKind(QualityDocumentFile $file): string
+    {
+        $ext = strtolower(pathinfo($file->original_name ?: $file->path, PATHINFO_EXTENSION));
+
+        if ($ext === 'pdf') {
+            return 'pdf';
+        }
+
+        if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'], true)) {
+            return 'image';
+        }
+
+        return 'none';
+    }
+    /**
      * Show a file in the browser instead of downloading it.
      *
      * The library offered download and nothing else, so finding the right
