@@ -49,7 +49,8 @@ class CompanyLibraryUploadTest extends TestCase
 
     private function approver(): User
     {
-        return $this->userWithRoles(['hr-admin'], 'approver@test.local');
+        // Approval is the CEO's or the Admin's now, and nobody else's.
+        return $this->userWithRoles(['md'], 'ceo@test.local');
     }
 
     private function payload(User $approver): array
@@ -57,7 +58,6 @@ class CompanyLibraryUploadTest extends TestCase
         return [
             'title' => 'Staff Handbook',
             'category' => 'manual',
-            'approver_id' => $approver->id,
             'file' => UploadedFile::fake()->create('handbook.pdf', 32, 'application/pdf'),
         ];
     }
@@ -66,11 +66,14 @@ class CompanyLibraryUploadTest extends TestCase
 
     public static function submitters(): array
     {
+        // Company Documents is raised by the EHS Officer, the System Admin or
+        // the CEO. The quality manager and the auditors were on this list and
+        // are not any more: the quality manager runs Document Control, which
+        // is a different thing from what the whole company reads.
         return [
-            'quality manager' => [['quality-manager']],
-            'auditor' => [['auditor']],
-            'hr admin' => [['hr-admin']],
-            'super admin' => [['super-admin']],
+            'EHS officer' => [['ehs-officer']],
+            'system admin' => [['super-admin']],
+            'CEO' => [['md']],
         ];
     }
 
@@ -90,7 +93,6 @@ class CompanyLibraryUploadTest extends TestCase
 
         $this->assertNotNull($doc, 'Nothing was created.');
         $this->assertSame('pending_approval', $doc->status, 'The submission did not go for approval.');
-        $this->assertSame($approver->id, $doc->approver_id);
         $this->assertSame($user->id, $doc->initiator_id);
         $this->assertNotNull($doc->currentFile());
         Storage::disk('local')->assertExists($doc->currentFile()->path);
@@ -102,6 +104,9 @@ class CompanyLibraryUploadTest extends TestCase
             'ordinary employee' => [[]],
             'manager' => [['manager']],
             'account manager' => [['account-manager']],
+            'quality manager' => [['quality-manager']],
+            'auditor' => [['auditor']],
+            'hr admin' => [['hr-admin']],
         ];
     }
 
@@ -136,7 +141,7 @@ class CompanyLibraryUploadTest extends TestCase
     {
         Storage::fake('local');
         $approver = $this->approver();
-        $keeper = $this->userWithRoles(['auditor'], 'auditor@test.local');
+        $keeper = $this->userWithRoles(['ehs-officer'], 'auditor@test.local');
 
         $this->actingAs($keeper)->post('/quality/library', $this->payload($approver));
 
@@ -152,31 +157,45 @@ class CompanyLibraryUploadTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_an_approver_must_be_named_and_cannot_be_the_submitter(): void
+    /**
+     * Nobody nominates an approver any more, and the submitter cannot approve.
+     *
+     * The form used to ask who should approve the document, and nothing
+     * stopped the person submitting it from naming themselves. Approval now
+     * belongs to the CEO and the Admin by virtue of the office, so there is
+     * nothing to nominate and nothing to nominate yourself for.
+     */
+    public function test_the_submitter_cannot_approve_their_own_document(): void
     {
         Storage::fake('local');
-        $keeper = $this->userWithRoles(['quality-manager'], 'qm@test.local');
+        $keeper = $this->userWithRoles(['ehs-officer'], 'ehs-self@test.local');
 
-        $base = [
-            'title' => 'Handbook',
-            'category' => 'manual',
-            'file' => UploadedFile::fake()->create('h.pdf', 8, 'application/pdf'),
-        ];
+        // Submitting without naming anybody is now the normal path.
+        $this->actingAs($keeper)
+            ->post('/quality/library', [
+                'title' => 'Staff Handbook',
+                'category' => 'manual',
+                'file' => UploadedFile::fake()->create('h.pdf', 8, 'application/pdf'),
+            ])
+            ->assertSessionHasNoErrors();
 
-        $this->actingAs($keeper)->post('/quality/library', $base)
-            ->assertSessionHasErrors('approver_id');
+        $doc = QualityDocument::firstOrFail();
+        $this->assertSame('pending_approval', $doc->status);
+        $this->assertNull($doc->approver_id, 'Nobody should have been nominated.');
 
-        $this->actingAs($keeper)->post('/quality/library', $base + ['approver_id' => $keeper->id])
-            ->assertSessionHasErrors('approver_id');
+        // And the person who raised it cannot wave it through.
+        $this->actingAs($keeper)
+            ->post("/quality/documents/{$doc->id}/transition", ['action' => 'approve'])
+            ->assertForbidden();
 
-        $this->assertSame(0, QualityDocument::count(), 'A document was created without a valid approver.');
+        $this->assertSame('pending_approval', $doc->fresh()->status);
     }
 
     public function test_the_approver_is_told(): void
     {
         Storage::fake('local');
         $approver = $this->approver();
-        $keeper = $this->userWithRoles(['auditor'], 'auditor2@test.local');
+        $keeper = $this->userWithRoles(['ehs-officer'], 'auditor2@test.local');
 
         $this->actingAs($keeper)->post('/quality/library', $this->payload($approver));
 
@@ -195,7 +214,7 @@ class CompanyLibraryUploadTest extends TestCase
     {
         Storage::fake('local');
         $approver = $this->approver();
-        $keeper = $this->userWithRoles(['quality-manager'], 'qm2@test.local');
+        $keeper = $this->userWithRoles(['ehs-officer'], 'qm2@test.local');
 
         $this->actingAs($keeper)->post('/quality/library', $this->payload($approver));
         $doc = QualityDocument::first();
@@ -227,29 +246,44 @@ class CompanyLibraryUploadTest extends TestCase
             ->assertDownload('handbook.pdf');
     }
 
-    public function test_an_auditor_still_cannot_publish_their_own_submission(): void
+    /**
+     * The EHS Officer publishes, but never something unapproved.
+     *
+     * Publishing was hidden from them entirely, which is what the instruction
+     * was about. Letting them publish does not let them publish their own
+     * work unchecked: they cannot approve, so anything they put out has
+     * already been agreed by the CEO or the Admin.
+     */
+    public function test_the_ehs_officer_publishes_only_what_has_been_approved(): void
     {
         Storage::fake('local');
-        $approver = $this->approver();
-        $auditor = $this->userWithRoles(['auditor'], 'auditor3@test.local');
+        $ceo = $this->approver();
+        $ehs = $this->userWithRoles(['ehs-officer'], 'ehs-pub@test.local');
 
-        $this->actingAs($auditor)->post('/quality/library', $this->payload($approver));
+        $this->actingAs($ehs)->post('/quality/library', $this->payload($ceo));
         $doc = QualityDocument::first();
 
-        $this->actingAs($approver)->post("/quality/documents/{$doc->id}/transition", ['action' => 'approve']);
-
-        $this->actingAs($auditor)
+        // Not yet approved — publishing is refused.
+        $this->actingAs($ehs)
             ->post("/quality/documents/{$doc->id}/transition", ['action' => 'publish'])
             ->assertForbidden();
+        $this->assertSame('pending_approval', $doc->fresh()->status);
 
-        $this->assertSame('approved', $doc->fresh()->status, 'The auditor published their own document.');
+        // The CEO approves, and now the EHS Officer may publish it.
+        $this->actingAs($ceo)->post("/quality/documents/{$doc->id}/transition", ['action' => 'approve']);
+
+        $this->actingAs($ehs)
+            ->post("/quality/documents/{$doc->id}/transition", ['action' => 'publish'])
+            ->assertRedirect();
+
+        $this->assertSame('published', $doc->fresh()->status);
     }
 
     // ===== What each role is shown =====
 
     public function test_the_keepers_are_shown_the_button_and_the_uploader(): void
     {
-        $response = $this->actingAs($this->userWithRoles(['auditor'], 'a@test.local'))
+        $response = $this->actingAs($this->userWithRoles(['ehs-officer'], 'a@test.local'))
             ->get('/quality/library')
             ->assertOk();
 
@@ -276,7 +310,7 @@ class CompanyLibraryUploadTest extends TestCase
      */
     public function test_the_hidden_file_field_carries_no_native_required(): void
     {
-        $html = $this->actingAs($this->userWithRoles(['auditor'], 'markup@test.local'))
+        $html = $this->actingAs($this->userWithRoles(['ehs-officer'], 'markup@test.local'))
             ->get('/quality/library')
             ->assertOk()
             ->getContent();
@@ -303,15 +337,14 @@ class CompanyLibraryUploadTest extends TestCase
     {
         Storage::fake('local');
         $approver = $this->approver();
-        $keeper = $this->userWithRoles(['auditor'], 'auditor4@test.local');
+        $keeper = $this->userWithRoles(['ehs-officer'], 'auditor4@test.local');
 
         $this->actingAs($keeper)->post('/quality/library', $this->payload($approver));
 
         $this->actingAs($keeper)->get('/quality/library')
             ->assertOk()
             ->assertSee('waiting on approval', false)
-            ->assertSee('Staff Handbook', false)
-            ->assertSee($approver->name, false);
+            ->assertSee('Staff Handbook', false);
     }
 
     public function test_an_ordinary_employee_is_shown_no_way_to_submit(): void
@@ -334,14 +367,13 @@ class CompanyLibraryUploadTest extends TestCase
     {
         Storage::fake('local');
         $approver = $this->approver();
-        $keeper = $this->userWithRoles(['auditor'], 'auditor5@test.local');
+        $keeper = $this->userWithRoles(['ehs-officer'], 'auditor5@test.local');
 
         // An unusual format is fine - a controlled document is whatever the
         // company issues.
         $this->actingAs($keeper)->post('/quality/library', [
             'title' => 'Site Plan',
             'category' => 'record',
-            'approver_id' => $approver->id,
             'file' => UploadedFile::fake()->create('plan.dwg', 32, 'application/acad'),
         ])->assertSessionHasNoErrors();
 
@@ -349,7 +381,6 @@ class CompanyLibraryUploadTest extends TestCase
         $this->actingAs($keeper)->post('/quality/library', [
             'title' => 'Huge',
             'category' => 'record',
-            'approver_id' => $approver->id,
             'file' => UploadedFile::fake()->create('huge.mp4', QualityDocument::maxUploadKb() + 1024, 'video/mp4'),
         ])->assertSessionHasErrors('file');
 

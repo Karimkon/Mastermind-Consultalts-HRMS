@@ -769,6 +769,12 @@ Route::middleware('auth')->prefix('quality')->name('quality.')->group(function (
     Route::post('/documents/{document}/upload', [App\Http\Controllers\Quality\QualityDocumentController::class, 'upload'])->name('documents.upload');
     Route::post('/documents/{document}/transition', [App\Http\Controllers\Quality\QualityDocumentController::class, 'transition'])->name('documents.transition');
     Route::get('/documents/{document}/files/{file}/download', [App\Http\Controllers\Quality\QualityDocumentController::class, 'download'])->name('documents.download');
+    // Correcting or withdrawing a document after it has been published.
+    // Gated to the CEO and the Admin inside the controller, not here: the
+    // group above admits everybody who can read the library.
+    Route::put('/documents/{document}', [App\Http\Controllers\Quality\QualityDocumentController::class, 'update'])->name('documents.update');
+    Route::delete('/documents/{document}', [App\Http\Controllers\Quality\QualityDocumentController::class, 'destroy'])->name('documents.destroy');
+    Route::get('/documents/{document}/files/{file}/preview', [App\Http\Controllers\Quality\QualityDocumentController::class, 'preview'])->name('documents.preview');
 
     // Quality goals - creation is manager-only (enforced in controller), the rest
     // is for the assignee and initiator.

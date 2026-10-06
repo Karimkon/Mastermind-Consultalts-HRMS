@@ -51,7 +51,7 @@ class LibraryRealDocumentJourneyTest extends TestCase
         );
     }
 
-    public function test_a_real_document_goes_from_the_auditor_to_every_employee(): void
+    public function test_a_real_document_goes_from_the_ehs_officer_to_every_employee(): void
     {
         Storage::fake('local');
 
@@ -60,18 +60,23 @@ class LibraryRealDocumentJourneyTest extends TestCase
         $originalHash = hash('sha256', $original);
         $this->assertStringStartsWith('%PDF-', $original, 'The fixture is not a PDF.');
 
-        $auditor = $this->user(['auditor'], 'julius@test.local', 'Mbogga Julius');
-        $approver = $this->user(['hr-admin'], 'ian@test.local', 'Ian Kirabo');
+        // Company Documents is raised by the EHS Officer, approved by the CEO
+        // or the Admin, and published by either of them or the EHS Officer.
+        // The auditor used to raise these and no longer can: an auditor reads
+        // the register.
+        $ehs = $this->user(['ehs-officer'], 'ehs@test.local', 'EHS Officer');
+        $approver = $this->user(['md'], 'ceo@test.local', 'Akol Deograceous');
         $manager = $this->user(['quality-manager'], 'qm@test.local', 'Quality Manager');
         $employee = $this->user([], 'staff@test.local', 'Ordinary Staff');
 
-        // --- 1. the auditor submits it ---------------------------------
-        $this->actingAs($auditor)
+        // --- 1. the EHS Officer submits it -----------------------------
+        // No approver is named. The form used to ask, and nothing stopped the
+        // submitter naming themselves.
+        $this->actingAs($ehs)
             ->post('/quality/library', [
                 'title' => 'Staff Handbook',
                 'category' => 'manual',
                 'description' => 'Issued to all staff.',
-                'approver_id' => $approver->id,
                 'file' => $this->realUpload(),
             ])
             ->assertRedirect(route('quality.documents.library'))
@@ -121,8 +126,15 @@ class LibraryRealDocumentJourneyTest extends TestCase
         // Approved is still not published.
         $this->actingAs($employee)->get('/quality/library')->assertDontSee('Staff Handbook', false);
 
-        // --- 4. a manager publishes it ---------------------------------
+        // The quality manager runs Document Control but has no authority over
+        // what the whole company reads.
         $this->actingAs($manager)
+            ->post("/quality/documents/{$doc->id}/transition", ['action' => 'publish'])
+            ->assertForbidden();
+
+        // --- 4. the EHS Officer publishes it ---------------------------
+        $this->actingAs($ehs)
+
             ->post("/quality/documents/{$doc->id}/transition", ['action' => 'publish'])
             ->assertRedirect();
         $this->assertSame('published', $doc->fresh()->status);

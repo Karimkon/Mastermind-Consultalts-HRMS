@@ -50,17 +50,16 @@
                 <label class="form-label">Description (optional)</label>
                 <textarea name="description" rows="2" class="form-input">{{ old('description') }}</textarea>
             </div>
-            <div>
-                <label class="form-label" for="library-approver">Send to for approval</label>
-                {{-- Searchable: there are over a thousand accounts, and scrolling
-                     a list that long to find one person is not a picker. --}}
-                <select name="approver_id" id="library-approver" required class="form-select">
-                    <option value="">Choose an approver</option>
-                    @foreach($approvers as $u)
-                        <option value="{{ $u->id }}" @selected(old('approver_id') == $u->id)>{{ $u->name }}</option>
-                    @endforeach
-                </select>
-                <p class="text-xs text-slate-400 mt-1">Type to search. It cannot be you.</p>
+            {{-- There is no approver to choose any more. This used to be a list
+                 of every account in the system, and nothing stopped the person
+                 submitting from picking themselves. It goes to the CEO and the
+                 Admin, and either of them can approve it. --}}
+            <div class="flex items-end">
+                <p class="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    <i class="fas fa-user-shield mr-1"></i>
+                    Goes to the <strong>CEO</strong> and the <strong>Admin</strong>.
+                    Either one can approve it.
+                </p>
             </div>
         </div>
 
@@ -69,7 +68,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <p class="text-xs text-slate-400 flex-1 min-w-[240px]">
                 <i class="fas fa-circle-info mr-1"></i>
-                This does not publish it. The document goes to your approver, and
+                This does not publish it. The document goes to the CEO and the Admin, and
                 appears in Company Documents once it is approved and published.
             </p>
             <button class="btn-primary whitespace-nowrap"><i class="fas fa-paper-plane mr-1"></i> Send for approval</button>
@@ -92,15 +91,60 @@
                 <a href="{{ route('quality.documents.show', $doc) }}" class="text-sm font-medium text-amber-900 underline">{{ $doc->title }}</a>
                 <span class="text-xs text-amber-700/80">&middot; {{ $doc->doc_number }}</span>
             </div>
-            <span class="text-xs text-amber-800">
-                {{ str_replace('_', ' ', $doc->status) }}
-                @if($doc->approver) &middot; with {{ $doc->approver->name }} @endif
-            </span>
+            <div class="flex items-center gap-3">
+                <span class="text-xs text-amber-800">{{ str_replace('_', ' ', $doc->status) }}</span>
+                {{-- Taking it back. A document sent by mistake, or sent before
+                     it was finished, had no way back and had to be approved or
+                     rejected before it could be corrected. --}}
+                @if(in_array($doc->status, ['pending_approval', 'in_review']))
+                <form method="POST" action="{{ route('quality.documents.transition', $doc) }}">
+                    @csrf
+                    <input type="hidden" name="action" value="recall">
+                    <button class="text-xs font-semibold text-amber-900 underline">Recall</button>
+                </form>
+                @elseif($doc->status === 'draft')
+                <form method="POST" action="{{ route('quality.documents.transition', $doc) }}">
+                    @csrf
+                    <input type="hidden" name="action" value="submit_approval">
+                    <button class="text-xs font-semibold text-emerald-700 underline">Resubmit</button>
+                </form>
+                @endif
+            </div>
         </li>
         @endforeach
     </ul>
 </div>
 @endif
+@endif
+
+{{-- Approved and not yet out. The publish button lived on each document's own
+     page and nobody found it, so approved documents sat there. --}}
+@if($canPublish && $readyToPublish->isNotEmpty())
+<div class="mb-6 rounded-xl bg-emerald-50 border border-emerald-200 p-4">
+    <p class="text-sm font-semibold text-emerald-900 mb-2">
+        <i class="fas fa-circle-check mr-1"></i>
+        Approved and ready to publish ({{ $readyToPublish->count() }})
+    </p>
+    <ul class="divide-y divide-emerald-200/60">
+        @foreach($readyToPublish as $doc)
+        <li class="flex flex-wrap items-center justify-between gap-2 py-2">
+            <div>
+                <a href="{{ route('quality.documents.show', $doc) }}" class="text-sm font-medium text-emerald-900 underline">{{ $doc->title }}</a>
+                <span class="text-xs text-emerald-700/80">
+                    &middot; {{ $doc->doc_number }}
+                    &middot; {{ $cats[$doc->category] ?? $doc->category }}
+                    @if($doc->initiator) &middot; raised by {{ $doc->initiator->name }} @endif
+                </span>
+            </div>
+            <form method="POST" action="{{ route('quality.documents.transition', $doc) }}">
+                @csrf
+                <input type="hidden" name="action" value="publish">
+                <button class="btn-primary text-xs px-3 py-1.5"><i class="fas fa-upload mr-1"></i> Publish</button>
+            </form>
+        </li>
+        @endforeach
+    </ul>
+</div>
 @endif
 
 <form method="GET" class="flex flex-wrap items-center gap-2 mb-4">
@@ -110,26 +154,76 @@
     @endforeach
 </form>
 
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-    @forelse($documents as $doc)
-    <div class="rounded-xl bg-white border border-slate-200 p-5 flex flex-col">
-        <div class="flex items-center justify-between mb-2">
-            <span class="text-xs font-mono text-slate-400">{{ $doc->doc_number }}</span>
-            <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600">{{ $cats[$doc->category] ?? $doc->category }}</span>
+{{-- A list, grouped by the category each document was filed under.
+
+     It was a grid of cards sorted by publication date, so a policy issued in
+     March sat between two forms and the categories existed only as a filter.
+     Approved documents stay in the category they were given, and the headings
+     below are that category. --}}
+@php($grouped = $documents->getCollection()->groupBy('category'))
+
+<div class="space-y-6">
+    @forelse($grouped as $categoryKey => $inCategory)
+    <div class="rounded-xl bg-white border border-slate-200 overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-3 bg-slate-50 border-b border-slate-200">
+            <h3 class="font-semibold text-slate-700">{{ $cats[$categoryKey] ?? $categoryKey }}</h3>
+            <span class="text-xs text-slate-400">{{ $inCategory->count() }}</span>
         </div>
-        <h3 class="font-semibold text-slate-800 flex-1">{{ $doc->title }}</h3>
-        @if($doc->description)<p class="text-sm text-slate-500 mt-1 line-clamp-2">{{ $doc->description }}</p>@endif
-        <div class="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
-            <span class="text-xs text-slate-400">Published {{ $doc->published_at?->format('d M Y') }}</span>
-            @if($doc->currentFile())
-            <a href="{{ route('quality.documents.download', ['document' => $doc->id, 'file' => $doc->currentFile()->id]) }}" data-download-progress data-filename="{{ $doc->currentFile()->original_name }}" class="text-sm text-emerald-600 font-medium"><i class="fas fa-download mr-1"></i> Open</a>
-            @else
-            <span class="text-xs text-slate-300">no file</span>
-            @endif
-        </div>
+
+        <ul class="divide-y divide-slate-100">
+            @foreach($inCategory as $doc)
+            <li class="flex flex-wrap items-center gap-3 px-5 py-3 hover:bg-slate-50">
+                <div class="min-w-0 flex-1">
+                    <p class="font-medium text-slate-800">{{ $doc->title }}</p>
+                    <p class="text-xs text-slate-400">
+                        <span class="font-mono">{{ $doc->doc_number }}</span>
+                        &middot; published {{ $doc->published_at?->format('d M Y') }}
+                        @if($doc->currentFile()) &middot; {{ $doc->currentFile()->original_name }} @endif
+                    </p>
+                    @if($doc->description)<p class="text-sm text-slate-500 mt-0.5 line-clamp-1">{{ $doc->description }}</p>@endif
+                </div>
+
+                <div class="flex items-center gap-3 whitespace-nowrap">
+                    @if($doc->currentFile())
+                    {{-- Preview opens it in the browser; Download saves it. The
+                         library offered only the second, so finding the right
+                         policy meant saving several and opening each. --}}
+                    <a href="{{ route('quality.documents.preview', ['document' => $doc->id, 'file' => $doc->currentFile()->id]) }}"
+                       target="_blank" rel="noopener"
+                       class="text-sm text-blue-600 font-medium"><i class="fas fa-eye mr-1"></i> Preview</a>
+                    <a href="{{ route('quality.documents.download', ['document' => $doc->id, 'file' => $doc->currentFile()->id]) }}"
+                       data-download-progress data-filename="{{ $doc->currentFile()->original_name }}"
+                       class="text-sm text-emerald-600 font-medium"><i class="fas fa-download mr-1"></i> Download</a>
+                    @else
+                    <span class="text-xs text-slate-300">no file</span>
+                    @endif
+
+                    {{-- Correcting or withdrawing what the whole company reads
+                         belongs to the CEO and the Admin. The EHS Officer can
+                         ask for a removal but not make one. --}}
+                    @if($canManage)
+                    <a href="{{ route('quality.documents.show', $doc) }}" class="text-sm text-slate-500"><i class="fas fa-pen mr-1"></i> Manage</a>
+                    <form method="POST" action="{{ route('quality.documents.transition', $doc) }}"
+                          onsubmit="return confirm('Remove {{ addslashes($doc->title) }} from Company Documents? Every member of staff will stop seeing it.')">
+                        @csrf
+                        <input type="hidden" name="action" value="remove">
+                        <button class="text-sm text-red-600"><i class="fas fa-trash mr-1"></i> Remove</button>
+                    </form>
+                    @elseif($canPublish)
+                    <form method="POST" action="{{ route('quality.documents.transition', $doc) }}"
+                          onsubmit="return confirm('Ask the CEO or the Admin to remove {{ addslashes($doc->title) }}?')">
+                        @csrf
+                        <input type="hidden" name="action" value="request_removal">
+                        <button class="text-sm text-amber-600"><i class="fas fa-flag mr-1"></i> Request removal</button>
+                    </form>
+                    @endif
+                </div>
+            </li>
+            @endforeach
+        </ul>
     </div>
     @empty
-    <div class="col-span-full rounded-xl border-2 border-dashed border-slate-200 bg-white p-10 text-center text-slate-400">
+    <div class="rounded-xl border-2 border-dashed border-slate-200 bg-white p-10 text-center text-slate-400">
         <i class="fas fa-folder-open text-3xl mb-2"></i>
         <p class="text-sm">No published documents yet.</p>
         @if($canUpload)<p class="text-xs mt-1">Add one to start the library.</p>@endif
