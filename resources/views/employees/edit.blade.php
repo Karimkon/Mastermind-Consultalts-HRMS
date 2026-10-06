@@ -706,11 +706,6 @@
                         <p class="text-xs text-gray-400 mt-1">Uganda number — auto-formatted to 256XXXXXXXXX on export</p>
                     </div>
                     <div>
-                        <label class="form-label">Tax Number (PAYE)</label>
-                        <input type="text" name="tax_number" class="form-input"
-                               value="{{ old('tax_number', $employee->tax_number) }}">
-                    </div>
-                    <div>
                         <label class="form-label">Salary Grade</label>
                         <select name="salary_grade" class="form-input">
                             <option value="">— None —</option>

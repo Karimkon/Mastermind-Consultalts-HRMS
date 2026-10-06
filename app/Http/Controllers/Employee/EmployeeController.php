@@ -72,9 +72,18 @@ class EmployeeController extends Controller
             "salary_grade"     => "nullable|string|max:20",
             "bank_name"        => "nullable|string",
             "bank_account"     => "nullable|string|max:50",
+            "tin_number"       => "nullable|string|max:50",
+            // Accepted for older clients; folded into tin_number below.
             "tax_number"       => "nullable|string|max:50",
         ]);
 
+
+        // One number, one column: tin_number is what payroll, the exports
+        // and the quality scan all read. tax_number is retired.
+        if (! empty($data["tax_number"]) && empty($data["tin_number"])) {
+            $data["tin_number"] = $data["tax_number"];
+        }
+        unset($data["tax_number"]);
         DB::beginTransaction();
         try {
             // Create user account
@@ -150,10 +159,19 @@ class EmployeeController extends Controller
             "salary_grade"    => "nullable|string|max:20",
             "bank_name"       => "nullable|string",
             "bank_account"    => "nullable|string|max:50",
+            "tin_number"      => "nullable|string|max:50",
+            // Accepted for older clients; folded into tin_number below.
             "tax_number"      => "nullable|string|max:50",
             "bio"             => "nullable|string",
         ]);
 
+
+        // One number, one column: tin_number is what payroll, the exports
+        // and the quality scan all read. tax_number is retired.
+        if (! empty($data["tax_number"]) && empty($data["tin_number"])) {
+            $data["tin_number"] = $data["tax_number"];
+        }
+        unset($data["tax_number"]);
         $employee->update($data);
 
         // Sync user name

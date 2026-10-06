@@ -27,7 +27,7 @@ class EmployeesImport implements ToModel, WithHeadingRow, SkipsOnError
         'national_id','passport_number','address','city','country',
         'emergency_contact_name','emergency_contact_phone',
         'next_of_kin_name','next_of_kin_relation','next_of_kin_phone','next_of_kin_email',
-        'nssf_number','tin_number','ifms_supplier_no','pension_no','tax_number',
+        'nssf_number','tin_number','ifms_supplier_no','pension_no',
         'bank_name','bank_account','bank_branch','payment_mode','mobile_money_number',
         'ot_calc_hours','absenteeism_calc_hours','ot1_calc_hours','ot2_calc_hours','min_daily_working_hours',
         'bio',
@@ -36,6 +36,13 @@ class EmployeesImport implements ToModel, WithHeadingRow, SkipsOnError
     public function model(array $row)
     {
         if (empty($row['emp_number']) && empty($row['email'])) return null;
+
+        // A sheet headed tax_number is handing us the TIN under its retired
+        // name. tin_number is the column payroll, the exports and the quality
+        // scan read, so that is where it goes.
+        if (empty($row['tin_number']) && ! empty($row['tax_number'])) {
+            $row['tin_number'] = $row['tax_number'];
+        }
 
         $dept  = !empty($row['department'])   ? Department::where('name',  $row['department'])->first()  : null;
         $desig = !empty($row['designation'])  ? Designation::where('title', $row['designation'])->first() : null;

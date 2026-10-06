@@ -143,8 +143,9 @@
                         <p class="text-xs text-slate-400 mt-1">Required when the payment mode is MTN or Airtel Mobile Money.</p>
                     </div>
                     <div>
-                        <label class="form-label">Tax Number</label>
-                        <input type="text" name="tax_number" value="{{ old('tax_number') }}" class="form-input">
+                        <label class="form-label">TIN Number</label>
+                        <input type="text" name="tin_number" value="{{ old('tin_number') }}" class="form-input font-mono" placeholder="e.g. 1001008394">
+                        <p class="text-xs text-slate-400 mt-1">URA Tax Identification Number &mdash; what PAYE is filed against.</p>
                     </div>
                 </div>
             </div>
