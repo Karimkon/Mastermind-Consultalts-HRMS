@@ -695,7 +695,10 @@
         <a href="{{ route('admin.departments.index') }}" class="sidebar-link {{ request()->routeIs('admin.departments.*') ? 'active' : '' }}">
             <i class="fas fa-building w-4 text-center"></i><span x-show="sidebarOpen">Departments</span>
         </a>
-        <a href="{{ route('admin.roles.index') }}" class="sidebar-link {{ request()->routeIs('admin.roles.*') ? 'active' : '' }}">
+        <a href="{{ route('admin.roles.archive') }}" class="sidebar-link {{ request()->routeIs('admin.roles.archive') ? 'active' : '' }}">
+            <i class="fas fa-box-archive"></i><span>Role Archive</span>
+        </a>
+        <a href="{{ route('admin.roles.index') }}" class="sidebar-link {{ request()->routeIs('admin.roles.index') || request()->routeIs('admin.roles.edit') ? 'active' : '' }}">
             <i class="fas fa-shield-alt w-4 text-center"></i><span x-show="sidebarOpen">Roles & Permissions</span>
         </a>
         <a href="{{ route('admin.clients.index') }}" class="sidebar-link {{ request()->routeIs('admin.clients.*') ? 'active' : '' }}">

@@ -8,6 +8,8 @@
     </a>
 </x-page-header>
 
+@include('admin.account-managers._manage', ['managers' => $managers, 'promotable' => $promotable])
+
 {{-- Assign Client to AM --}}
 <div class="card p-5 mb-6">
     <h3 class="font-semibold text-slate-700 mb-4 flex items-center gap-2">

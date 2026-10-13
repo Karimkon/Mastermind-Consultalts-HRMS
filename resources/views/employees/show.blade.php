@@ -92,6 +92,7 @@
                     'flags'      => ['fa-flag','Status & Flags'],
                     'leave'      => ['fa-umbrella-beach','Leave Balances'],
                     'history'    => ['fa-history','Employment History'],
+                    'roles'      => ['fa-user-shield','Roles Held'],
                 ] as $key => [$icon, $label])
                 <button @click="tab = '{{ $key }}'"
                     :class="tab === '{{ $key }}' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'"
@@ -704,6 +705,15 @@
                     </div>
                     @endif
                 </div>
+            </div>
+
+            {{-- ROLES HELD --}}
+            <div x-show="tab === 'roles'">
+                @include('employees._roles', [
+                    'employee' => $employee,
+                    'roleHistory' => $roleHistory ?? collect(),
+                    'assignableRoles' => $assignableRoles ?? collect(),
+                ])
             </div>
 
             {{-- EMPLOYMENT HISTORY --}}

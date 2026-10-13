@@ -11,11 +11,12 @@
         <div><label class="form-label">Email *</label><input type="email" name="email" class="form-input" required value="{{ old('email', $user->email) }}"></div>
         <div><label class="form-label">New Password <span class="text-slate-400 font-normal">(leave blank to keep current)</span></label><input type="password" name="password" class="form-input"></div>
         <div><label class="form-label">Confirm Password</label><input type="password" name="password_confirmation" class="form-input"></div>
-        <div><label class="form-label">Role *</label>
-            <select name="role" class="form-input" required>
-                @foreach($roles as $r)<option value="{{ $r->name }}" @selected(old('role',$user->roles->first()?->name)===$r->name)>{{ str_replace('-',' ',ucfirst($r->name)) }}</option>@endforeach
-            </select>
-        </div>
+        @include('admin.users._access', [
+            'roles' => $roles,
+            'permissions' => $permissions,
+            'heldRoles' => $heldRoles ?? [],
+            'heldPermissions' => $heldPermissions ?? [],
+        ])
         <div><label class="form-label">Status</label>
             <select name="status" class="form-input">
                 @foreach(['active','inactive','suspended'] as $s)<option value="{{ $s }}" @selected(old('status',$user->status)===$s)>{{ ucfirst($s) }}</option>@endforeach

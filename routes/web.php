@@ -164,6 +164,8 @@ Route::middleware(['auth', 'mfa'])->group(function () {
             ->name('employees.reset-password')
             ->middleware('role:super-admin|hr-admin');
         Route::get('employees/{employee}/history', [EmployeeController::class, 'history'])->name('employees.history');
+        Route::post('employees/{employee}/roles', [EmployeeController::class, 'assignRole'])->name('employees.roles.assign');
+        Route::delete('employees/{employee}/roles', [EmployeeController::class, 'revokeRole'])->name('employees.roles.revoke');
         Route::post('employees/{employee}/history', [EmployeeController::class, 'storeHistory'])->name('employees.history.store');
         // Onboarding
         Route::get('employees/{employee}/onboarding', [OnboardingController::class, 'index'])->name('employees.onboarding');
@@ -649,6 +651,7 @@ Route::middleware(['auth', 'mfa'])->group(function () {
         Route::put('settings', [SettingController::class, 'update'])->name('settings.update');
         Route::post('settings/website', [SettingController::class, 'updateWebsite'])->name('settings.website');
         Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
+        Route::get('roles/archive', [RoleController::class, 'archive'])->name('roles.archive');
         Route::get('roles/{role}/edit', [RoleController::class, 'edit'])->name('roles.edit');
         Route::put('roles/{role}', [RoleController::class, 'update'])->name('roles.update');
         Route::get('audit', [AuditLogController::class, 'index'])->name('audit.index');
@@ -664,6 +667,9 @@ Route::middleware(['auth', 'mfa'])->group(function () {
         // Account Manager Management
         Route::get('account-managers', [AdminClientController::class, 'accountManagers'])->name('account-managers.index');
         Route::put('account-managers/assign', [AdminClientController::class, 'assignAccountManager'])->name('account-managers.assign');
+        Route::post('account-managers/promote', [AdminClientController::class, 'promoteAccountManager'])->name('account-managers.promote');
+        Route::post('account-managers/transfer', [AdminClientController::class, 'transferClients'])->name('account-managers.transfer');
+        Route::post('account-managers/remove', [AdminClientController::class, 'removeAccountManager'])->name('account-managers.remove');
 
         // Client Management
         Route::prefix('clients')->name('clients.')->group(function () {

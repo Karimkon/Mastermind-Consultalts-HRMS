@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\RoleAssignment;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -14,6 +16,40 @@ class RoleController extends Controller
         $roles = Role::withCount(['users', 'permissions'])->get();
 
         return view('admin.roles.index', compact('roles'));
+    }
+
+    /**
+     * Every post, and everyone who has ever held it.
+     *
+     * The permission tables cannot answer this. model_has_roles holds three
+     * columns and no dates, and taking a role away deletes the row, so a
+     * departed HR leaves no trace there at all. This reads the appointment
+     * record instead, which is written alongside every role change.
+     */
+    public function archive()
+    {
+        $roles = Role::orderBy('name')->get();
+
+        // Grouped by name rather than id so a spell survives its role being
+        // deleted and recreated, which is the reason role_name is stored.
+        $history = RoleAssignment::with('user')
+            ->orderByRaw('ended_at IS NOT NULL')
+            ->orderByDesc('started_at')
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('role_name');
+
+        // Appointments that predate the archive. Shown as a caveat rather than
+        // quietly rendered as blanks.
+        $undated = RoleAssignment::whereNull('started_at')->whereNull('ended_at')->count();
+        $openedOn = RoleAssignment::whereNull('started_at')->min('created_at');
+
+        return view('admin.roles.archive', [
+            'roles' => $roles,
+            'history' => $history,
+            'undated' => $undated,
+            'openedOn' => $openedOn ? Carbon::parse($openedOn) : null,
+        ]);
     }
 
     public function edit(Role $role)

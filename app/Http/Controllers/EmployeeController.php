@@ -10,6 +10,7 @@ use App\Models\EmployeeSalary;
 use App\Models\LeaveBalance;
 use App\Models\SalaryGrade;
 use App\Models\User;
+use App\Services\RoleAssignments;
 use App\Support\Uploads;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 
 class EmployeeController extends Controller
 {
@@ -149,7 +151,67 @@ class EmployeeController extends Controller
     {
         $employee->load(['department', 'designation', 'manager', 'user', 'documents', 'history', 'leaveBalances.leaveType', 'clients', 'clientTransfers.client']);
 
-        return view('employees.show', compact('employee'));
+        // Posts this person holds or has held. Empty for somebody with no
+        // login, which is 312 of 1,557 people -- the panel says so rather than
+        // showing an unexplained blank.
+        $roleHistory = $employee->user
+            ? app(RoleAssignments::class)->historyFor($employee->user)
+            : collect();
+
+        $assignableRoles = Role::orderBy('name')->get();
+
+        return view('employees.show', compact('employee', 'roleHistory', 'assignableRoles'));
+    }
+
+    /**
+     * Appoint this employee to a role, from their own record.
+     *
+     * The Users screen can already do this, but it is organised by login and
+     * an admin replacing a departed HR is thinking about a person, not an
+     * account. Both paths write through the same service, so the archive is
+     * complete whichever one is used.
+     */
+    public function assignRole(Request $request, Employee $employee)
+    {
+        $data = $request->validate([
+            'role' => 'required|exists:roles,name',
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        if (! $employee->user) {
+            return back()->with('error',
+                $employee->full_name.' has no login yet, and a role is held by a login. '
+                .'Create their user account first.');
+        }
+
+        app(RoleAssignments::class)->grant(
+            $employee->user,
+            $data['role'],
+            $data['reason'] ?: 'Appointed from Employee Central'
+        );
+
+        return back()->with('success', $employee->full_name.' now holds the '.$data['role'].' role.');
+    }
+
+    /** End this employee's spell in a role, keeping the record of it. */
+    public function revokeRole(Request $request, Employee $employee)
+    {
+        $data = $request->validate([
+            'role' => 'required|exists:roles,name',
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        if (! $employee->user) {
+            return back()->with('error', 'This employee has no login.');
+        }
+
+        app(RoleAssignments::class)->revoke(
+            $employee->user,
+            $data['role'],
+            $data['reason'] ?: 'Ended from Employee Central'
+        );
+
+        return back()->with('success', 'The '.$data['role'].' role has ended. The record of it is kept.');
     }
 
     public function edit(Employee $employee)
