@@ -398,8 +398,46 @@ class LeaveController extends Controller
 
     private function authoriseManage(): void
     {
-        abort_unless(auth()->user()->hasAnyRole(['super-admin', 'hr-admin', 'manager']), 403,
-            'Only HR, a manager or an administrator can change a granted leave.');
+        // md is the CEO: one person holds that role and he is the CEO, the
+        // same mapping QualityDocumentController records for Company Documents.
+        abort_unless(auth()->user()->hasAnyRole(['super-admin', 'hr-admin', 'manager', 'md']), 403,
+            'Only HR, the CEO, the MD or an administrator can change a granted leave.');
+    }
+
+    /**
+     * Who may decide a leave request at all.
+     *
+     * There was no check of any kind. approve(), reject() and cancel() asked
+     * only whether it was your OWN request, so every one of the 1,242 holders
+     * of the employee role could approve anybody else's leave by posting to
+     * the route. Verified rather than assumed: a plain employee POSTed to
+     * /leaves/{id}/approve for a colleague and it was recorded as an ordinary
+     * approval.
+     *
+     * The page never offered the button, which is exactly why nobody noticed.
+     * The form was gated and the write was not.
+     *
+     * Line managers keep the power deliberately. index() already shows a
+     * manager their whole branch, because the person who has to cover the
+     * absence is the one who needs to see it coming; approving it is the
+     * other half of that, and routing every request through HR would stall
+     * the queue it exists to clear.
+     */
+    private function authoriseDecide(LeaveRequest $leave): void
+    {
+        $user = auth()->user();
+
+        if ($user->hasAnyRole(['super-admin', 'hr-admin', 'manager', 'md'])) {
+            return;
+        }
+
+        $me = $user->employee;
+
+        abort_unless(
+            $me && in_array($leave->employee_id, $me->descendantIds(), true),
+            403,
+            'Only HR, the CEO, the MD or the line manager can decide this leave.',
+        );
     }
 
     private function tellEmployee(LeaveRequest $leave, string $title, string $body): void
@@ -449,6 +487,8 @@ class LeaveController extends Controller
         // is — so HR, who approves everybody's leave, approved their own too.
         abort_if($leave->isOwnRequestOf(auth()->user()), 403,
             'You cannot decide your own leave request. Another approver has to action it.');
+
+        $this->authoriseDecide($leave);
 
         // Check annual limit based on leave type days_allowed
         $leaveType = $leave->leaveType;
@@ -515,6 +555,8 @@ class LeaveController extends Controller
         abort_if($leave->isOwnRequestOf(auth()->user()), 403,
             'You cannot decide your own leave request. Another approver has to action it.');
 
+        $this->authoriseDecide($leave);
+
         $wasApproved = $leave->status === 'approved';
 
         $leave->update([
@@ -552,6 +594,12 @@ class LeaveController extends Controller
 
     public function cancel(LeaveRequest $leave)
     {
+        // Withdrawing your OWN request is a retraction, not a decision, so it
+        // stays open to the applicant. Cancelling somebody else's is a decision.
+        if (! $leave->isOwnRequestOf(auth()->user())) {
+            $this->authoriseDecide($leave);
+        }
+
         $wasApproved = $leave->status === 'approved';
 
         $leave->update(['status' => 'cancelled']);

@@ -63,6 +63,51 @@ class AccountManagerController extends Controller
         return $clients->flatMap(fn ($c) => $c->employees->pluck('id'))->unique()->values()->toArray();
     }
 
+    /**
+     * Clients whose leave this account manager may action.
+     *
+     * The head-office client is removed. Mastermind's own staff are assigned
+     * to it exactly like any client placement, which is right for payroll and
+     * the staff register — but leave is not payroll. An account manager
+     * approves leave for the people they place with clients; their own
+     * colleagues' leave belongs to HR, the CEO or the MD.
+     */
+    private function leaveClients()
+    {
+        return $this->managedClients()->where('is_head_office', false);
+    }
+
+    /**
+     * Employees whose leave this account manager may action.
+     *
+     * Narrower than managedEmployeeIds() on purpose, and the difference is the
+     * whole point of this rule:
+     *
+     *   - Head-office staff are out. The account manager who holds the HQ
+     *     client could otherwise approve leave for all of Mastermind.
+     *   - The account manager themselves is out. Three of them are assigned to
+     *     the HQ client, so without this an account manager could approve their
+     *     own leave by holding the client their own record sits under.
+     *
+     * Both exclusions are applied to the ACTION, not just the list. A filtered
+     * screen only hides the button; it does not stop the request.
+     */
+    private function leaveEmployeeIds(?int $clientId = null): array
+    {
+        $clients = $clientId
+            ? $this->leaveClients()->where('id', $clientId)
+            : $this->leaveClients();
+
+        $mine = auth()->user()->employee?->id;
+
+        return $clients
+            ->flatMap(fn ($c) => $c->employees->pluck('id'))
+            ->unique()
+            ->reject(fn ($id) => $mine !== null && $id === $mine)
+            ->values()
+            ->toArray();
+    }
+
     /* ─────────────────────────── Dashboard ─────────────────────────── */
 
     public function dashboard()
@@ -486,14 +531,14 @@ class AccountManagerController extends Controller
 
     public function leaves(Request $request)
     {
-        $clients = $this->managedClients();
+        $clients = $this->leaveClients();
         $clientId = $request->client_id ? (int) $request->client_id : null;
 
         if ($clientId && ! $clients->contains('id', $clientId)) {
             $clientId = null;
         }
 
-        $empIds = $this->managedEmployeeIds($clientId);
+        $empIds = $this->leaveEmployeeIds($clientId);
 
         $leaves = LeaveRequest::with(['employee.department', 'leaveType'])
             ->whereIn('employee_id', $empIds)
@@ -508,7 +553,14 @@ class AccountManagerController extends Controller
 
     public function approveLeave(LeaveRequest $leave)
     {
-        abort_unless(in_array($leave->employee_id, $this->managedEmployeeIds()), 403);
+        // Said separately from the scope check below, because the reason is
+        // different and the message a person reads should say which rule they
+        // hit. Mirrors LeaveController::approve.
+        abort_if($leave->isOwnRequestOf(auth()->user()), 403,
+            'You cannot decide your own leave request. It goes to HR, the CEO or the MD.');
+
+        abort_unless(in_array($leave->employee_id, $this->leaveEmployeeIds()), 403,
+            'That leave request is not yours to action.');
         $leave->update(['status' => 'approved', 'approved_by' => auth()->id(), 'approved_at' => now()]);
         $leave->employee->update(['status' => 'on_leave']);
 
@@ -517,7 +569,11 @@ class AccountManagerController extends Controller
 
     public function rejectLeave(Request $request, LeaveRequest $leave)
     {
-        abort_unless(in_array($leave->employee_id, $this->managedEmployeeIds()), 403);
+        abort_if($leave->isOwnRequestOf(auth()->user()), 403,
+            'You cannot decide your own leave request. It goes to HR, the CEO or the MD.');
+
+        abort_unless(in_array($leave->employee_id, $this->leaveEmployeeIds()), 403,
+            'That leave request is not yours to action.');
         $leave->update([
             'status' => 'rejected',
             'rejection_reason' => $request->reason,

@@ -119,6 +119,16 @@
             <td colspan="{{ $clientId ? 7 : 8 }}" class="py-14 text-center text-slate-400">
                 <i class="fas fa-calendar-check text-3xl opacity-30 block mb-2"></i>
                 No leave requests found{{ $activeClient ? ' for ' . $activeClient->company_name : '' }}.
+
+                {{-- An account manager who holds only the head-office client
+                     would otherwise see a blank page and no reason for it. --}}
+                @if ($clients->isEmpty())
+                    <p class="mt-2 text-sm">
+                        Leave for Mastermind's own staff is approved by HR, the CEO or the MD,
+                        so it is not shown here. This page lists leave for the people you place
+                        with clients.
+                    </p>
+                @endif
             </td>
         </tr>
         @endforelse
