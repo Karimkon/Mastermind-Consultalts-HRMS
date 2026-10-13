@@ -39,7 +39,22 @@ class LeaveController extends Controller
         }
 
         $query = LeaveRequest::with(['employee.department', 'leaveType'])
-            ->when(! $isAdmin && $employee, fn ($q) => $q->whereIn('employee_id', $visibleIds))
+            /*
+             | Scoped on !$isAdmin alone. It used to read
+             | `!$isAdmin && $employee`, and with no employee record that
+             | condition is false -- so when() applied NO filter and the page
+             | returned every leave request in the company.
+             |
+             | 16 live accounts are in exactly that position, 13 of them
+             | client portal logins: a customer could read Mastermind's
+             | internal leave, and leave for staff placed at other customers.
+             |
+             | $visibleIds is empty for somebody with no employee record, so
+             | whereIn now matches nothing. Seeing none of it is the right
+             | failure for a page you have no standing on; seeing all of it
+             | was the wrong one.
+             */
+            ->when(! $isAdmin, fn ($q) => $q->whereIn('employee_id', $visibleIds))
             ->when($isAdmin && $request->employee_id, fn ($q) => $q->where('employee_id', $request->employee_id))
             ->when($isAdmin && $request->department_id, fn ($q) => $q->whereHas('employee', fn ($e) => $e->where('department_id', $request->department_id)))
             ->when($request->leave_type_id, fn ($q) => $q->where('leave_type_id', $request->leave_type_id))
