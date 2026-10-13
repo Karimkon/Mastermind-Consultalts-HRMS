@@ -1,44 +1,53 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Mail\LeaveSubmittedMail;
 use App\Mail\LeaveClientNotificationMail;
-use App\Mail\LeaveApprovedByClientMail;
+use App\Mail\LeaveCoverNominatedMail;
+use App\Mail\LeaveReplacementMail;
 use App\Mail\LeaveStatusMail;
+use App\Mail\LeaveSubmittedMail;
+use App\Models\Client;
+use App\Models\Department;
+use App\Models\Employee;
+use App\Models\LeaveBalance;
+use App\Models\LeaveRequest;
+use App\Models\LeaveType;
+use App\Models\Notification;
+use App\Models\User;
 use App\Services\LeaveAdjustmentService;
 use App\Services\NotificationService;
-use App\Models\{LeaveRequest, LeaveType, LeaveBalance, Employee, Department, User, Client, Notification};
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
-use Carbon\Carbon;
 
 class LeaveController extends Controller
 {
     public function index(Request $request)
     {
-        $user     = auth()->user();
+        $user = auth()->user();
         $employee = $user->employee;
-        $isAdmin  = $user->hasAnyRole(['super-admin','hr-admin','manager']);
+        $isAdmin = $user->hasAnyRole(['super-admin', 'hr-admin', 'manager']);
 
         // A line manager sees their whole branch, not just themselves: the
         // person who has to cover the absence is the one who needs to see it
         // coming. Everybody in the chain above an employee is included, however
         // many rungs up they sit.
         $visibleIds = [];
-        if (!$isAdmin && $employee) {
+        if (! $isAdmin && $employee) {
             $visibleIds = array_merge([$employee->id], $employee->descendantIds());
         }
 
         $query = LeaveRequest::with(['employee.department', 'leaveType'])
-            ->when(!$isAdmin && $employee, fn($q) => $q->whereIn('employee_id', $visibleIds))
-            ->when($isAdmin && $request->employee_id, fn($q) => $q->where('employee_id', $request->employee_id))
-            ->when($isAdmin && $request->department_id, fn($q) => $q->whereHas('employee', fn($e) => $e->where('department_id', $request->department_id)))
-            ->when($request->leave_type_id, fn($q) => $q->where('leave_type_id', $request->leave_type_id))
-            ->when($request->status, fn($q) => $q->where('status', $request->status))
-            ->when($request->year, fn($q) => $q->whereYear('from_date', $request->year))
+            ->when(! $isAdmin && $employee, fn ($q) => $q->whereIn('employee_id', $visibleIds))
+            ->when($isAdmin && $request->employee_id, fn ($q) => $q->where('employee_id', $request->employee_id))
+            ->when($isAdmin && $request->department_id, fn ($q) => $q->whereHas('employee', fn ($e) => $e->where('department_id', $request->department_id)))
+            ->when($request->leave_type_id, fn ($q) => $q->where('leave_type_id', $request->leave_type_id))
+            ->when($request->status, fn ($q) => $q->where('status', $request->status))
+            ->when($request->year, fn ($q) => $q->whereYear('from_date', $request->year))
             ->orderByDesc('created_at');
 
-        $requests   = $query->paginate(25);
+        $requests = $query->paginate(25);
         $leaveTypes = LeaveType::all();
         $departments = Department::orderBy('name')->get();
 
@@ -54,30 +63,31 @@ class LeaveController extends Controller
     public function create()
     {
         $leaveTypes = LeaveType::all();
-        $employee   = auth()->user()->employee;
-        $balances   = $employee ? LeaveBalance::where('employee_id', $employee->id)->where('year', now()->year)->with('leaveType')->get() : collect();
+        $employee = auth()->user()->employee;
+        $balances = $employee ? LeaveBalance::where('employee_id', $employee->id)->where('year', now()->year)->with('leaveType')->get() : collect();
+
         return view('leaves.create', compact('leaveTypes', 'balances', 'employee'));
     }
 
     public function store(Request $request)
     {
         $request->validate([
-            'leave_type_id'    => 'required|exists:leave_types,id',
-            'from_date'        => 'required|date',
-            'to_date'          => 'required|date|after_or_equal:from_date',
-            'reason'           => 'required|string',
+            'leave_type_id' => 'required|exists:leave_types,id',
+            'from_date' => 'required|date',
+            'to_date' => 'required|date|after_or_equal:from_date',
+            'reason' => 'required|string',
             // Chosen from the staff register rather than typed. A free-typed name
             // could not be notified, could not see the request, and quietly
             // disagreed with Employee Central about spelling.
             'replacement_employee_id' => 'required|exists:employees,id',
-            'replacement_email'=> 'nullable|email|max:255',
-            'replacement_phone'=> 'nullable|string|max:30',
+            'replacement_email' => 'nullable|email|max:255',
+            'replacement_phone' => 'nullable|string|max:30',
         ], [
             'replacement_employee_id.required' => 'Choose the person who will cover for you.',
         ]);
 
         $cover = Employee::with('user')->findOrFail($request->replacement_employee_id);
-        $mine  = auth()->user()->employee;
+        $mine = auth()->user()->employee;
 
         if ($mine && $cover->id === $mine->id) {
             return back()->withInput()->withErrors([
@@ -93,26 +103,26 @@ class LeaveController extends Controller
         if (! $coverEmail) {
             return back()->withInput()->withErrors([
                 'replacement_email' => "{$cover->full_name} has no email address on record, so they cannot be notified. "
-                    . 'Add one in Employee Central, or type an address here.',
+                    .'Add one in Employee Central, or type an address here.',
             ]);
         }
 
-        $days  = Carbon::parse($request->from_date)->diffInWeekdays(Carbon::parse($request->to_date)) + 1;
+        $days = Carbon::parse($request->from_date)->diffInWeekdays(Carbon::parse($request->to_date)) + 1;
         $empId = auth()->user()->employee->id;
 
         $leave = LeaveRequest::create([
-            'employee_id'       => $empId,
-            'leave_type_id'     => $request->leave_type_id,
-            'from_date'         => $request->from_date,
-            'to_date'           => $request->to_date,
-            'days_count'        => $days,
-            'reason'            => $request->reason,
-            'status'            => 'pending',
+            'employee_id' => $empId,
+            'leave_type_id' => $request->leave_type_id,
+            'from_date' => $request->from_date,
+            'to_date' => $request->to_date,
+            'days_count' => $days,
+            'reason' => $request->reason,
+            'status' => 'pending',
             'replacement_employee_id' => $cover->id,
             // Snapshotted as well as linked: a request from two years ago should
             // still read correctly after this person changes their number or
             // leaves, the same reason a payslip keeps its own figures.
-            'replacement_name'  => $cover->full_name,
+            'replacement_name' => $cover->full_name,
             'replacement_email' => $coverEmail,
             'replacement_phone' => $coverPhone,
         ]);
@@ -131,7 +141,7 @@ class LeaveController extends Controller
 
         return redirect()->route('leaves.index')->with('success',
             "Leave request submitted. {$cover->full_name} has been told they are nominated to cover, "
-            . 'and your Account Manager and Client have been notified.');
+            .'and your Account Manager and Client have been notified.');
     }
 
     /**
@@ -148,27 +158,27 @@ class LeaveController extends Controller
             if ($cover->user) {
                 Notification::create([
                     'user_id' => $cover->user->id,
-                    'type'    => 'leave_cover_nominated',
-                    'title'   => 'You have been nominated to cover',
-                    'body'    => sprintf(
+                    'type' => 'leave_cover_nominated',
+                    'title' => 'You have been nominated to cover',
+                    'body' => sprintf(
                         '%s has asked you to cover their responsibilities from %s to %s (%s day(s)), pending approval.',
                         $leave->employee?->full_name ?? 'A colleague',
                         $leave->from_date->format('d M Y'),
                         $leave->to_date->format('d M Y'),
                         $leave->days_count
                     ),
-                    'data'    => ['leave_id' => $leave->id],
+                    'data' => ['leave_id' => $leave->id],
                 ]);
             }
 
             // Sent, not queued: the queue has no worker of its own on this host,
             // and a nomination that arrives after the leave has started is no use.
             if ($leave->replacement_email) {
-                Mail::to($leave->replacement_email)->send(new \App\Mail\LeaveCoverNominatedMail($leave));
+                Mail::to($leave->replacement_email)->send(new LeaveCoverNominatedMail($leave));
             }
         } catch (\Exception $e) {
             // A failed notification must not lose the leave request.
-            logger()->error('Leave cover nomination failed: ' . $e->getMessage());
+            logger()->error('Leave cover nomination failed: '.$e->getMessage());
         }
     }
 
@@ -176,8 +186,10 @@ class LeaveController extends Controller
     {
         try {
             // Find the client this employee belongs to
-            $client = Client::whereHas('employees', fn($q) => $q->where('employees.id', $leave->employee_id))->first();
-            if (!$client) return;
+            $client = Client::whereHas('employees', fn ($q) => $q->where('employees.id', $leave->employee_id))->first();
+            if (! $client) {
+                return;
+            }
 
             // Get the account manager user
             $amUser = $client->accountManager;
@@ -186,15 +198,17 @@ class LeaveController extends Controller
             }
         } catch (\Exception $e) {
             // Don't fail the request if mail fails
-            logger()->error('AM leave email failed: ' . $e->getMessage());
+            logger()->error('AM leave email failed: '.$e->getMessage());
         }
     }
 
     private function notifyClient(LeaveRequest $leave): void
     {
         try {
-            $client = Client::whereHas('employees', fn($q) => $q->where('employees.id', $leave->employee_id))->first();
-            if (!$client) return;
+            $client = Client::whereHas('employees', fn ($q) => $q->where('employees.id', $leave->employee_id))->first();
+            if (! $client) {
+                return;
+            }
 
             // Client contact (the user account linked to the client, or contact_person if no user)
             $clientUser = $client->user;
@@ -204,7 +218,7 @@ class LeaveController extends Controller
                 Mail::to($clientEmail)->send(new LeaveClientNotificationMail($leave));
             }
         } catch (\Exception $e) {
-            logger()->error('Client leave email failed: ' . $e->getMessage());
+            logger()->error('Client leave email failed: '.$e->getMessage());
         }
     }
 
@@ -212,8 +226,8 @@ class LeaveController extends Controller
     {
         // There was no check here at all: any signed-in user could read anybody's
         // leave request, with its reason, by changing the number in the URL.
-        $user    = auth()->user();
-        $mine    = $user->employee;
+        $user = auth()->user();
+        $mine = $user->employee;
         $isAdmin = $user->hasAnyRole(['super-admin', 'hr-admin', 'manager']);
 
         if (! $isAdmin) {
@@ -225,7 +239,7 @@ class LeaveController extends Controller
         }
 
         $leave->load(['employee.user', 'employee.clients', 'employee.department',
-                      'employee.designation', 'leaveType', 'approver', 'recaller']);
+            'employee.designation', 'leaveType', 'approver', 'recaller']);
 
         $client = $leave->employee?->clients->first();
 
@@ -265,14 +279,14 @@ class LeaveController extends Controller
             'You have been recalled from leave',
             $result['cancelled']
                 ? 'Your approved leave was cancelled before it started. '
-                  . $result['returned'] . ' day(s) have gone back to your balance.'
-                : 'Your leave now ends today. ' . $result['returned']
-                  . ' day(s) have gone back to your balance.');
+                  .$result['returned'].' day(s) have gone back to your balance.'
+                : 'Your leave now ends today. '.$result['returned']
+                  .' day(s) have gone back to your balance.');
 
         return back()->with('success', $result['cancelled']
             ? "Leave cancelled and {$result['returned']} day(s) returned to the balance."
             : "Recalled. The leave now ends today ({$result['days']} day(s) taken) and "
-              . "{$result['returned']} day(s) went back to the balance.");
+              ."{$result['returned']} day(s) went back to the balance.");
     }
 
     /**
@@ -291,7 +305,7 @@ class LeaveController extends Controller
 
         $data = $request->validate([
             'to_date' => 'required|date|after_or_equal:'.$leave->from_date->toDateString(),
-            'note'    => 'nullable|string|max:500',
+            'note' => 'nullable|string|max:500',
         ], [
             'to_date.after_or_equal' => 'The leave cannot end before it starts.',
         ]);
@@ -305,7 +319,7 @@ class LeaveController extends Controller
             ? $service->balanceFor($leave->employee, $leave->leave_type_id)
             : null;
 
-        $wouldBe = $service->workingDays($leave->from_date, \Carbon\Carbon::parse($data['to_date']));
+        $wouldBe = $service->workingDays($leave->from_date, Carbon::parse($data['to_date']));
         $extra = $wouldBe - $was;
 
         if ($balance && $extra > 0 && $extra > $balance['remaining']) {
@@ -315,7 +329,7 @@ class LeaveController extends Controller
             ));
         }
 
-        $now = $service->changeEndDate($leave, \Carbon\Carbon::parse($data['to_date']), $data['note'] ?? null);
+        $now = $service->changeEndDate($leave, Carbon::parse($data['to_date']), $data['note'] ?? null);
 
         $this->tellEmployee($leave,
             $now > $was ? 'Your leave has been extended' : 'Your leave has been shortened',
@@ -339,37 +353,43 @@ class LeaveController extends Controller
      */
     private function balancesForPage($requests): array
     {
-        if ($requests->isEmpty()) return [];
+        if ($requests->isEmpty()) {
+            return [];
+        }
 
-        $year        = (int) now()->year;
+        $year = (int) now()->year;
         $employeeIds = $requests->pluck('employee_id')->filter()->unique();
-        $typeIds     = $requests->pluck('leave_type_id')->filter()->unique();
+        $typeIds = $requests->pluck('leave_type_id')->filter()->unique();
 
-        $rows = \App\Models\LeaveBalance::whereIn('employee_id', $employeeIds)
+        $rows = LeaveBalance::whereIn('employee_id', $employeeIds)
             ->whereIn('leave_type_id', $typeIds)
             ->where('year', $year)->get()
-            ->keyBy(fn($b) => $b->employee_id . ':' . $b->leave_type_id);
+            ->keyBy(fn ($b) => $b->employee_id.':'.$b->leave_type_id);
 
         $allowances = LeaveType::whereIn('id', $typeIds)->pluck('days_allowed', 'id');
 
         $out = [];
         foreach ($requests as $leave) {
-            if (! $leave->employee_id || ! $leave->leave_type_id) continue;
+            if (! $leave->employee_id || ! $leave->leave_type_id) {
+                continue;
+            }
 
-            $key = $leave->employee_id . ':' . $leave->leave_type_id;
-            if (isset($out[$key])) continue;
+            $key = $leave->employee_id.':'.$leave->leave_type_id;
+            if (isset($out[$key])) {
+                continue;
+            }
 
-            $row      = $rows->get($key);
+            $row = $rows->get($key);
             $entitled = (float) ($row->total_days ?? $allowances[$leave->leave_type_id] ?? 0);
-            $used     = (float) ($row->used_days ?? 0);
-            $pending  = (float) ($row->pending_days ?? 0);
+            $used = (float) ($row->used_days ?? 0);
+            $pending = (float) ($row->pending_days ?? 0);
 
             $out[$key] = [
-                'entitled'  => $entitled,
-                'used'      => $used,
-                'pending'   => $pending,
+                'entitled' => $entitled,
+                'used' => $used,
+                'pending' => $pending,
                 'remaining' => round($entitled - $used - $pending, 2),
-                'seeded'    => (bool) $row,
+                'seeded' => (bool) $row,
             ];
         }
 
@@ -390,29 +410,38 @@ class LeaveController extends Controller
 
         Notification::create([
             'user_id' => $leave->employee->user_id,
-            'type'    => 'leave_adjusted',
-            'title'   => $title,
-            'body'    => $body,
-            'data'    => ['leave_id' => $leave->id],
+            'type' => 'leave_adjusted',
+            'title' => $title,
+            'body' => $body,
+            'data' => ['leave_id' => $leave->id],
         ]);
     }
 
     public function edit(LeaveRequest $leave)
     {
         $leaveTypes = LeaveType::all();
+
         return view('leaves.edit', compact('leave', 'leaveTypes'));
     }
 
     public function update(Request $request, LeaveRequest $leave)
     {
-        if ($leave->status !== 'pending') return back()->with('error', 'Cannot edit approved/rejected leave.');
-        $request->validate(['leave_type_id'=>'required','from_date'=>'required|date','to_date'=>'required|date|after_or_equal:from_date']);
+        if ($leave->status !== 'pending') {
+            return back()->with('error', 'Cannot edit approved/rejected leave.');
+        }
+        $request->validate(['leave_type_id' => 'required', 'from_date' => 'required|date', 'to_date' => 'required|date|after_or_equal:from_date']);
         $days = Carbon::parse($request->from_date)->diffInWeekdays(Carbon::parse($request->to_date)) + 1;
-        $leave->update(['leave_type_id'=>$request->leave_type_id,'from_date'=>$request->from_date,'to_date'=>$request->to_date,'days_count'=>$days,'reason'=>$request->reason]);
+        $leave->update(['leave_type_id' => $request->leave_type_id, 'from_date' => $request->from_date, 'to_date' => $request->to_date, 'days_count' => $days, 'reason' => $request->reason]);
+
         return redirect()->route('leaves.index')->with('success', 'Leave updated.');
     }
 
-    public function destroy(LeaveRequest $leave) { $leave->delete(); return back()->with('success', 'Deleted.'); }
+    public function destroy(LeaveRequest $leave)
+    {
+        $leave->delete();
+
+        return back()->with('success', 'Deleted.');
+    }
 
     public function approve(LeaveRequest $leave)
     {
@@ -431,7 +460,7 @@ class LeaveController extends Controller
 
             $maxAllowed = $leaveType->days_allowed ?? 999;
             if (($usedThisYear + $leave->days_count) > $maxAllowed) {
-                return back()->with('error', "Cannot approve: employee has only " . ($maxAllowed - $usedThisYear) . " day(s) remaining for {$leaveType->name} this year (max {$maxAllowed} days).");
+                return back()->with('error', 'Cannot approve: employee has only '.($maxAllowed - $usedThisYear)." day(s) remaining for {$leaveType->name} this year (max {$maxAllowed} days).");
             }
         }
 
@@ -440,7 +469,7 @@ class LeaveController extends Controller
         // Through the service, which creates the balance row when there is
         // none. increment() on a where() that matches nothing changed nothing,
         // and only 2 of 1,246 employees had a row — so approvals were lost.
-        $adjust = app(\App\Services\LeaveAdjustmentService::class);
+        $adjust = app(LeaveAdjustmentService::class);
         $adjust->moveBalance($leave, 'used_days', (float) $leave->days_count);
         $adjust->moveBalance($leave, 'pending_days', -(float) $leave->days_count);
 
@@ -464,7 +493,7 @@ class LeaveController extends Controller
                 Mail::to($email)->send(new LeaveStatusMail($leave));
             }
         } catch (\Exception $e) {
-            logger()->error('Leave status email to applicant failed: ' . $e->getMessage());
+            logger()->error('Leave status email to applicant failed: '.$e->getMessage());
         }
     }
 
@@ -472,10 +501,10 @@ class LeaveController extends Controller
     {
         try {
             if ($leave->replacement_email) {
-                Mail::to($leave->replacement_email)->send(new \App\Mail\LeaveReplacementMail($leave));
+                Mail::to($leave->replacement_email)->send(new LeaveReplacementMail($leave));
             }
         } catch (\Exception $e) {
-            logger()->error('Leave replacement email failed: ' . $e->getMessage());
+            logger()->error('Leave replacement email failed: '.$e->getMessage());
         }
     }
 
@@ -489,8 +518,8 @@ class LeaveController extends Controller
         $wasApproved = $leave->status === 'approved';
 
         $leave->update([
-            'status'           => 'rejected',
-            'approved_by'      => auth()->user()->employee?->id,
+            'status' => 'rejected',
+            'approved_by' => auth()->user()->employee?->id,
             'rejection_reason' => $request->rejection_reason,
         ]);
 
@@ -517,6 +546,7 @@ class LeaveController extends Controller
         $this->maybeRestoreEmployeeStatus($leave->employee_id);
 
         app(NotificationService::class)->leaveStatusChanged($leave->fresh());
+
         return back()->with('success', 'Leave rejected.');
     }
 
@@ -552,7 +582,7 @@ class LeaveController extends Controller
             ->where('to_date', '>=', $today)
             ->exists();
 
-        if (!$hasActiveLeave) {
+        if (! $hasActiveLeave) {
             Employee::where('id', $employeeId)->where('status', 'on_leave')->update(['status' => 'active']);
         }
     }
@@ -560,31 +590,34 @@ class LeaveController extends Controller
     public function types()
     {
         $types = LeaveType::paginate(20);
+
         return view('leaves.types', compact('types'));
     }
 
     public function storeType(Request $request)
     {
-        $request->validate(['name'=>'required','code'=>'required','days_allowed'=>'required|integer']);
+        $request->validate(['name' => 'required', 'code' => 'required', 'days_allowed' => 'required|integer']);
         LeaveType::create([
-            'name'             => $request->name,
-            'code'             => strtoupper($request->code),
-            'days_allowed'     => $request->days_allowed,
-            'carry_forward'    => $request->boolean('carry_forward'),
-            'is_paid'          => $request->boolean('is_paid'),
-            'color'            => $request->input('color', '#3b82f6'),
-            'is_active'        => true,
+            'name' => $request->name,
+            'code' => strtoupper($request->code),
+            'days_allowed' => $request->days_allowed,
+            'carry_forward' => $request->boolean('carry_forward'),
+            'is_paid' => $request->boolean('is_paid'),
+            'color' => $request->input('color', '#3b82f6'),
+            'is_active' => true,
         ]);
+
         return back()->with('success', 'Leave type created.');
     }
 
     public function balance(Request $request)
     {
-        $employees  = Employee::with('user')->where('status','active')->get();
+        $employees = Employee::with('user')->where('status', 'active')->get();
         $leaveTypes = LeaveType::all();
-        $balances   = LeaveBalance::with(['employee.user','leaveType'])
-            ->when($request->employee_id, fn($q) => $q->where('employee_id', $request->employee_id))
+        $balances = LeaveBalance::with(['employee.user', 'leaveType'])
+            ->when($request->employee_id, fn ($q) => $q->where('employee_id', $request->employee_id))
             ->where('year', $request->year ?? now()->year)->paginate(30);
+
         return view('leaves.balance', compact('employees', 'leaveTypes', 'balances'));
     }
 }

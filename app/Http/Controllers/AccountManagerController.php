@@ -1,10 +1,29 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Exports\AmEmployeesExport;
+use App\Imports\PayrollManualDaysImport;
+use App\Models\AmSalaryPayment;
+use App\Models\AttendanceLog;
+use App\Models\Client;
+use App\Models\ClientSite;
+use App\Models\Department;
+use App\Models\Designation;
+use App\Models\Employee;
+use App\Models\EmployeeSalary;
+use App\Models\LeaveRequest;
+use App\Models\PayrollManualDays;
+use App\Models\PayrollRun;
+use App\Models\PendingChange;
+use App\Models\User;
 use App\Services\ChangeRequestService;
-use App\Models\{Client, Department, Designation, Employee, EmployeeSalary, LeaveRequest, AttendanceLog, EmployeeDocument, PayrollRun, AmSalaryPayment, User};
+use App\Services\NotificationService;
+use App\Services\Payroll\PayrollService;
+use App\Services\QueueRunner;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -17,17 +36,21 @@ class AccountManagerController extends Controller
     private function managedClients()
     {
         $query = Client::with(['employees.department', 'employees.user']);
-        if (!auth()->user()->hasAnyRole(['super-admin', 'hr-admin'])) {
+        if (! auth()->user()->hasAnyRole(['super-admin', 'hr-admin'])) {
             $query->where('account_manager_id', auth()->id());
         }
+
         return $query->get();
     }
 
     /** Resolve a single managed client by ID (guards against accessing other AM's clients). */
     private function resolveClient(?int $clientId): ?Client
     {
-        if (!$clientId) return null;
+        if (! $clientId) {
+            return null;
+        }
         $clients = $this->managedClients();
+
         return $clients->firstWhere('id', $clientId);
     }
 
@@ -36,7 +59,8 @@ class AccountManagerController extends Controller
         $clients = $clientId
             ? $this->managedClients()->where('id', $clientId)
             : $this->managedClients();
-        return $clients->flatMap(fn($c) => $c->employees->pluck('id'))->unique()->values()->toArray();
+
+        return $clients->flatMap(fn ($c) => $c->employees->pluck('id'))->unique()->values()->toArray();
     }
 
     /* ─────────────────────────── Dashboard ─────────────────────────── */
@@ -48,25 +72,26 @@ class AccountManagerController extends Controller
         // Per-client stats
         $clientStats = $clients->map(function (Client $client) {
             $empIds = $client->employees->pluck('id')->toArray();
+
             return [
-                'client'        => $client,
-                'total'         => count($empIds),
+                'client' => $client,
+                'total' => count($empIds),
                 'present_today' => $empIds
                     ? AttendanceLog::whereIn('employee_id', $empIds)->whereDate('date', today())->where('status', 'present')->count()
                     : 0,
-                'on_leave'      => $empIds
+                'on_leave' => $empIds
                     ? Employee::whereIn('id', $empIds)->where('status', 'on_leave')->count()
                     : 0,
-                'pending_leaves'=> $empIds
+                'pending_leaves' => $empIds
                     ? LeaveRequest::whereIn('employee_id', $empIds)->where('status', 'pending')->count()
                     : 0,
             ];
         });
 
         // Aggregate totals
-        $totalEmp      = $clientStats->sum('total');
-        $todayPresent  = $clientStats->sum('present_today');
-        $onLeave       = $clientStats->sum('on_leave');
+        $totalEmp = $clientStats->sum('total');
+        $todayPresent = $clientStats->sum('present_today');
+        $onLeave = $clientStats->sum('on_leave');
         $pendingLeaves = $clientStats->sum('pending_leaves');
 
         return view('account-manager.dashboard', compact(
@@ -78,11 +103,11 @@ class AccountManagerController extends Controller
 
     public function employees(Request $request)
     {
-        $clients  = $this->managedClients();
-        $clientId = $request->client_id ? (int)$request->client_id : null;
+        $clients = $this->managedClients();
+        $clientId = $request->client_id ? (int) $request->client_id : null;
 
         // Validate the requested client belongs to this AM
-        if ($clientId && !$clients->contains('id', $clientId)) {
+        if ($clientId && ! $clients->contains('id', $clientId)) {
             $clientId = null;
         }
 
@@ -90,9 +115,9 @@ class AccountManagerController extends Controller
 
         $employees = Employee::with(['department', 'designation', 'user'])
             ->whereIn('id', $empIds)
-            ->when($request->search, fn($q) => $q->searchFor($request->search))
-            ->when($request->status, fn($q) => $q->where('status', $request->status))
-            ->when($request->placement, fn($q) => $q->where('department_id', (int) $request->placement));
+            ->when($request->search, fn ($q) => $q->searchFor($request->search))
+            ->when($request->status, fn ($q) => $q->where('status', $request->status))
+            ->when($request->placement, fn ($q) => $q->where('department_id', (int) $request->placement));
 
         // Only the placements these people are actually at. Offering all 48
         // departments would mostly be sites this account manager does not cover,
@@ -144,11 +169,11 @@ class AccountManagerController extends Controller
         abort_unless(in_array($employee->id, $this->managedEmployeeIds()), 403);
 
         $employee->load(['department', 'designation', 'user', 'documents',
-                         'leaveRequests.leaveType', 'attendanceLogs', 'salary']);
+            'leaveRequests.leaveType', 'attendanceLogs', 'salary']);
         $recentAttendance = $employee->attendanceLogs()->orderByDesc('date')->limit(14)->get();
-        $leaveBalance     = $employee->leaveBalances()->with('leaveType')->get();
-        $clients          = $this->managedClients();
-        $employeeClient   = $clients->first(fn($c) => $c->employees->contains('id', $employee->id));
+        $leaveBalance = $employee->leaveBalances()->with('leaveType')->get();
+        $clients = $this->managedClients();
+        $employeeClient = $clients->first(fn ($c) => $c->employees->contains('id', $employee->id));
 
         return view('account-manager.employee-detail', compact(
             'employee', 'recentAttendance', 'leaveBalance', 'employeeClient'
@@ -160,14 +185,14 @@ class AccountManagerController extends Controller
         abort_unless(in_array($employee->id, $this->managedEmployeeIds()), 403);
 
         $request->validate([
-            'first_name'    => 'required|string|max:100',
-            'last_name'     => 'required|string|max:100',
-            'status'        => 'in:active,on_leave,suspended,terminated',
-            'basic_salary'  => 'nullable|numeric|min:0',
+            'first_name' => 'required|string|max:100',
+            'last_name' => 'required|string|max:100',
+            'status' => 'in:active,on_leave,suspended,terminated',
+            'basic_salary' => 'nullable|numeric|min:0',
             'date_of_birth' => 'nullable|date',
-            'hire_date'     => 'nullable|date',
+            'hire_date' => 'nullable|date',
             'contract_end_date' => 'nullable|date',
-            'payment_mode'  => 'nullable|in:bank,mtn,airtel,cash,cheque',
+            'payment_mode' => 'nullable|in:bank,mtn,airtel,cash,cheque',
         ]);
 
         $data = $request->only(
@@ -241,11 +266,11 @@ class AccountManagerController extends Controller
     /** Which client this person is placed with, for the reviewer's queue. */
     private function clientIdFor(Employee $employee): ?int
     {
-        return \Illuminate\Support\Facades\DB::table('client_employee_assignments')
+        return DB::table('client_employee_assignments')
             ->where('employee_id', $employee->id)->value('client_id');
     }
 
-    private function captureSalaryChange(Request $request, Employee $employee): ?\App\Models\PendingChange
+    private function captureSalaryChange(Request $request, Employee $employee): ?PendingChange
     {
         if (! $request->filled('basic_salary')) {
             return null;
@@ -263,7 +288,7 @@ class AccountManagerController extends Controller
             $salary,
             [
                 'basic_salary' => $request->basic_salary,
-                'salary_type'  => $request->input('salary_type', 'monthly'),
+                'salary_type' => $request->input('salary_type', 'monthly'),
             ],
             'Salary for '.$employee->full_name.' ('.$employee->emp_number.')',
             $this->clientIdFor($employee)
@@ -281,16 +306,17 @@ class AccountManagerController extends Controller
 
         if ($existing) {
             $existing->update(['basic_salary' => $request->basic_salary, 'salary_type' => $salaryType]);
+
             return;
         }
 
         EmployeeSalary::create([
-            'employee_id'    => $employee->id,
-            'basic_salary'   => $request->basic_salary,
-            'salary_type'    => $salaryType,
+            'employee_id' => $employee->id,
+            'basic_salary' => $request->basic_salary,
+            'salary_type' => $salaryType,
             'effective_from' => today(),
-            'is_current'     => true,
-            'created_by'     => auth()->id(),
+            'is_current' => true,
+            'created_by' => auth()->id(),
         ]);
     }
 
@@ -298,35 +324,35 @@ class AccountManagerController extends Controller
 
     public function exportEmployees(Request $request)
     {
-        $clientId  = $request->client_id ? (int)$request->client_id : null;
-        $empIds    = $this->managedEmployeeIds($clientId);
+        $clientId = $request->client_id ? (int) $request->client_id : null;
+        $empIds = $this->managedEmployeeIds($clientId);
         $employees = Employee::with(['department', 'designation', 'user', 'salary', 'clients'])
             ->whereIn('id', $empIds)->get();
 
         $clientLabel = $clientId
             ? ($this->resolveClient($clientId)?->company_name ?? 'client')
             : 'all-companies';
-        $filename = 'employees-' . str_replace(' ', '-', strtolower($clientLabel)) . '-' . date('Y-m-d') . '.csv';
+        $filename = 'employees-'.str_replace(' ', '-', strtolower($clientLabel)).'-'.date('Y-m-d').'.csv';
 
         $headers = ['Content-Type' => 'text/csv', 'Content-Disposition' => "attachment; filename=\"{$filename}\""];
 
         $callback = function () use ($employees) {
             $handle = fopen('php://output', 'w');
             fputcsv($handle, [
-                'Emp Number','Payroll Number','Title','First Name','Middle Name','Last Name',
-                'Company / Client','Department','Designation','Sub Department','Position',
-                'Organisation Unit','Work Location','Employee Category',
-                'Employment Type','Status','Hire Date','End Date','Contract Start','Contract End','Salary Grade',
-                'NSSF Number','TIN Number','National ID','Passport Number','IFMS Supplier No','Pension No',
-                'Date of Birth','Gender','Marital Status','Nationality','Religion','Mother Tongue',
-                'Children Count','Dependents Count',
-                'Phone','Personal Email','Address','City','Country',
-                'Emergency Contact Name','Emergency Phone',
-                'Next of Kin Name','NOK Relation','NOK Phone','NOK Email',
-                'Payment Mode','Bank Name','Bank Account','Bank Branch','Mobile Money Number',
-                'Basic Salary (UGX)','Salary Type',
-                'Charge PAYE','Charge NSSF','NSSF Paid by Employer','Charge LST','Tax Paid by Employer',
-                'Is Blacklisted','Blacklist Reason','On Hold','Hold Reason',
+                'Emp Number', 'Payroll Number', 'Title', 'First Name', 'Middle Name', 'Last Name',
+                'Company / Client', 'Department', 'Designation', 'Sub Department', 'Position',
+                'Organisation Unit', 'Work Location', 'Employee Category',
+                'Employment Type', 'Status', 'Hire Date', 'End Date', 'Contract Start', 'Contract End', 'Salary Grade',
+                'NSSF Number', 'TIN Number', 'National ID', 'Passport Number', 'IFMS Supplier No', 'Pension No',
+                'Date of Birth', 'Gender', 'Marital Status', 'Nationality', 'Religion', 'Mother Tongue',
+                'Children Count', 'Dependents Count',
+                'Phone', 'Personal Email', 'Address', 'City', 'Country',
+                'Emergency Contact Name', 'Emergency Phone',
+                'Next of Kin Name', 'NOK Relation', 'NOK Phone', 'NOK Email',
+                'Payment Mode', 'Bank Name', 'Bank Account', 'Bank Branch', 'Mobile Money Number',
+                'Basic Salary (UGX)', 'Salary Type',
+                'Charge PAYE', 'Charge NSSF', 'NSSF Paid by Employer', 'Charge LST', 'Tax Paid by Employer',
+                'Is Blacklisted', 'Blacklist Reason', 'On Hold', 'Hold Reason',
             ]);
             foreach ($employees as $emp) {
                 $client = $emp->clients->first();
@@ -337,18 +363,18 @@ class AccountManagerController extends Controller
                     $emp->department?->name ?? '', $emp->designation?->title ?? '',
                     $emp->sub_department ?? '', $emp->position_name ?? '',
                     $emp->organization_unit ?? '', $emp->work_location ?? '', $emp->employee_category ?? '',
-                    ucfirst(str_replace('_',' ',$emp->employment_type ?? '')),
+                    ucfirst(str_replace('_', ' ', $emp->employment_type ?? '')),
                     ucfirst($emp->status ?? ''),
-                    $emp->hire_date ? \Carbon\Carbon::parse($emp->hire_date)->format('d M Y') : '',
-                    $emp->end_date ? \Carbon\Carbon::parse($emp->end_date)->format('d M Y') : '',
-                    $emp->contract_start_date ? \Carbon\Carbon::parse($emp->contract_start_date)->format('d M Y') : '',
-                    $emp->contract_end_date ? \Carbon\Carbon::parse($emp->contract_end_date)->format('d M Y') : '',
+                    $emp->hire_date ? Carbon::parse($emp->hire_date)->format('d M Y') : '',
+                    $emp->end_date ? Carbon::parse($emp->end_date)->format('d M Y') : '',
+                    $emp->contract_start_date ? Carbon::parse($emp->contract_start_date)->format('d M Y') : '',
+                    $emp->contract_end_date ? Carbon::parse($emp->contract_end_date)->format('d M Y') : '',
                     $emp->salary_grade ?? '',
                     $emp->nssf_number ?? '', $emp->tin_number ?? '', $emp->national_id ?? '',
                     $emp->passport_number ?? '', $emp->ifms_supplier_no ?? '', $emp->pension_no ?? '',
-                    $emp->date_of_birth ? \Carbon\Carbon::parse($emp->date_of_birth)->format('d M Y') : '',
+                    $emp->date_of_birth ? Carbon::parse($emp->date_of_birth)->format('d M Y') : '',
                     ucfirst($emp->gender ?? ''),
-                    ucfirst(str_replace('_',' ',$emp->marital_status ?? '')),
+                    ucfirst(str_replace('_', ' ', $emp->marital_status ?? '')),
                     $emp->nationality ?? '', $emp->religion ?? '', $emp->mother_tongue ?? '',
                     $emp->children_count ?? '', $emp->dependents_count ?? '',
                     $emp->phone ?? '', $emp->personal_email ?? $emp->user?->email ?? '',
@@ -360,11 +386,11 @@ class AccountManagerController extends Controller
                     $emp->bank_name ?? '', $emp->bank_account ?? '',
                     $emp->bank_branch ?? '', $emp->mobile_money_number ?? '',
                     $emp->salary?->basic_salary ?? '', ucfirst($emp->salary?->salary_type ?? ''),
-                    $emp->charge_paye ? 'Yes':'No', $emp->charge_nssf ? 'Yes':'No',
-                    $emp->nssf_paid_by_employer ? 'Yes':'No', $emp->charge_lst ? 'Yes':'No',
-                    $emp->tax_paid_by_employer ? 'Yes':'No',
-                    $emp->is_blacklisted ? 'Yes':'No', $emp->blacklist_reason ?? '',
-                    $emp->on_hold ? 'Yes':'No', $emp->hold_reason ?? '',
+                    $emp->charge_paye ? 'Yes' : 'No', $emp->charge_nssf ? 'Yes' : 'No',
+                    $emp->nssf_paid_by_employer ? 'Yes' : 'No', $emp->charge_lst ? 'Yes' : 'No',
+                    $emp->tax_paid_by_employer ? 'Yes' : 'No',
+                    $emp->is_blacklisted ? 'Yes' : 'No', $emp->blacklist_reason ?? '',
+                    $emp->on_hold ? 'Yes' : 'No', $emp->hold_reason ?? '',
                 ]);
             }
             fclose($handle);
@@ -375,15 +401,15 @@ class AccountManagerController extends Controller
 
     public function exportEmployeesExcel(Request $request)
     {
-        $clientId  = $request->client_id ? (int)$request->client_id : null;
-        $empIds    = $this->managedEmployeeIds($clientId);
+        $clientId = $request->client_id ? (int) $request->client_id : null;
+        $empIds = $this->managedEmployeeIds($clientId);
         $employees = Employee::with(['department', 'designation', 'user', 'salary', 'clients'])
             ->whereIn('id', $empIds)->get();
 
         $clientLabel = $clientId
             ? ($this->resolveClient($clientId)?->company_name ?? 'client')
             : 'all-companies';
-        $filename = 'employees-' . str_replace(' ', '-', strtolower($clientLabel)) . '-' . date('Y-m-d') . '.xlsx';
+        $filename = 'employees-'.str_replace(' ', '-', strtolower($clientLabel)).'-'.date('Y-m-d').'.xlsx';
 
         return Excel::download(new AmEmployeesExport($employees), $filename);
     }
@@ -391,17 +417,18 @@ class AccountManagerController extends Controller
     public function importTemplate()
     {
         $headers = [
-            'Content-Type'        => 'text/csv',
+            'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="employee-import-template.csv"',
         ];
         $callback = function () {
             $handle = fopen('php://output', 'w');
             fputcsv($handle, ['Emp Number', 'Phone', 'Address', 'City', 'Status',
-                              'Emergency Contact', 'Emergency Phone']);
+                'Emergency Contact', 'Emergency Phone']);
             fputcsv($handle, ['EMP001', '+256 700 000 001', '123 Main St', 'Kampala', 'active',
-                              'Jane Doe', '+256 700 000 002']);
+                'Jane Doe', '+256 700 000 002']);
             fclose($handle);
         };
+
         return response()->stream($callback, 200, $headers);
     }
 
@@ -409,31 +436,34 @@ class AccountManagerController extends Controller
     {
         $request->validate(['csv_file' => 'required|file|mimes:csv,txt|max:2048']);
 
-        $empIds  = $this->managedEmployeeIds();
-        $handle  = fopen($request->file('csv_file')->getRealPath(), 'r');
+        $empIds = $this->managedEmployeeIds();
+        $handle = fopen($request->file('csv_file')->getRealPath(), 'r');
         $headers = fgetcsv($handle); // skip header row
         $updated = 0;
         $skipped = 0;
-        $errors  = [];
+        $errors = [];
 
         while (($row = fgetcsv($handle)) !== false) {
-            if (count($row) < 2) continue;
+            if (count($row) < 2) {
+                continue;
+            }
             [$empNumber, $phone, $address, $city, $status, $ecName, $ecPhone] = array_pad($row, 7, null);
 
             $emp = Employee::whereIn('id', $empIds)->where('emp_number', trim($empNumber))->first();
-            if (!$emp) {
+            if (! $emp) {
                 $skipped++;
                 $errors[] = "Row skipped: emp_number '{$empNumber}' not in your managed employees.";
+
                 continue;
             }
 
             $updateData = array_filter([
-                'phone'                  => $phone   ? trim($phone)   : null,
-                'address'                => $address ? trim($address) : null,
-                'city'                   => $city    ? trim($city)    : null,
-                'emergency_contact_name' => $ecName  ? trim($ecName)  : null,
-                'emergency_contact_phone'=> $ecPhone ? trim($ecPhone) : null,
-            ], fn($v) => $v !== null);
+                'phone' => $phone ? trim($phone) : null,
+                'address' => $address ? trim($address) : null,
+                'city' => $city ? trim($city) : null,
+                'emergency_contact_name' => $ecName ? trim($ecName) : null,
+                'emergency_contact_phone' => $ecPhone ? trim($ecPhone) : null,
+            ], fn ($v) => $v !== null);
 
             if ($status && in_array(trim($status), ['active', 'on_leave', 'suspended'])) {
                 $updateData['status'] = trim($status);
@@ -445,7 +475,9 @@ class AccountManagerController extends Controller
         fclose($handle);
 
         $message = "Import complete: {$updated} updated, {$skipped} skipped.";
-        if ($errors) $message .= ' Errors: ' . implode(' | ', array_slice($errors, 0, 3));
+        if ($errors) {
+            $message .= ' Errors: '.implode(' | ', array_slice($errors, 0, 3));
+        }
 
         return back()->with($skipped > $updated ? 'error' : 'success', $message);
     }
@@ -454,10 +486,10 @@ class AccountManagerController extends Controller
 
     public function leaves(Request $request)
     {
-        $clients  = $this->managedClients();
-        $clientId = $request->client_id ? (int)$request->client_id : null;
+        $clients = $this->managedClients();
+        $clientId = $request->client_id ? (int) $request->client_id : null;
 
-        if ($clientId && !$clients->contains('id', $clientId)) {
+        if ($clientId && ! $clients->contains('id', $clientId)) {
             $clientId = null;
         }
 
@@ -465,7 +497,7 @@ class AccountManagerController extends Controller
 
         $leaves = LeaveRequest::with(['employee.department', 'leaveType'])
             ->whereIn('employee_id', $empIds)
-            ->when($request->status, fn($q) => $q->where('status', $request->status))
+            ->when($request->status, fn ($q) => $q->where('status', $request->status))
             ->orderByDesc('created_at')
             ->paginate(25);
 
@@ -479,6 +511,7 @@ class AccountManagerController extends Controller
         abort_unless(in_array($leave->employee_id, $this->managedEmployeeIds()), 403);
         $leave->update(['status' => 'approved', 'approved_by' => auth()->id(), 'approved_at' => now()]);
         $leave->employee->update(['status' => 'on_leave']);
+
         return back()->with('success', 'Leave approved.');
     }
 
@@ -486,11 +519,12 @@ class AccountManagerController extends Controller
     {
         abort_unless(in_array($leave->employee_id, $this->managedEmployeeIds()), 403);
         $leave->update([
-            'status'           => 'rejected',
+            'status' => 'rejected',
             'rejection_reason' => $request->reason,
-            'approved_by'      => auth()->id(),
-            'approved_at'      => now(),
+            'approved_by' => auth()->id(),
+            'approved_at' => now(),
         ]);
+
         return back()->with('success', 'Leave rejected.');
     }
 
@@ -498,17 +532,17 @@ class AccountManagerController extends Controller
 
     public function payroll(Request $request)
     {
-        $clients  = $this->managedClients();
-        $clientId = $request->client_id ? (int)$request->client_id : null;
+        $clients = $this->managedClients();
+        $clientId = $request->client_id ? (int) $request->client_id : null;
 
-        if ($clientId && !$clients->contains('id', $clientId)) {
+        if ($clientId && ! $clients->contains('id', $clientId)) {
             $clientId = null;
         }
 
         $clientIds = $clients->pluck('id')->toArray();
 
-        $empType  = $request->emp_type;   // all, casual, contract
-        $statusF  = $request->status_f;   // draft, processed, hr_approved, finance_approved, md_approved, paid
+        $empType = $request->emp_type;   // all, casual, contract
+        $statusF = $request->status_f;   // draft, processed, hr_approved, finance_approved, md_approved, paid
 
         $runs = PayrollRun::with('client')
             ->where(function ($q) use ($clientId, $clientIds) {
@@ -518,8 +552,8 @@ class AccountManagerController extends Controller
                     $q->whereIn('client_id', $clientIds)->orWhereNull('client_id');
                 }
             })
-            ->when($empType && $empType !== 'all',  fn($q) => $q->where('employment_type', $empType))
-            ->when($statusF,                         fn($q) => $q->where('status', $statusF))
+            ->when($empType && $empType !== 'all', fn ($q) => $q->where('employment_type', $empType))
+            ->when($statusF, fn ($q) => $q->where('status', $statusF))
             ->latestActivity()
             ->paginate(30);
 
@@ -527,15 +561,15 @@ class AccountManagerController extends Controller
 
         // Aggregate stats for current filter
         $allRuns = PayrollRun::whereIn('client_id', $clientIds)
-            ->when($clientId, fn($q) => $q->where('client_id', $clientId))
-            ->when($empType && $empType !== 'all', fn($q) => $q->where('employment_type', $empType))
-            ->when($statusF, fn($q) => $q->where('status', $statusF));
+            ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
+            ->when($empType && $empType !== 'all', fn ($q) => $q->where('employment_type', $empType))
+            ->when($statusF, fn ($q) => $q->where('status', $statusF));
 
         $stats = [
-            'total_runs'   => (clone $allRuns)->count(),
-            'casual_runs'  => PayrollRun::whereIn('client_id', $clientIds)->where('employment_type', 'casual')->count(),
-            'contract_runs'=> PayrollRun::whereIn('client_id', $clientIds)->where('employment_type', 'contract')->count(),
-            'pending_runs' => PayrollRun::whereIn('client_id', $clientIds)->whereIn('status', ['draft','processed','hr_approved','finance_approved'])->count(),
+            'total_runs' => (clone $allRuns)->count(),
+            'casual_runs' => PayrollRun::whereIn('client_id', $clientIds)->where('employment_type', 'casual')->count(),
+            'contract_runs' => PayrollRun::whereIn('client_id', $clientIds)->where('employment_type', 'contract')->count(),
+            'pending_runs' => PayrollRun::whereIn('client_id', $clientIds)->whereIn('status', ['draft', 'processed', 'hr_approved', 'finance_approved'])->count(),
         ];
 
         return view('account-manager.payroll', compact('runs', 'clients', 'activeClient', 'clientId', 'empType', 'statusF', 'stats'));
@@ -564,17 +598,17 @@ class AccountManagerController extends Controller
         abort_unless(is_null($run->client_id) || in_array($run->client_id, $clientIds), 403);
 
         $run->load(['payslips.employee.department', 'client']);
-        $empIds   = $this->managedEmployeeIds($run->client_id);
+        $empIds = $this->managedEmployeeIds($run->client_id);
         $payslips = $run->payslips->whereIn('employee_id', $empIds)->values();
 
         // Count eligible employees for this run (not yet processed)
-        $eligibleCount = \App\Models\Employee::whereIn('status', ['active', 'on_leave'])
+        $eligibleCount = Employee::whereIn('status', ['active', 'on_leave'])
             ->where('is_blacklisted', false)
             ->where('on_hold', false)
-            ->whereHas('clients', fn($q) => $q->where('clients.id', $run->client_id))
+            ->whereHas('clients', fn ($q) => $q->where('clients.id', $run->client_id))
             ->count();
 
-        $manualDaysCount = \App\Models\PayrollManualDays::where('payroll_run_id', $run->id)->count();
+        $manualDaysCount = PayrollManualDays::where('payroll_run_id', $run->id)->count();
 
         return view('account-manager.payroll-show', compact('run', 'payslips', 'eligibleCount', 'manualDaysCount'));
     }
@@ -590,13 +624,13 @@ class AccountManagerController extends Controller
         if ($run->isImported()) {
             return back()->with('error', 'This run was imported and records what was actually paid. The system cannot reproduce its figures, so it cannot be re-processed — create a new run instead.');
         }
-        if (!in_array($run->status, ['draft', 'processing'])) {
+        if (! in_array($run->status, ['draft', 'processing'])) {
             return back()->with('error', 'Payroll is already in the approval workflow.');
         }
 
-        app(\App\Services\Payroll\PayrollService::class)->processRun($run);
+        app(PayrollService::class)->processRun($run);
         $run->update([
-            'status'       => 'processed',
+            'status' => 'processed',
             'processed_by' => auth()->id(),
             'processed_at' => now(),
         ]);
@@ -604,13 +638,14 @@ class AccountManagerController extends Controller
         // Before this the handover was silent and runs simply waited: HR had no
         // way of knowing a run was on their desk short of opening the list.
         try {
-            app(\App\Services\NotificationService::class)->payrollAwaitingStage($run, 'hr');
-            \App\Services\QueueRunner::kick();
+            app(NotificationService::class)->payrollAwaitingStage($run, 'hr');
+            QueueRunner::kick();
         } catch (\Throwable $e) {
             report($e);
         }
 
         $count = $run->payslips()->count();
+
         return back()->with('success', "Payroll processed for {$count} employees and submitted to HR for review. HR has been notified.");
     }
 
@@ -619,27 +654,30 @@ class AccountManagerController extends Controller
         $clientIds = $this->managedClients()->pluck('id')->toArray();
         abort_unless(is_null($run->client_id) || in_array($run->client_id, $clientIds), 403);
 
-        $employees = \App\Models\Employee::whereHas('clients', fn($q) => $q->where('clients.id', $run->client_id))
+        $employees = Employee::whereHas('clients', fn ($q) => $q->where('clients.id', $run->client_id))
             ->where('status', 'active')
             ->orderBy('last_name')->get();
 
         $rows = [['emp_number', 'full_name', 'days_worked', 'notes']];
         foreach ($employees as $emp) {
             // Pre-fill existing manual days if any
-            $existing = \App\Models\PayrollManualDays::where('payroll_run_id', $run->id)
+            $existing = PayrollManualDays::where('payroll_run_id', $run->id)
                 ->where('employee_id', $emp->id)->first();
-            $rows[] = [$emp->emp_number, trim($emp->last_name . ' ' . $emp->first_name), $existing?->days_worked ?? 0, ''];
+            $rows[] = [$emp->emp_number, trim($emp->last_name.' '.$emp->first_name), $existing?->days_worked ?? 0, ''];
         }
 
         $handle = fopen('php://temp', 'r+');
-        foreach ($rows as $row) fputcsv($handle, $row);
+        foreach ($rows as $row) {
+            fputcsv($handle, $row);
+        }
         rewind($handle);
         $csv = stream_get_contents($handle);
         fclose($handle);
 
         $filename = "manual_days_{$run->year}_{$run->month}.csv";
+
         return response($csv, 200, [
-            'Content-Type'        => 'text/csv',
+            'Content-Type' => 'text/csv',
             'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ]);
     }
@@ -666,10 +704,10 @@ class AccountManagerController extends Controller
 
         // What is already chosen, so reopening the screen shows the real state
         // rather than a blank form.
-        $existing = \App\Models\PayrollManualDays::where('payroll_run_id', $run->id)
+        $existing = PayrollManualDays::where('payroll_run_id', $run->id)
             ->pluck('days_worked', 'employee_id');
 
-        $daysInMonth = \Carbon\Carbon::create($run->year, $run->month, 1)->daysInMonth;
+        $daysInMonth = Carbon::create($run->year, $run->month, 1)->daysInMonth;
 
         $preview = $this->payrollPreview($run);
         $rates = $this->currentRates($employees);
@@ -679,10 +717,10 @@ class AccountManagerController extends Controller
 
         return view('account-manager.payroll-select',
             compact('run', 'employees', 'existing', 'daysInMonth', 'preview', 'rates',
-                    'basisExpected', 'basisMismatch'));
+                'basisExpected', 'basisMismatch'));
     }
 
-    public function storeEmployeeSelection(\Illuminate\Http\Request $request, PayrollRun $run)
+    public function storeEmployeeSelection(Request $request, PayrollRun $run)
     {
         $clientIds = $this->managedClients()->pluck('id')->toArray();
         abort_unless(is_null($run->client_id) || in_array($run->client_id, $clientIds), 403);
@@ -693,11 +731,11 @@ class AccountManagerController extends Controller
                 : back()->with('error', 'This run can no longer be changed.');
         }
 
-        $daysInMonth = \Carbon\Carbon::create($run->year, $run->month, 1)->daysInMonth;
+        $daysInMonth = Carbon::create($run->year, $run->month, 1)->daysInMonth;
 
         $data = $request->validate([
-            'days'   => 'array',
-            'days.*' => 'nullable|integer|min:0|max:' . $daysInMonth,
+            'days' => 'array',
+            'days.*' => 'nullable|integer|min:0|max:'.$daysInMonth,
         ], [
             'days.*.max' => "A month cannot have more than {$daysInMonth} days.",
         ]);
@@ -710,15 +748,15 @@ class AccountManagerController extends Controller
             ->filter(fn ($id) => $allowed->has((int) $id))
             ->map(fn ($id) => (int) $id);
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($run, $chosen, $data) {
+        DB::transaction(function () use ($run, $chosen, $data) {
             // Anybody unticked leaves the run entirely, rather than staying on
             // with zero days and producing an empty payslip.
-            \App\Models\PayrollManualDays::where('payroll_run_id', $run->id)
+            PayrollManualDays::where('payroll_run_id', $run->id)
                 ->whereNotIn('employee_id', $chosen->isEmpty() ? [0] : $chosen->all())
                 ->delete();
 
             foreach ($chosen as $employeeId) {
-                \App\Models\PayrollManualDays::updateOrCreate(
+                PayrollManualDays::updateOrCreate(
                     ['payroll_run_id' => $run->id, 'employee_id' => $employeeId],
                     ['days_worked' => (int) ($data['days'][$employeeId] ?? 0)]
                 );
@@ -738,7 +776,7 @@ class AccountManagerController extends Controller
             return response()->json([
                 'selected' => $count,
                 'saved_at' => now()->format('H:i'),
-                'preview'  => $this->payrollPreview($run->fresh()),
+                'preview' => $this->payrollPreview($run->fresh()),
             ]);
         }
 
@@ -746,7 +784,7 @@ class AccountManagerController extends Controller
             ->route('account-manager.payroll.show', $run)
             ->with('success', $count === 0
                 ? 'Nobody is selected for this run yet.'
-                : "{$count} " . ($count === 1 ? 'employee is' : 'employees are') . ' selected for this run.');
+                : "{$count} ".($count === 1 ? 'employee is' : 'employees are').' selected for this run.');
     }
 
     /**
@@ -762,7 +800,7 @@ class AccountManagerController extends Controller
      * Employee Central), a client assignment, a salary record, and a login when
      * an email is given.
      */
-    public function addEmployeeToRun(\Illuminate\Http\Request $request, PayrollRun $run)
+    public function addEmployeeToRun(Request $request, PayrollRun $run)
     {
         $clients = $this->managedClients();
         abort_unless(is_null($run->client_id) || $clients->contains('id', $run->client_id), 403);
@@ -774,52 +812,52 @@ class AccountManagerController extends Controller
             return back()->with('error', 'This run can no longer be changed.');
         }
 
-        $daysInMonth = \Carbon\Carbon::create($run->year, $run->month, 1)->daysInMonth;
+        $daysInMonth = Carbon::create($run->year, $run->month, 1)->daysInMonth;
 
         $data = $request->validate([
-            'first_name'      => 'required|string|max:100',
-            'last_name'       => 'required|string|max:100',
+            'first_name' => 'required|string|max:100',
+            'last_name' => 'required|string|max:100',
             'employment_type' => 'nullable|in:casual,contract,full_time,part_time',
-            'salary_type'     => 'required|in:daily,hourly,monthly',
-            'rate'            => 'required|numeric|min:1',
-            'hire_date'       => 'nullable|date',
-            'phone'           => 'nullable|string|max:30',
-            'national_id'     => 'nullable|string|max:50',
+            'salary_type' => 'required|in:daily,hourly,monthly',
+            'rate' => 'required|numeric|min:1',
+            'hire_date' => 'nullable|date',
+            'phone' => 'nullable|string|max:30',
+            'national_id' => 'nullable|string|max:50',
             // A login is optional, but without one there is no address to send a
             // payslip to, so an employee added without an email quietly drops
             // out of every payslip email run.
-            'email'           => 'nullable|email|unique:users,email',
-            'days_worked'     => 'nullable|integer|min:0|max:' . $daysInMonth,
+            'email' => 'nullable|email|unique:users,email',
+            'days_worked' => 'nullable|integer|min:0|max:'.$daysInMonth,
         ], [
-            'rate.required'  => 'Enter what this person is paid, or payroll will calculate nothing for them.',
-            'email.unique'   => 'That email already belongs to somebody else.',
+            'rate.required' => 'Enter what this person is paid, or payroll will calculate nothing for them.',
+            'email.unique' => 'That email already belongs to somebody else.',
         ]);
 
-        $employee = \Illuminate\Support\Facades\DB::transaction(function () use ($data, $client, $run) {
+        $employee = DB::transaction(function () use ($data, $client, $run) {
             // Same prefixing the bulk import uses, so numbering stays consistent
             // for the client: UNOC becomes UNO0019, Roofings RUL0440.
             $prefix = strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $client->company_name), 0, 3));
-            $count = \App\Models\Employee::where('emp_number', 'like', "{$prefix}%")->count() + 1;
+            $count = Employee::where('emp_number', 'like', "{$prefix}%")->count() + 1;
             do {
-                $empNumber = $prefix . str_pad($count, 4, '0', STR_PAD_LEFT);
+                $empNumber = $prefix.str_pad($count, 4, '0', STR_PAD_LEFT);
                 $count++;
-            } while (\App\Models\Employee::where('emp_number', $empNumber)->exists());
+            } while (Employee::where('emp_number', $empNumber)->exists());
 
-            $employee = \App\Models\Employee::create([
-                'emp_number'      => $empNumber,
-                'first_name'      => $data['first_name'],
-                'last_name'       => $data['last_name'],
+            $employee = Employee::create([
+                'emp_number' => $empNumber,
+                'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'],
                 'employment_type' => $data['employment_type'] ?? 'casual',
-                'hire_date'       => $data['hire_date'] ?? today()->toDateString(),
-                'status'          => 'active',
-                'phone'           => $data['phone'] ?? null,
-                'national_id'     => $data['national_id'] ?? null,
+                'hire_date' => $data['hire_date'] ?? today()->toDateString(),
+                'status' => 'active',
+                'phone' => $data['phone'] ?? null,
+                'national_id' => $data['national_id'] ?? null,
             ]);
 
             if (! empty($data['email'])) {
                 $user = User::create([
-                    'name'     => trim($data['first_name'] . ' ' . $data['last_name']),
-                    'email'    => $data['email'],
+                    'name' => trim($data['first_name'].' '.$data['last_name']),
+                    'email' => $data['email'],
                     'password' => Hash::make('Password@123'),
                 ]);
                 $user->assignRole('employee');
@@ -831,18 +869,18 @@ class AccountManagerController extends Controller
             // Without this the engine calculates nothing and the person appears
             // on the run with a payslip of zero.
             EmployeeSalary::create([
-                'employee_id'    => $employee->id,
-                'basic_salary'   => $data['rate'],
-                'salary_type'    => $data['salary_type'],
+                'employee_id' => $employee->id,
+                'basic_salary' => $data['rate'],
+                'salary_type' => $data['salary_type'],
                 'effective_from' => $data['hire_date'] ?? today()->toDateString(),
-                'is_current'     => true,
-                'created_by'     => auth()->id(),
+                'is_current' => true,
+                'created_by' => auth()->id(),
             ]);
 
             // Put them straight on the run if days were given, so adding
             // somebody mid-selection does not mean finding them again after.
             if (! empty($data['days_worked'])) {
-                \App\Models\PayrollManualDays::updateOrCreate(
+                PayrollManualDays::updateOrCreate(
                     ['payroll_run_id' => $run->id, 'employee_id' => $employee->id],
                     ['days_worked' => (int) $data['days_worked']]
                 );
@@ -853,11 +891,12 @@ class AccountManagerController extends Controller
 
         return redirect()
             ->route('account-manager.payroll.select', $run)
-            ->with('success', $employee->first_name . ' ' . $employee->last_name
-                . ' (' . $employee->emp_number . ') was added to ' . $client->company_name
-                . ' and saved in Employee Central.'
-                . (empty($data['days_worked']) ? ' Tick them to put them on this run.' : ''));
+            ->with('success', $employee->first_name.' '.$employee->last_name
+                .' ('.$employee->emp_number.') was added to '.$client->company_name
+                .' and saved in Employee Central.'
+                .(empty($data['days_worked']) ? ' Tick them to put them on this run.' : ''));
     }
+
     /**
      * Change whether somebody can be paid at all, from the payroll screen.
      *
@@ -869,7 +908,7 @@ class AccountManagerController extends Controller
      * Every one of these is reversible from the same place, which is the point:
      * "reinstate" clears all of it and puts them back on the list.
      */
-    public function updateEmployeeStatus(\Illuminate\Http\Request $request, PayrollRun $run, \App\Models\Employee $employee)
+    public function updateEmployeeStatus(Request $request, PayrollRun $run, Employee $employee)
     {
         $clients = $this->managedClients();
         abort_unless(is_null($run->client_id) || $clients->contains('id', $run->client_id), 403);
@@ -886,61 +925,61 @@ class AccountManagerController extends Controller
         switch ($data['action']) {
             case 'blacklist':
                 $employee->update([
-                    'is_blacklisted'   => true,
-                    'blacklist_date'   => today(),
+                    'is_blacklisted' => true,
+                    'blacklist_date' => today(),
                     'blacklist_reason' => $reason,
                 ]);
-                $message = $employee->full_name . ' is blacklisted and will not be paid.';
+                $message = $employee->full_name.' is blacklisted and will not be paid.';
                 break;
 
             case 'hold':
                 $employee->update([
-                    'on_hold'       => true,
-                    'hold_date'     => today(),
+                    'on_hold' => true,
+                    'hold_date' => today(),
                     'hold_end_date' => $data['hold_end_date'] ?? null,
-                    'hold_reason'   => $reason,
+                    'hold_reason' => $reason,
                 ]);
-                $message = $employee->full_name . ' is on hold'
-                    . (! empty($data['hold_end_date'])
-                        ? ' until ' . \Carbon\Carbon::parse($data['hold_end_date'])->format('d M Y') . '.'
+                $message = $employee->full_name.' is on hold'
+                    .(! empty($data['hold_end_date'])
+                        ? ' until '.Carbon::parse($data['hold_end_date'])->format('d M Y').'.'
                         : ' until it is lifted.');
                 break;
 
             case 'suspend':
                 $employee->update(['status' => 'suspended']);
-                $message = $employee->full_name . ' is suspended and will not be paid.';
+                $message = $employee->full_name.' is suspended and will not be paid.';
                 break;
 
             case 'terminate':
                 $employee->update(['status' => 'terminated']);
-                $message = $employee->full_name . ' is marked as terminated and will not be paid.';
+                $message = $employee->full_name.' is marked as terminated and will not be paid.';
                 break;
 
             case 'reinstate':
                 // Everything off at once. Clearing only one of three and leaving
                 // the others set is how somebody stays mysteriously unpayable.
                 $employee->update([
-                    'status'         => 'active',
+                    'status' => 'active',
                     'is_blacklisted' => false,
                     'blacklist_date' => null,
-                    'on_hold'        => false,
-                    'hold_date'      => null,
-                    'hold_end_date'  => null,
+                    'on_hold' => false,
+                    'hold_date' => null,
+                    'hold_end_date' => null,
                 ]);
-                $message = $employee->full_name . ' is active again and can be put on payroll.';
+                $message = $employee->full_name.' is active again and can be put on payroll.';
                 break;
         }
 
         // Taking somebody off payroll takes them off THIS run too, otherwise the
         // tick stays behind and the next person to look is told they are on it.
         if ($data['action'] !== 'reinstate') {
-            \App\Models\PayrollManualDays::where('payroll_run_id', $run->id)
+            PayrollManualDays::where('payroll_run_id', $run->id)
                 ->where('employee_id', $employee->id)->delete();
         }
 
         if ($request->expectsJson()) {
             return response()->json([
-                'message'  => $message,
+                'message' => $message,
                 'eligible' => $employee->fresh()->isPayrollEligible(),
             ]);
         }
@@ -961,7 +1000,7 @@ class AccountManagerController extends Controller
      */
     private function payrollPreview(PayrollRun $run): array
     {
-        $selected = \App\Models\PayrollManualDays::where('payroll_run_id', $run->id)
+        $selected = PayrollManualDays::where('payroll_run_id', $run->id)
             ->where('days_worked', '>', 0)
             ->pluck('employee_id');
 
@@ -969,8 +1008,8 @@ class AccountManagerController extends Controller
             return ['rows' => [], 'totals' => ['gross' => 0, 'nssf' => 0, 'paye' => 0, 'net' => 0, 'count' => 0]];
         }
 
-        $employees = \App\Models\Employee::payrollEligible()->whereIn('id', $selected)->get();
-        $payroll = app(\App\Services\Payroll\PayrollService::class);
+        $employees = Employee::payrollEligible()->whereIn('id', $selected)->get();
+        $payroll = app(PayrollService::class);
 
         $rows = [];
         $totals = ['gross' => 0, 'nssf' => 0, 'paye' => 0, 'net' => 0, 'count' => 0];
@@ -981,21 +1020,22 @@ class AccountManagerController extends Controller
             } catch (\Throwable $e) {
                 // One employee with broken data must not blank the whole screen.
                 report($e);
+
                 continue;
             }
 
             $rows[$employee->id] = [
-                'days'  => (int) ($figures['worked_days'] ?? 0),
+                'days' => (int) ($figures['worked_days'] ?? 0),
                 'gross' => (float) ($figures['gross_salary'] ?? 0),
-                'nssf'  => (float) ($figures['employee_nssf'] ?? 0),
-                'paye'  => (float) ($figures['tax_amount'] ?? 0),
-                'net'   => (float) ($figures['net_salary'] ?? 0),
+                'nssf' => (float) ($figures['employee_nssf'] ?? 0),
+                'paye' => (float) ($figures['tax_amount'] ?? 0),
+                'net' => (float) ($figures['net_salary'] ?? 0),
             ];
 
             $totals['gross'] += $rows[$employee->id]['gross'];
-            $totals['nssf']  += $rows[$employee->id]['nssf'];
-            $totals['paye']  += $rows[$employee->id]['paye'];
-            $totals['net']   += $rows[$employee->id]['net'];
+            $totals['nssf'] += $rows[$employee->id]['nssf'];
+            $totals['paye'] += $rows[$employee->id]['paye'];
+            $totals['net'] += $rows[$employee->id]['net'];
             $totals['count']++;
         }
 
@@ -1005,14 +1045,14 @@ class AccountManagerController extends Controller
     /** What each employee is on, so the rate can be shown beside the days. */
     private function currentRates($employees): array
     {
-        $salaries = \App\Models\EmployeeSalary::whereIn('employee_id', $employees->pluck('id'))
+        $salaries = EmployeeSalary::whereIn('employee_id', $employees->pluck('id'))
             ->where('is_current', true)
             ->get()
             ->keyBy('employee_id');
 
         return $employees->mapWithKeys(fn ($e) => [$e->id => [
             'amount' => (float) ($salaries[$e->id]->basic_salary ?? 0),
-            'type'   => $salaries[$e->id]->salary_type ?? null,
+            'type' => $salaries[$e->id]->salary_type ?? null,
         ]])->all();
     }
 
@@ -1058,32 +1098,36 @@ class AccountManagerController extends Controller
 
         return $off;
     }
+
     /** Everybody on the run's client, whatever their state. */
     private function runClientEmployees(PayrollRun $run)
     {
-        return \App\Models\Employee::with(['department', 'designation'])
+        return Employee::with(['department', 'designation'])
             ->when($run->client_id, fn ($q) => $q->whereHas('clients', fn ($c) => $c->where('clients.id', $run->client_id)))
             ->orderBy('first_name')->orderBy('last_name')
             ->get();
     }
+
     /** The employees the engine would consider for this run, in the same order. */
     private function runEligibleEmployees(PayrollRun $run)
     {
-        return \App\Models\Employee::with(['department', 'designation'])
+        return Employee::with(['department', 'designation'])
             ->payrollEligible()
             ->when($run->client_id, fn ($q) => $q->whereHas('clients', fn ($c) => $c->where('clients.id', $run->client_id)))
             ->orderBy('first_name')->orderBy('last_name')
             ->get();
     }
-    public function importManualDays(\Illuminate\Http\Request $request, PayrollRun $run)
+
+    public function importManualDays(Request $request, PayrollRun $run)
     {
         $clientIds = $this->managedClients()->pluck('id')->toArray();
         abort_unless(is_null($run->client_id) || in_array($run->client_id, $clientIds), 403);
 
         $request->validate(['file' => 'required|file|mimes:csv,xlsx,xls']);
-        \Maatwebsite\Excel\Facades\Excel::import(new \App\Imports\PayrollManualDaysImport($run->id), $request->file('file'));
+        Excel::import(new PayrollManualDaysImport($run->id), $request->file('file'));
 
-        $count = \App\Models\PayrollManualDays::where('payroll_run_id', $run->id)->count();
+        $count = PayrollManualDays::where('payroll_run_id', $run->id)->count();
+
         return back()->with('success', "Manual days imported for {$count} employees.");
     }
 
@@ -1096,6 +1140,7 @@ class AccountManagerController extends Controller
             $client->account_manager_id === auth()->id(),
             403
         );
+
         return view('account-manager.client-settings', compact('client'));
     }
 
@@ -1112,10 +1157,10 @@ class AccountManagerController extends Controller
         $this->authoriseClientSettings($client);
 
         $data = $request->validate([
-            'name'             => 'required|string|max:100',
-            'address'          => 'nullable|string|max:255',
-            'lat'              => 'required|numeric|between:-90,90',
-            'lng'              => 'required|numeric|between:-180,180',
+            'name' => 'required|string|max:100',
+            'address' => 'nullable|string|max:255',
+            'lat' => 'required|numeric|between:-90,90',
+            'lng' => 'required|numeric|between:-180,180',
             // Twenty-five metres is already close to a phone's own GPS error, so
             // anything tighter would refuse people genuinely standing there.
             'geo_fence_radius' => 'required|integer|min:25|max:5000',
@@ -1123,7 +1168,7 @@ class AccountManagerController extends Controller
 
         $client->sites()->create($data + ['is_active' => true]);
 
-        return back()->with('success', $data['name'] . ' added. Staff can now clock in there.');
+        return back()->with('success', $data['name'].' added. Staff can now clock in there.');
     }
 
     /**
@@ -1132,14 +1177,14 @@ class AccountManagerController extends Controller
      * A site that has been clocked into is part of the history of somebody's
      * attendance, and removing it would leave those records pointing at nothing.
      */
-    public function retireClientSite(Client $client, \App\Models\ClientSite $site)
+    public function retireClientSite(Client $client, ClientSite $site)
     {
         $this->authoriseClientSettings($client);
         abort_unless($site->client_id === $client->id, 404);
 
         $site->update(['is_active' => ! $site->is_active]);
 
-        return back()->with('success', $site->name . ($site->is_active
+        return back()->with('success', $site->name.($site->is_active
             ? ' is active again.'
             : ' retired. Staff can no longer clock in there.'));
     }
@@ -1161,20 +1206,21 @@ class AccountManagerController extends Controller
             403
         );
         $request->validate([
-            'payment_day'             => 'nullable|integer|min:1|max:31',
-            'work_site_address'       => 'nullable|string|max:255',
-            'work_site_lat'           => 'nullable|numeric|between:-90,90',
-            'work_site_lng'           => 'nullable|numeric|between:-180,180',
-            'geo_fence_radius'        => 'nullable|integer|min:10|max:5000',
-            'payroll_type'            => 'nullable|in:daily,hourly,monthly,mixed',
-            'gpa_wmc_rate'            => 'nullable|numeric|min:0|max:20',
+            'payment_day' => 'nullable|integer|min:1|max:31',
+            'work_site_address' => 'nullable|string|max:255',
+            'work_site_lat' => 'nullable|numeric|between:-90,90',
+            'work_site_lng' => 'nullable|numeric|between:-180,180',
+            'geo_fence_radius' => 'nullable|integer|min:10|max:5000',
+            'payroll_type' => 'nullable|in:daily,hourly,monthly,mixed',
+            'gpa_wmc_rate' => 'nullable|numeric|min:0|max:20',
             'billing_rate_multiplier' => 'nullable|numeric|min:1|max:5',
         ]);
         $client->update(array_merge(
             $request->only('payment_day', 'work_site_address', 'work_site_lat', 'work_site_lng',
-                           'geo_fence_radius', 'payroll_type', 'gpa_wmc_rate', 'billing_rate_multiplier'),
+                'geo_fence_radius', 'payroll_type', 'gpa_wmc_rate', 'billing_rate_multiplier'),
             ['gross_up_paye' => $request->boolean('gross_up_paye')]
         ));
+
         return back()->with('success', 'Client settings updated.');
     }
 
@@ -1182,17 +1228,17 @@ class AccountManagerController extends Controller
 
     public function salaryPayments(Request $request)
     {
-        $clients  = $this->managedClients();
-        $empIds   = $this->managedEmployeeIds();
+        $clients = $this->managedClients();
+        $empIds = $this->managedEmployeeIds();
         $clientId = $request->client_id ? (int) $request->client_id : null;
-        $month    = $request->month ? (int) $request->month : null;
-        $year     = $request->year  ? (int) $request->year  : null;
+        $month = $request->month ? (int) $request->month : null;
+        $year = $request->year ? (int) $request->year : null;
 
         $payments = AmSalaryPayment::with(['employee.department', 'client'])
             ->whereIn('employee_id', $empIds)
-            ->when($clientId, fn($q) => $q->where('client_id', $clientId))
-            ->when($month,    fn($q) => $q->where('period_month', $month))
-            ->when($year,     fn($q) => $q->where('period_year', $year))
+            ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
+            ->when($month, fn ($q) => $q->where('period_month', $month))
+            ->when($year, fn ($q) => $q->where('period_year', $year))
             ->latest()
             ->paginate(30);
 
@@ -1204,12 +1250,12 @@ class AccountManagerController extends Controller
 
     public function createSalaryPayment()
     {
-        $clients   = $this->managedClients();
-        $empIds    = $this->managedEmployeeIds();
+        $clients = $this->managedClients();
+        $empIds = $this->managedEmployeeIds();
         $employees = Employee::with(['department', 'designation', 'salary'])
             ->whereIn('id', $empIds)->where('status', 'active')->orderBy('first_name')->get();
 
-        $employeeSalaries = $employees->mapWithKeys(fn($e) => [
+        $employeeSalaries = $employees->mapWithKeys(fn ($e) => [
             $e->id => (float) ($e->salary?->basic_salary ?? 0),
         ]);
 
@@ -1220,51 +1266,51 @@ class AccountManagerController extends Controller
     {
         $empIds = $this->managedEmployeeIds();
         $request->validate([
-            'employee_id'     => 'required|integer|in:' . implode(',', $empIds),
-            'client_id'       => 'required|integer',
-            'period_month'    => 'required|integer|min:1|max:12',
-            'period_year'     => 'required|integer|min:2020|max:2100',
-            'basic_salary'    => 'required|numeric|min:0',
-            'allowances'      => 'nullable|numeric|min:0',
-            'paye_tax'        => 'nullable|numeric|min:0',
-            'nssf'            => 'nullable|numeric|min:0',
-            'other_deductions'=> 'nullable|numeric|min:0',
-            'payment_method'  => 'nullable|in:bank_transfer,mobile_money,cash,cheque',
-            'payment_reference'=> 'nullable|string|max:255',
-            'payment_date'    => 'nullable|date',
-            'notes'           => 'nullable|string|max:1000',
+            'employee_id' => 'required|integer|in:'.implode(',', $empIds),
+            'client_id' => 'required|integer',
+            'period_month' => 'required|integer|min:1|max:12',
+            'period_year' => 'required|integer|min:2020|max:2100',
+            'basic_salary' => 'required|numeric|min:0',
+            'allowances' => 'nullable|numeric|min:0',
+            'paye_tax' => 'nullable|numeric|min:0',
+            'nssf' => 'nullable|numeric|min:0',
+            'other_deductions' => 'nullable|numeric|min:0',
+            'payment_method' => 'nullable|in:bank_transfer,mobile_money,cash,cheque',
+            'payment_reference' => 'nullable|string|max:255',
+            'payment_date' => 'nullable|date',
+            'notes' => 'nullable|string|max:1000',
         ]);
 
-        $basic      = (float) $request->basic_salary;
+        $basic = (float) $request->basic_salary;
         $allowances = (float) ($request->allowances ?? 0);
-        $paye       = (float) ($request->paye_tax ?? 0);
-        $nssf       = (float) ($request->nssf ?? 0);
-        $other      = (float) ($request->other_deductions ?? 0);
-        $gross      = $basic + $allowances;
-        $totalDed   = $paye + $nssf + $other;
-        $net        = $gross - $totalDed;
+        $paye = (float) ($request->paye_tax ?? 0);
+        $nssf = (float) ($request->nssf ?? 0);
+        $other = (float) ($request->other_deductions ?? 0);
+        $gross = $basic + $allowances;
+        $totalDed = $paye + $nssf + $other;
+        $net = $gross - $totalDed;
 
         AmSalaryPayment::updateOrCreate(
             [
-                'employee_id'  => $request->employee_id,
+                'employee_id' => $request->employee_id,
                 'period_month' => $request->period_month,
-                'period_year'  => $request->period_year,
+                'period_year' => $request->period_year,
             ],
             [
-                'client_id'          => $request->client_id,
+                'client_id' => $request->client_id,
                 'account_manager_id' => auth()->id(),
-                'basic_salary'       => $basic,
-                'allowances'         => $allowances,
-                'gross_salary'       => $gross,
-                'paye_tax'           => $paye,
-                'nssf'               => $nssf,
-                'other_deductions'   => $other,
-                'total_deductions'   => $totalDed,
-                'net_salary'         => $net,
-                'payment_method'     => $request->payment_method,
-                'payment_reference'  => $request->payment_reference,
-                'payment_date'       => $request->payment_date ?: today(),
-                'notes'              => $request->notes,
+                'basic_salary' => $basic,
+                'allowances' => $allowances,
+                'gross_salary' => $gross,
+                'paye_tax' => $paye,
+                'nssf' => $nssf,
+                'other_deductions' => $other,
+                'total_deductions' => $totalDed,
+                'net_salary' => $net,
+                'payment_method' => $request->payment_method,
+                'payment_reference' => $request->payment_reference,
+                'payment_date' => $request->payment_date ?: today(),
+                'notes' => $request->notes,
             ]
         );
 
@@ -1277,7 +1323,7 @@ class AccountManagerController extends Controller
         $empIds = $this->managedEmployeeIds();
         abort_unless(in_array($payment->employee_id, $empIds), 403);
 
-        $clients   = $this->managedClients();
+        $clients = $this->managedClients();
         $employees = Employee::with(['department', 'designation'])
             ->whereIn('id', $empIds)->where('status', 'active')->orderBy('first_name')->get();
 
@@ -1290,38 +1336,38 @@ class AccountManagerController extends Controller
         abort_unless(in_array($payment->employee_id, $empIds), 403);
 
         $request->validate([
-            'basic_salary'     => 'required|numeric|min:0',
-            'allowances'       => 'nullable|numeric|min:0',
-            'paye_tax'         => 'nullable|numeric|min:0',
-            'nssf'             => 'nullable|numeric|min:0',
+            'basic_salary' => 'required|numeric|min:0',
+            'allowances' => 'nullable|numeric|min:0',
+            'paye_tax' => 'nullable|numeric|min:0',
+            'nssf' => 'nullable|numeric|min:0',
             'other_deductions' => 'nullable|numeric|min:0',
-            'payment_method'   => 'nullable|in:bank_transfer,mobile_money,cash,cheque',
-            'payment_reference'=> 'nullable|string|max:255',
-            'payment_date'     => 'nullable|date',
-            'notes'            => 'nullable|string|max:1000',
+            'payment_method' => 'nullable|in:bank_transfer,mobile_money,cash,cheque',
+            'payment_reference' => 'nullable|string|max:255',
+            'payment_date' => 'nullable|date',
+            'notes' => 'nullable|string|max:1000',
         ]);
 
-        $basic    = (float) $request->basic_salary;
-        $allow    = (float) ($request->allowances ?? 0);
-        $paye     = (float) ($request->paye_tax ?? 0);
-        $nssf     = (float) ($request->nssf ?? 0);
-        $other    = (float) ($request->other_deductions ?? 0);
-        $gross    = $basic + $allow;
+        $basic = (float) $request->basic_salary;
+        $allow = (float) ($request->allowances ?? 0);
+        $paye = (float) ($request->paye_tax ?? 0);
+        $nssf = (float) ($request->nssf ?? 0);
+        $other = (float) ($request->other_deductions ?? 0);
+        $gross = $basic + $allow;
         $totalDed = $paye + $nssf + $other;
 
         $payment->update([
-            'basic_salary'     => $basic,
-            'allowances'       => $allow,
-            'gross_salary'     => $gross,
-            'paye_tax'         => $paye,
-            'nssf'             => $nssf,
+            'basic_salary' => $basic,
+            'allowances' => $allow,
+            'gross_salary' => $gross,
+            'paye_tax' => $paye,
+            'nssf' => $nssf,
             'other_deductions' => $other,
             'total_deductions' => $totalDed,
-            'net_salary'       => $gross - $totalDed,
-            'payment_method'   => $request->payment_method,
-            'payment_reference'=> $request->payment_reference,
-            'payment_date'     => $request->payment_date ?: $payment->payment_date,
-            'notes'            => $request->notes,
+            'net_salary' => $gross - $totalDed,
+            'payment_method' => $request->payment_method,
+            'payment_reference' => $request->payment_reference,
+            'payment_date' => $request->payment_date ?: $payment->payment_date,
+            'notes' => $request->notes,
         ]);
 
         return redirect()->route('account-manager.salary-payments')
@@ -1333,6 +1379,7 @@ class AccountManagerController extends Controller
         $empIds = $this->managedEmployeeIds();
         abort_unless(in_array($payment->employee_id, $empIds), 403);
         $payment->delete();
+
         return back()->with('success', 'Payment record deleted.');
     }
 
@@ -1342,13 +1389,13 @@ class AccountManagerController extends Controller
     {
         $clients = $this->managedClients();
         $request->validate([
-            'client_id'       => 'required|integer',
-            'month'           => 'required|integer|between:1,12',
-            'year'            => 'required|integer|min:2020|max:2100',
+            'client_id' => 'required|integer',
+            'month' => 'required|integer|between:1,12',
+            'year' => 'required|integer|min:2020|max:2100',
             'employment_type' => 'required|in:casual,contract,mixed',
         ]);
 
-        abort_unless($clients->contains('id', (int)$request->client_id), 403);
+        abort_unless($clients->contains('id', (int) $request->client_id), 403);
 
         $exists = PayrollRun::where('client_id', $request->client_id)
             ->where('month', $request->month)
@@ -1357,19 +1404,19 @@ class AccountManagerController extends Controller
             ->exists();
 
         if ($exists) {
-            return back()->with('error', ucfirst($request->employment_type) . ' payroll for this client and period already exists.');
+            return back()->with('error', ucfirst($request->employment_type).' payroll for this client and period already exists.');
         }
 
-        $client    = $clients->firstWhere('id', (int)$request->client_id);
+        $client = $clients->firstWhere('id', (int) $request->client_id);
         $monthName = date('F', mktime(0, 0, 0, $request->month, 1));
         $typeLabel = ucfirst($request->employment_type);
 
         $run = PayrollRun::create([
-            'title'           => "{$client->company_name} — {$monthName} {$request->year} {$typeLabel} Payroll",
-            'month'           => $request->month,
-            'year'            => $request->year,
-            'status'          => 'draft',
-            'client_id'       => $request->client_id,
+            'title' => "{$client->company_name} — {$monthName} {$request->year} {$typeLabel} Payroll",
+            'month' => $request->month,
+            'year' => $request->year,
+            'status' => 'draft',
+            'client_id' => $request->client_id,
             'employment_type' => $request->employment_type,
         ]);
 
@@ -1382,7 +1429,7 @@ class AccountManagerController extends Controller
     public function fullImportTemplate()
     {
         $headers = [
-            'Content-Type'        => 'text/csv',
+            'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="employee-full-import-template.csv"',
         ];
         $callback = function () {
@@ -1390,42 +1437,43 @@ class AccountManagerController extends Controller
             // Columns are matched by heading, so they may be reordered or omitted.
             // Only first_name and last_name are required.
             fputcsv($handle, [
-                'emp_number','first_name','last_name','middle_name','email',
-                'employment_type','salary_type','rate',
-                'department','designation',
-                'hire_date','phone','national_id','nssf_number',
-                'payment_mode','bank_name','bank_account','mobile_money_number',
-                'charge_paye','charge_nssf','nssf_paid_by_employer',
+                'emp_number', 'first_name', 'last_name', 'middle_name', 'email',
+                'employment_type', 'salary_type', 'rate',
+                'department', 'designation',
+                'hire_date', 'phone', 'national_id', 'nssf_number',
+                'payment_mode', 'bank_name', 'bank_account', 'mobile_money_number',
+                'charge_paye', 'charge_nssf', 'nssf_paid_by_employer',
             ]);
             // payment_mode must be one of: bank | mtn | airtel | cash | cheque
-            fputcsv($handle, ['EMP001','John','Doe','','john.doe@example.com','casual','daily','16615','Kitchen','Cook','2026-01-15','+256700000001','CF10000001','1234567890','bank','Stanbic Bank','0123456789','','Yes','Yes','No']);
-            fputcsv($handle, ['','Jane','Smith','Mary','','casual','hourly','1600','Housekeeping','Cleaner','2026-02-01','+256770000002','','','mtn','','','0770000002','Yes','Yes','No']);
-            fputcsv($handle, ['','Peter','Amuriat','','','casual','daily','16615','Security','Guard','2026-02-01','+256750000004','','','airtel','','','0750000004','Yes','Yes','No']);
-            fputcsv($handle, ['EMP100','Robert','Okello','','r.okello@example.com','contract','monthly','1500000','Management','Supervisor','2025-06-01','+256700000003','CF20000001','9876543210','bank','Centenary Bank','9876543210','','Yes','Yes','No']);
+            fputcsv($handle, ['EMP001', 'John', 'Doe', '', 'john.doe@example.com', 'casual', 'daily', '16615', 'Kitchen', 'Cook', '2026-01-15', '+256700000001', 'CF10000001', '1234567890', 'bank', 'Stanbic Bank', '0123456789', '', 'Yes', 'Yes', 'No']);
+            fputcsv($handle, ['', 'Jane', 'Smith', 'Mary', '', 'casual', 'hourly', '1600', 'Housekeeping', 'Cleaner', '2026-02-01', '+256770000002', '', '', 'mtn', '', '', '0770000002', 'Yes', 'Yes', 'No']);
+            fputcsv($handle, ['', 'Peter', 'Amuriat', '', '', 'casual', 'daily', '16615', 'Security', 'Guard', '2026-02-01', '+256750000004', '', '', 'airtel', '', '', '0750000004', 'Yes', 'Yes', 'No']);
+            fputcsv($handle, ['EMP100', 'Robert', 'Okello', '', 'r.okello@example.com', 'contract', 'monthly', '1500000', 'Management', 'Supervisor', '2025-06-01', '+256700000003', 'CF20000001', '9876543210', 'bank', 'Centenary Bank', '9876543210', '', 'Yes', 'Yes', 'No']);
             fclose($handle);
         };
+
         return response()->stream($callback, 200, $headers);
     }
 
     public function fullImportEmployees(Request $request)
     {
         $request->validate([
-            'csv_file'  => 'required|file|mimes:csv,txt|max:5120',
+            'csv_file' => 'required|file|mimes:csv,txt|max:5120',
             'client_id' => 'required|integer',
         ]);
 
-        $clients  = $this->managedClients();
-        $clientId = (int)$request->client_id;
+        $clients = $this->managedClients();
+        $clientId = (int) $request->client_id;
         abort_unless($clients->contains('id', $clientId), 403);
         $client = $clients->firstWhere('id', $clientId);
 
-        $departments  = Department::pluck('id', 'name')->toArray();
+        $departments = Department::pluck('id', 'name')->toArray();
         $designations = Designation::pluck('id', 'title')->toArray();
 
         // Prefix for auto-generated emp_numbers
         $prefix = strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $client->company_name), 0, 3));
 
-        $handle    = fopen($request->file('csv_file')->getRealPath(), 'r');
+        $handle = fopen($request->file('csv_file')->getRealPath(), 'r');
         $headerRow = fgetcsv($handle);
 
         // Columns are matched by header name, not position, so a manager can drop
@@ -1434,75 +1482,83 @@ class AccountManagerController extends Controller
         $columns = [];
         foreach ($headerRow ?: [] as $i => $name) {
             $key = strtolower(trim(preg_replace('/[^a-z0-9]+/i', '_', (string) $name), '_'));
-            if ($key !== '') $columns[$key] = $i;
+            if ($key !== '') {
+                $columns[$key] = $i;
+            }
         }
 
         // Accept the friendlier spellings managers actually type.
         $aliases = [
             'employee_number' => 'emp_number',  'staff_number' => 'emp_number',
-            'surname'         => 'last_name',   'given_name'   => 'first_name',
-            'mobile_money'    => 'mobile_money_number', 'momo' => 'mobile_money_number',
-            'account_number'  => 'bank_account','nssf'         => 'nssf_number',
-            'daily_rate'      => 'rate',        'salary'       => 'rate',
-            'email_address'   => 'email',       'telephone'    => 'phone',
+            'surname' => 'last_name',   'given_name' => 'first_name',
+            'mobile_money' => 'mobile_money_number', 'momo' => 'mobile_money_number',
+            'account_number' => 'bank_account', 'nssf' => 'nssf_number',
+            'daily_rate' => 'rate',        'salary' => 'rate',
+            'email_address' => 'email',       'telephone' => 'phone',
         ];
         foreach ($aliases as $from => $to) {
-            if (isset($columns[$from]) && !isset($columns[$to])) $columns[$to] = $columns[$from];
+            if (isset($columns[$from]) && ! isset($columns[$to])) {
+                $columns[$to] = $columns[$from];
+            }
         }
 
         $missing = array_diff(['first_name', 'last_name'], array_keys($columns));
         if ($missing) {
             fclose($handle);
+
             return back()->with('error',
-                'The sheet is missing required column(s): ' . implode(', ', $missing)
-                . '. Download the template to see the expected headings.');
+                'The sheet is missing required column(s): '.implode(', ', $missing)
+                .'. Download the template to see the expected headings.');
         }
 
         $created = 0;
         $updated = 0;
         $skipped = 0;
-        $errors  = [];
-        $rowNo   = 1;
+        $errors = [];
+        $rowNo = 1;
 
         while (($row = fgetcsv($handle)) !== false) {
             $rowNo++;
-            if (count(array_filter($row, fn ($v) => trim((string) $v) !== '')) === 0) continue;
+            if (count(array_filter($row, fn ($v) => trim((string) $v) !== '')) === 0) {
+                continue;
+            }
 
             $get = fn (string $col) => isset($columns[$col]) && isset($row[$columns[$col]])
                 ? trim((string) $row[$columns[$col]])
                 : null;
 
-            $empNumber      = $get('emp_number');
-            $firstName      = $get('first_name');
-            $lastName       = $get('last_name');
-            $middleName     = $get('middle_name');
+            $empNumber = $get('emp_number');
+            $firstName = $get('first_name');
+            $lastName = $get('last_name');
+            $middleName = $get('middle_name');
             $employmentType = $get('employment_type');
-            $salaryType     = $get('salary_type');
-            $rate           = $get('rate');
+            $salaryType = $get('salary_type');
+            $rate = $get('rate');
             $departmentName = $get('department');
-            $designationName= $get('designation');
-            $hireDate       = $get('hire_date');
-            $phone          = $get('phone');
-            $nationalId     = $get('national_id');
-            $paymentMode    = $get('payment_mode');
-            $bankName       = $get('bank_name');
-            $bankAccount    = $get('bank_account');
+            $designationName = $get('designation');
+            $hireDate = $get('hire_date');
+            $phone = $get('phone');
+            $nationalId = $get('national_id');
+            $paymentMode = $get('payment_mode');
+            $bankName = $get('bank_name');
+            $bankAccount = $get('bank_account');
             $mobileMoneyNumber = $get('mobile_money_number');
-            $chargePaye     = $get('charge_paye');
-            $chargeNssf     = $get('charge_nssf');
+            $chargePaye = $get('charge_paye');
+            $chargeNssf = $get('charge_nssf');
             $nssfByEmployer = $get('nssf_paid_by_employer');
-            $email          = $get('email');
-            $nssfNumber     = $get('nssf_number');
+            $email = $get('email');
+            $nssfNumber = $get('nssf_number');
 
             $firstName = trim($firstName ?? '');
-            $lastName  = trim($lastName  ?? '');
-            if (!$firstName || !$lastName) {
+            $lastName = trim($lastName ?? '');
+            if (! $firstName || ! $lastName) {
                 $skipped++;
                 $errors[] = "Row {$rowNo} skipped: missing first_name or last_name.";
+
                 continue;
             }
 
-            if ($email && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            if ($email && ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $errors[] = "Row {$rowNo} ({$firstName} {$lastName}): '{$email}' is not a valid email — imported without a login.";
                 $email = null;
             }
@@ -1513,7 +1569,7 @@ class AccountManagerController extends Controller
             $departmentId = null;
             $deptName = trim($departmentName ?? '');
             if ($deptName) {
-                if (!isset($departments[$deptName])) {
+                if (! isset($departments[$deptName])) {
                     $dept = Department::firstOrCreate(['name' => $deptName]);
                     $departments[$deptName] = $dept->id;
                 }
@@ -1524,19 +1580,22 @@ class AccountManagerController extends Controller
             $designationId = null;
             $desigName = trim($designationName ?? '');
             if ($desigName) {
-                if (!isset($designations[$desigName])) {
+                if (! isset($designations[$desigName])) {
                     $desig = Designation::firstOrCreate(['title' => $desigName, 'department_id' => $departmentId]);
                     $designations[$desigName] = $desig->id;
                 }
                 $designationId = $designations[$desigName];
             }
 
-            $empType = in_array(strtolower(trim($employmentType ?? '')), ['casual','contract','permanent','internship'])
+            $empType = in_array(strtolower(trim($employmentType ?? '')), ['casual', 'contract', 'permanent', 'internship'])
                 ? strtolower(trim($employmentType)) : 'casual';
 
             $hireDateParsed = null;
             if (trim($hireDate ?? '')) {
-                try { $hireDateParsed = \Carbon\Carbon::parse(trim($hireDate))->format('Y-m-d'); } catch (\Exception $e) {}
+                try {
+                    $hireDateParsed = Carbon::parse(trim($hireDate))->format('Y-m-d');
+                } catch (\Exception $e) {
+                }
             }
 
             // Find existing or create.
@@ -1551,10 +1610,11 @@ class AccountManagerController extends Controller
                     ->whereHas('clients', fn ($q) => $q->where('clients.id', $clientId))
                     ->first();
 
-                if (!$employee && Employee::where('emp_number', $empNumber)->exists()) {
+                if (! $employee && Employee::where('emp_number', $empNumber)->exists()) {
                     $skipped++;
                     $errors[] = "Row skipped: employee number {$empNumber} already belongs to another company. "
-                              . "Use a number unique to {$client->company_name}, or leave the column blank to auto-generate one.";
+                              ."Use a number unique to {$client->company_name}, or leave the column blank to auto-generate one.";
+
                     continue;
                 }
             }
@@ -1568,22 +1628,32 @@ class AccountManagerController extends Controller
                 $data = ['first_name' => $firstName, 'last_name' => $lastName];
 
                 $optional = [
-                    'middle_name'         => trim($middleName ?? ''),
-                    'phone'               => trim($phone ?? ''),
-                    'national_id'         => trim($nationalId ?? ''),
-                    'bank_name'           => trim($bankName ?? ''),
-                    'bank_account'        => trim($bankAccount ?? ''),
+                    'middle_name' => trim($middleName ?? ''),
+                    'phone' => trim($phone ?? ''),
+                    'national_id' => trim($nationalId ?? ''),
+                    'bank_name' => trim($bankName ?? ''),
+                    'bank_account' => trim($bankAccount ?? ''),
                     'mobile_money_number' => trim($mobileMoneyNumber ?? ''),
-                    'nssf_number'         => trim($nssfNumber ?? ''),
+                    'nssf_number' => trim($nssfNumber ?? ''),
                 ];
                 foreach ($optional as $col => $val) {
-                    if ($val !== '') $data[$col] = $val;
+                    if ($val !== '') {
+                        $data[$col] = $val;
+                    }
                 }
 
-                if (trim($employmentType ?? '') !== '') $data['employment_type'] = $empType;
-                if ($departmentId)                      $data['department_id']   = $departmentId;
-                if ($designationId)                     $data['designation_id']  = $designationId;
-                if ($hireDateParsed)                    $data['hire_date']       = $hireDateParsed;
+                if (trim($employmentType ?? '') !== '') {
+                    $data['employment_type'] = $empType;
+                }
+                if ($departmentId) {
+                    $data['department_id'] = $departmentId;
+                }
+                if ($designationId) {
+                    $data['designation_id'] = $designationId;
+                }
+                if ($hireDateParsed) {
+                    $data['hire_date'] = $hireDateParsed;
+                }
                 if (trim($paymentMode ?? '') !== '') {
                     $data['payment_mode'] = Employee::normalisePaymentMode(
                         $paymentMode,
@@ -1591,9 +1661,11 @@ class AccountManagerController extends Controller
                     );
                 }
                 foreach (['charge_paye' => $chargePaye, 'charge_nssf' => $chargeNssf,
-                          'nssf_paid_by_employer' => $nssfByEmployer] as $col => $raw) {
+                    'nssf_paid_by_employer' => $nssfByEmployer] as $col => $raw) {
                     $flag = strtolower(trim($raw ?? ''));
-                    if ($flag !== '') $data[$col] = in_array($flag, ['yes', 'y', 'true', '1'], true);
+                    if ($flag !== '') {
+                        $data[$col] = in_array($flag, ['yes', 'y', 'true', '1'], true);
+                    }
                 }
 
                 $employee->update($data);
@@ -1601,34 +1673,34 @@ class AccountManagerController extends Controller
             } else {
                 // CREATE: defaults are fine, there is nothing to preserve.
                 $data = [
-                    'first_name'          => $firstName,
-                    'last_name'           => $lastName,
-                    'middle_name'         => trim($middleName ?? '') ?: null,
-                    'employment_type'     => $empType,
-                    'department_id'       => $departmentId,
-                    'designation_id'      => $designationId,
-                    'hire_date'           => $hireDateParsed,
-                    'phone'               => trim($phone ?? '') ?: null,
-                    'national_id'         => trim($nationalId ?? '') ?: null,
-                    'payment_mode'        => Employee::normalisePaymentMode(
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
+                    'middle_name' => trim($middleName ?? '') ?: null,
+                    'employment_type' => $empType,
+                    'department_id' => $departmentId,
+                    'designation_id' => $designationId,
+                    'hire_date' => $hireDateParsed,
+                    'phone' => trim($phone ?? '') ?: null,
+                    'national_id' => trim($nationalId ?? '') ?: null,
+                    'payment_mode' => Employee::normalisePaymentMode(
                         $paymentMode,
                         trim($mobileMoneyNumber ?? '') ?: trim($phone ?? '')
                     ),
-                    'bank_name'           => trim($bankName ?? '') ?: null,
-                    'bank_account'        => trim($bankAccount ?? '') ?: null,
+                    'bank_name' => trim($bankName ?? '') ?: null,
+                    'bank_account' => trim($bankAccount ?? '') ?: null,
                     'mobile_money_number' => trim($mobileMoneyNumber ?? '') ?: null,
-                    'nssf_number'         => trim($nssfNumber ?? '') ?: null,
-                    'charge_paye'         => strtolower(trim($chargePaye ?? '')) === 'yes',
-                    'charge_nssf'         => strtolower(trim($chargeNssf ?? '')) === 'yes',
-                    'nssf_paid_by_employer'=> strtolower(trim($nssfByEmployer ?? '')) === 'yes',
-                    'status'              => 'active',
+                    'nssf_number' => trim($nssfNumber ?? '') ?: null,
+                    'charge_paye' => strtolower(trim($chargePaye ?? '')) === 'yes',
+                    'charge_nssf' => strtolower(trim($chargeNssf ?? '')) === 'yes',
+                    'nssf_paid_by_employer' => strtolower(trim($nssfByEmployer ?? '')) === 'yes',
+                    'status' => 'active',
                 ];
 
                 // Auto-generate emp_number if blank
-                if (!$empNumber) {
+                if (! $empNumber) {
                     $count = Employee::where('emp_number', 'like', "{$prefix}%")->count() + 1;
                     do {
-                        $empNumber = $prefix . str_pad($count, 4, '0', STR_PAD_LEFT);
+                        $empNumber = $prefix.str_pad($count, 4, '0', STR_PAD_LEFT);
                         $count++;
                     } while (Employee::where('emp_number', $empNumber)->exists());
                 }
@@ -1640,19 +1712,21 @@ class AccountManagerController extends Controller
             // Give the employee a login when an email was supplied. Without a user
             // record there is no address to send a payslip to, so an employee
             // imported without one silently drops out of every payslip email run.
-            if ($email && !$employee->user) {
+            if ($email && ! $employee->user) {
                 $user = User::where('email', $email)->first();
                 if ($user && Employee::where('user_id', $user->id)->where('id', '!=', $employee->id)->exists()) {
                     $errors[] = "Row {$rowNo} ({$firstName} {$lastName}): {$email} is already used by another employee — imported without a login.";
                 } else {
-                    if (!$user) {
+                    if (! $user) {
                         $user = User::create([
-                            'name'     => trim("{$firstName} {$lastName}"),
-                            'email'    => $email,
+                            'name' => trim("{$firstName} {$lastName}"),
+                            'email' => $email,
                             'password' => Hash::make('Password@123'),
                         ]);
                     }
-                    if (!$user->hasRole('employee')) $user->assignRole('employee');
+                    if (! $user->hasRole('employee')) {
+                        $user->assignRole('employee');
+                    }
                     $employee->update(['user_id' => $user->id]);
                 }
             } elseif ($email && $employee->user && $employee->user->email !== $email) {
@@ -1664,31 +1738,33 @@ class AccountManagerController extends Controller
             }
 
             // Ensure employee is attached to this client
-            if (!$client->employees()->where('employees.id', $employee->id)->exists()) {
+            if (! $client->employees()->where('employees.id', $employee->id)->exists()) {
                 $client->employees()->attach($employee->id, ['assigned_by' => auth()->id()]);
             }
 
             // Salary record
-            $rateVal      = (float)(trim($rate ?? '') ?: 0);
-            $salaryTypeVal = in_array(strtolower(trim($salaryType ?? '')), ['daily','hourly','monthly'])
+            $rateVal = (float) (trim($rate ?? '') ?: 0);
+            $salaryTypeVal = in_array(strtolower(trim($salaryType ?? '')), ['daily', 'hourly', 'monthly'])
                 ? strtolower(trim($salaryType)) : 'daily';
             if ($rateVal > 0) {
                 EmployeeSalary::updateOrCreate(
                     ['employee_id' => $employee->id, 'is_current' => true],
                     ['basic_salary' => $rateVal, 'salary_type' => $salaryTypeVal,
-                     'effective_from' => $hireDateParsed ?? today(), 'created_by' => auth()->id()]
+                        'effective_from' => $hireDateParsed ?? today(), 'created_by' => auth()->id()]
                 );
             }
         }
         fclose($handle);
 
         $msg = "Import into {$client->company_name}: {$created} new employee(s) added, {$updated} updated"
-             . ($skipped ? ", {$skipped} skipped" : '') . '.';
+             .($skipped ? ", {$skipped} skipped" : '').'.';
 
         if ($errors) {
             $shown = array_slice($errors, 0, 5);
-            $msg  .= ' Issues: ' . implode(' | ', $shown);
-            if (count($errors) > 5) $msg .= ' (+' . (count($errors) - 5) . ' more)';
+            $msg .= ' Issues: '.implode(' | ', $shown);
+            if (count($errors) > 5) {
+                $msg .= ' (+'.(count($errors) - 5).' more)';
+            }
         }
 
         return back()->with($created + $updated > 0 ? 'success' : 'error', $msg);
