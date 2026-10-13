@@ -305,7 +305,21 @@
         @endrole
 
         {{-- ===== EMPLOYEE ROLE: personal menu only ===== --}}
-        @role('employee')
+        {{--
+            My Work: everything about your OWN record.
+
+            Gated on HAVING a staff record, not on holding the employee role.
+            The two are different things and nothing keeps them in step, so
+            six people with a staff record had no My Work section at all --
+            no payslips, no leave, no profile. Among them the MD, the HR
+            admin, the payroll officer and two of the six account managers,
+            which is why two account managers saw different sidebars.
+
+            A staff record is the right condition because it is exactly what
+            these pages read. Somebody without one saw a My Work section whose
+            every link led to a page with nothing behind it.
+        --}}
+        @if (auth()->user()?->employee)
         <p class="sidebar-group" x-show="sidebarOpen">My Work</p>
         <a href="{{ route('profile') }}" class="sidebar-link {{ request()->routeIs('profile*') ? 'active' : '' }}">
             <i class="fas fa-user w-4 text-center"></i><span x-show="sidebarOpen">My Profile</span>
@@ -360,7 +374,7 @@
             <span x-show="sidebarOpen" class="flex-1">Calendar</span>
             <x-nav-badge :count="$navUnread['calendar'] ?? 0" area="calendar" />
         </a>
-        @endrole
+        @endif
 
         {{-- ===== PAYROLL OFFICER ===== --}}
         @role('payroll-officer')

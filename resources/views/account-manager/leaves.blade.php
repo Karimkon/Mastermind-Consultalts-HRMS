@@ -5,6 +5,22 @@
 <x-page-header
     :title="$activeClient ? $activeClient->company_name . ' — Leaves' : 'Leave Management'"
     subtitle="Approve or reject leave requests for your employees">
+    {{--
+        Your own leave, from the page where you would look for it.
+
+        This screen is for deciding other people's leave, and an account
+        manager reasonably expects to find their own request here too. It was
+        only ever reachable from the My Work block at the bottom of a
+        scrolling sidebar, below eight other entries -- and that block is
+        @role('employee'), which four of the six account managers do not hold,
+        so for them it was not reachable at all.
+
+        Applying is not deciding: this goes to the ordinary employee flow,
+        where HR, the CEO or the MD action it.
+    --}}
+    <a href="{{ route('leaves.index') }}" class="btn-secondary text-sm">
+        <i class="fas fa-user-clock mr-1"></i> My own leave
+    </a>
     <a href="{{ route('account-manager.dashboard') }}" class="btn-secondary text-sm">
         <i class="fas fa-arrow-left mr-1"></i> Dashboard
     </a>
