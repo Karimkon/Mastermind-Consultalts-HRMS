@@ -152,6 +152,9 @@ Route::middleware(['auth', 'mfa'])->group(function () {
 
     // Employees — HR/Admin/Manager only
     Route::middleware('role:super-admin|hr-admin|manager|payroll-officer')->group(function () {
+        // Before the resource route, or /employees/{employee} would swallow it.
+        Route::post('employees/{employee}/restore', [EmployeeController::class, 'restore'])
+            ->name('employees.restore');
         Route::resource('employees', EmployeeController::class);
         Route::get('employees/{employee}/documents', [EmployeeController::class, 'documents'])->name('employees.documents');
         Route::post('employees/{employee}/documents', [EmployeeController::class, 'storeDocument'])->name('employees.documents.store');

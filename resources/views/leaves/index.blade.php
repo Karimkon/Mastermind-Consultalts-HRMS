@@ -1,8 +1,45 @@
 @extends("layouts.app")
 @section("title","Leave Requests")
 @section("content")
-<x-page-header title="Leave Management" subtitle="View and manage leave requests">
+{{--
+    The heading follows what is actually on the page.
+
+    It said Leave Management to everybody, including an employee looking at
+    their own two requests. For somebody who is not an approver this is My
+    Leave, and calling it management is what sent people looking for their
+    own request on a screen full of other people's.
+--}}
+@php
+    $isApprover = auth()->user()->hasAnyRole(['super-admin', 'hr-admin', 'manager', 'md']);
+    $onTeam     = $viewingTeam ?? false;
+
+    // Built here rather than inline, because an escaped apostrophe inside a
+    // Blade :attribute expression does not survive compilation.
+    $pageTitle = $isApprover
+        ? 'Leave Management'
+        : ($onTeam ? 'Leave for my team' : 'My Leave');
+
+    $pageSubtitle = $isApprover
+        ? 'View and manage leave requests'
+        : ($onTeam ? 'Leave for the people who report to you' : 'Your own leave requests');
+@endphp
+
+<x-page-header :title="$pageTitle" :subtitle="$pageSubtitle">
     <a href="{{ route('leaves.create') }}" class="btn-primary"><i class="fas fa-plus"></i> Apply for Leave</a>
+
+    {{-- Offered only to somebody who actually has reports. --}}
+    @if (($hasReports ?? false) && ! $isApprover)
+        @if ($onTeam)
+            <a href="{{ route('leaves.index') }}" class="btn-secondary">
+                <i class="fas fa-user"></i> Just mine
+            </a>
+        @else
+            <a href="{{ route('leaves.index', ['scope' => 'team']) }}" class="btn-secondary">
+                <i class="fas fa-users"></i> Leave for my team
+            </a>
+        @endif
+    @endif
+
     <a href="{{ route('leaves.types') }}" class="btn-secondary"><i class="fas fa-cog"></i> Leave Types</a>
 </x-page-header>
 

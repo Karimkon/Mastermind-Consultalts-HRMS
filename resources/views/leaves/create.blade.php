@@ -1,4 +1,19 @@
 @extends("layouts.app")
+
+@php
+    /*
+     | Mastermind's own staff are not a placement.
+     |
+     | Head-office employees are attached to the HQ client like any client
+     | placement, so this page told an account manager her request would go to
+     | 'your Account Manager' and 'your Client' -- meaning whoever holds the HQ
+     | client, and the HQ client login. Neither is an approver for her. HR and
+     | the MD are, so that is what it should say.
+     */
+    $isHeadOfficeStaff = optional(auth()->user()->employee)
+        ->clients()->where('is_head_office', true)->exists()
+        || ! optional(auth()->user()->employee)->clients()->exists();
+@endphp
 @section("title","Apply for Leave")
 @section("content")
 <x-page-header title="Apply for Leave">
@@ -115,7 +130,11 @@
             </button>
 
             <p class="text-xs text-slate-400 text-center">
+                @if ($isHeadOfficeStaff)
+                On submission an email goes to <strong>HR</strong> and the <strong>MD</strong>,
+                @else
                 On submission an email goes to your <strong>Account Manager</strong>, your <strong>Client</strong>,
+                @endif
                 and the <strong>colleague you nominated</strong>.
             </p>
         </form>
@@ -142,10 +161,17 @@
         <div class="mt-5 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
             <i class="fas fa-info-circle mr-1"></i>
             <strong>Leave approval flow:</strong><br>
+            @if ($isHeadOfficeStaff)
+            1. You submit with replacement details.<br>
+            2. Email sent to HR and the MD.<br>
+            3. HR, the CEO or the MD decides.<br>
+            4. You are emailed the outcome.
+            @else
             1. You submit with replacement details.<br>
             2. Email sent to Account Manager + Client.<br>
             3. Account Manager reviews first.<br>
             4. Client gives final approval.
+            @endif
         </div>
     </div>
 </div>

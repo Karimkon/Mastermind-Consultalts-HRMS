@@ -6,7 +6,33 @@
     <a href="{{ route('employees.create') }}" class="btn-primary"><i class="fas fa-plus"></i> Add Employee</a>
     <a href="{{ route('export.employees') }}" class="btn-secondary"><i class="fas fa-file-excel text-green-600"></i> Export Excel</a>
     <a href="{{ route('import.form') }}" class="btn-secondary"><i class="fas fa-file-upload text-blue-600"></i> Import</a>
+
+    {{--
+        The way back from Archive.
+
+        Archiving has always been a soft delete, so nothing was ever destroyed
+        -- but there was no screen that could see an archived person, which
+        made an accidental archive permanent in practice. Shown only when there
+        is something archived, so it is not a dead link on most days.
+    --}}
+    @if (request()->boolean('archived'))
+        <a href="{{ route('employees.index') }}" class="btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to active staff
+        </a>
+    @elseif (($archivedCount ?? 0) > 0)
+        <a href="{{ route('employees.index', ['archived' => 1]) }}" class="btn-secondary">
+            <i class="fas fa-box-archive text-slate-500"></i> Archived ({{ $archivedCount }})
+        </a>
+    @endif
 </x-page-header>
+
+@if (request()->boolean('archived'))
+    <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <i class="fas fa-box-archive mr-1"></i>
+        Showing archived staff. Their payroll history, documents and leave are all
+        still held — archiving only hides the record. Restoring puts it back exactly as it was.
+    </div>
+@endif
 
 {{-- Filters --}}
 <x-filter-bar :action="route('employees.index')">
@@ -86,11 +112,21 @@
             <td class="px-4 py-3">{!! $employee->status_badge !!}</td>
             <td class="px-4 py-3">
                 <div class="flex items-center gap-1">
-                    <a href="{{ route('employees.show', $employee) }}" class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View"><i class="fas fa-eye text-xs"></i></a>
-                    <a href="{{ route('employees.edit', $employee) }}" class="p-1.5 text-slate-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors" title="Edit"><i class="fas fa-pen text-xs"></i></a>
-                    <form method="POST" action="{{ route('employees.destroy', $employee) }}" onsubmit="return confirm('Archive this employee?')">@csrf @method('DELETE')
-                        <button class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Archive"><i class="fas fa-archive text-xs"></i></button>
-                    </form>
+                    @if ($employee->trashed())
+                        {{-- Archived: the only thing to offer is the way back. --}}
+                        <form method="POST" action="{{ route('employees.restore', $employee->id) }}"
+                              onsubmit="return confirm('Restore {{ $employee->full_name }}?')">@csrf
+                            <button class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors" title="Restore">
+                                <i class="fas fa-rotate-left text-xs"></i> Restore
+                            </button>
+                        </form>
+                    @else
+                        <a href="{{ route('employees.show', $employee) }}" class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View"><i class="fas fa-eye text-xs"></i></a>
+                        <a href="{{ route('employees.edit', $employee) }}" class="p-1.5 text-slate-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors" title="Edit"><i class="fas fa-pen text-xs"></i></a>
+                        <form method="POST" action="{{ route('employees.destroy', $employee) }}" onsubmit="return confirm('Archive this employee? You can restore them later from Archived.')">@csrf @method('DELETE')
+                            <button class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Archive"><i class="fas fa-archive text-xs"></i></button>
+                        </form>
+                    @endif
                 </div>
             </td>
         </tr>

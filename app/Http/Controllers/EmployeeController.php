@@ -31,10 +31,41 @@ class EmployeeController extends Controller
             ->when($request->department_id, fn ($q) => $q->where('department_id', $request->department_id))
             ->when($request->status, fn ($q) => $q->where('status', $request->status))
             ->when($request->type, fn ($q) => $q->where('employment_type', $request->type))
-            ->paginate(25);
-        $departments = Department::orderBy('name')->get();
+            /*
+             | ?archived=1 shows what was removed.
+             |
+             | Employee has used SoftDeletes all along, so a removed person was
+             | never actually gone -- but nothing in the interface could see
+             | them, which made an accidental removal permanent in practice.
+             | Three records sat hidden this way, one of them an account manager
+             | removed by mistake and only found by reading the database.
+             */
+            ->when($request->boolean('archived'), fn ($q) => $q->onlyTrashed())
+            ->paginate(25)
+            ->withQueryString();
 
-        return view('employees.index', compact('employees', 'departments'));
+        $departments = Department::orderBy('name')->get();
+        $archivedCount = Employee::onlyTrashed()->count();
+
+        return view('employees.index', compact('employees', 'departments', 'archivedCount'));
+    }
+
+    /**
+     * Put a removed employee back.
+     *
+     * Deliberately not a hard delete anywhere: removal hides the record, and
+     * this reverses it. Their payroll history, documents and leave are all
+     * still attached, because nothing was ever destroyed.
+     */
+    public function restore(int $employee)
+    {
+        $record = Employee::onlyTrashed()->findOrFail($employee);
+
+        $record->restore();
+
+        return redirect()
+            ->route('employees.index', ['archived' => 1])
+            ->with('success', $record->full_name.' has been restored.');
     }
 
     public function create()

@@ -29,13 +29,28 @@ class LeaveController extends Controller
         $employee = $user->employee;
         $isAdmin = $user->hasAnyRole(['super-admin', 'hr-admin', 'manager']);
 
-        // A line manager sees their whole branch, not just themselves: the
-        // person who has to cover the absence is the one who needs to see it
-        // coming. Everybody in the chain above an employee is included, however
-        // many rungs up they sit.
+        /*
+         | Your own leave by default; your branch only if you ask for it.
+         |
+         | The sidebar reaches this page as My Leave, and it showed the whole
+         | reporting branch unconditionally. One account manager has 525 people
+         | under her, so My Leave opened on 525 other people's requests and
+         | none of them hers. Other people's leave belongs on a management
+         | screen, which is where she went looking for it.
+         |
+         | The branch view is kept, because the reason for it still holds: the
+         | person who has to cover an absence is the one who needs to see it
+         | coming. It moves behind ?scope=team, offered only to somebody who
+         | actually has reports.
+         */
+        $descendants = ! $isAdmin && $employee ? $employee->descendantIds() : [];
+        $viewingTeam = $request->get('scope') === 'team' && $descendants !== [];
+
         $visibleIds = [];
         if (! $isAdmin && $employee) {
-            $visibleIds = array_merge([$employee->id], $employee->descendantIds());
+            $visibleIds = $viewingTeam
+                ? array_merge([$employee->id], $descendants)
+                : [$employee->id];
         }
 
         $query = LeaveRequest::with(['employee.department', 'leaveType'])
@@ -62,7 +77,8 @@ class LeaveController extends Controller
             ->when($request->year, fn ($q) => $q->whereYear('from_date', $request->year))
             ->orderByDesc('created_at');
 
-        $requests = $query->paginate(25);
+        $requests = $query->paginate(25)->withQueryString();
+        $hasReports = $descendants !== [];
         $leaveTypes = LeaveType::all();
         $departments = Department::orderBy('name')->get();
 
@@ -72,7 +88,7 @@ class LeaveController extends Controller
         // calling balanceFor() in the view would cost.
         $balances = $this->balancesForPage($requests->getCollection());
 
-        return view('leaves.index', compact('requests', 'leaveTypes', 'departments', 'balances'));
+        return view('leaves.index', compact('requests', 'leaveTypes', 'departments', 'balances', 'hasReports', 'viewingTeam'));
     }
 
     public function create()
@@ -197,9 +213,58 @@ class LeaveController extends Controller
         }
     }
 
+    /**
+     * Is this Mastermind's own staff rather than somebody placed with a client?
+     *
+     * Head-office employees are attached to the HQ client exactly like any
+     * placement, because that is how payroll and the staff register find them.
+     * For leave they are not a placement at all: there is no account manager
+     * above them to review it and no customer to approve it.
+     */
+    private function isHeadOfficeStaff(LeaveRequest $leave): bool
+    {
+        $client = Client::whereHas('employees', fn ($q) => $q->where('employees.id', $leave->employee_id))->first();
+
+        return ! $client || (bool) $client->is_head_office;
+    }
+
+    /**
+     * Mastermind's own leave goes to HR and the MD.
+     *
+     * Without this an account manager's own request was emailed to "their"
+     * account manager -- whoever happens to hold the HQ client, which for one
+     * of them is their own second login -- and to the HQ client contact, as
+     * though Mastermind were its own customer. Nobody who could act on it was
+     * told.
+     *
+     * md is the CEO; one person holds that role and he is the CEO, the same
+     * mapping Company Documents uses.
+     */
+    private function notifyHeadOffice(LeaveRequest $leave): void
+    {
+        try {
+            $recipients = User::whereHas('roles', fn ($q) => $q->whereIn('name', ['hr-admin', 'md']))
+                ->whereNotNull('email')
+                ->pluck('email')
+                ->unique();
+
+            foreach ($recipients as $email) {
+                Mail::to($email)->send(new LeaveSubmittedMail($leave));
+            }
+        } catch (\Exception $e) {
+            logger()->error('Head-office leave email failed: '.$e->getMessage());
+        }
+    }
+
     private function notifyAccountManager(LeaveRequest $leave): void
     {
         try {
+            if ($this->isHeadOfficeStaff($leave)) {
+                $this->notifyHeadOffice($leave);
+
+                return;
+            }
+
             // Find the client this employee belongs to
             $client = Client::whereHas('employees', fn ($q) => $q->where('employees.id', $leave->employee_id))->first();
             if (! $client) {
@@ -220,6 +285,12 @@ class LeaveController extends Controller
     private function notifyClient(LeaveRequest $leave): void
     {
         try {
+            // Mastermind is not its own customer: head-office staff have no
+            // client to ask, and HR and the MD were told instead.
+            if ($this->isHeadOfficeStaff($leave)) {
+                return;
+            }
+
             $client = Client::whereHas('employees', fn ($q) => $q->where('employees.id', $leave->employee_id))->first();
             if (! $client) {
                 return;
