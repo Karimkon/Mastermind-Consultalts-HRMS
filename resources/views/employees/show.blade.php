@@ -319,6 +319,7 @@
                             'TIN Number'         => $employee->tin_number ?? '—',
                             'IFMS Supplier No.'  => $employee->ifms_supplier_no ?? '—',
                             'Pension No.'        => $employee->pension_no ?? '—',
+                            'Tax Number'         => $employee->tax_number ?? '—',
                         ]; @endphp
                         @foreach($fields as $lbl => $val)
                         <div>
