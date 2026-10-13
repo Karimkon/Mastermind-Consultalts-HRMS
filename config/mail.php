@@ -110,6 +110,23 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Recruitment inbox
+    |--------------------------------------------------------------------------
+    |
+    | Where a new job application is emailed. A shared address rather than a
+    | list of people: applications used to be emailed to every holder of the
+    | recruiter, hr-admin and super-admin roles, so they landed in several
+    | personal inboxes, were answered by whoever happened to look, and were
+    | invisible to anyone who joined the team later.
+    |
+    | Overridable by env so it can be repointed without a deploy.
+    |
+    */
+
+    'recruitment_inbox' => env('RECRUITMENT_INBOX', 'recruit@mastermindconsults.co.ug'),
+
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),

@@ -272,7 +272,20 @@ class NotificationService
     // ──────────────────────────────────────────────
 
     /**
-     * New job application from public careers page → notify all recruiters.
+     * New job application from the public careers page.
+     *
+     * In-app notification to every recruiter, HR admin and system admin, so the
+     * application still shows up on the dashboard of anybody who handles
+     * recruitment. The EMAIL goes to one shared recruitment inbox instead of to
+     * each of them personally.
+     *
+     * It used to email all of them individually. That put applications in
+     * several private inboxes at once: nobody could tell whether a candidate had
+     * already been answered, somebody on leave took their copy with them, and a
+     * new recruiter started with no history at all. A shared address is a
+     * queue that outlives whoever is holding it.
+     *
+     * Address in config, so it can be repointed without a deploy.
      */
     public function newApplication(Candidate $candidate): void
     {
@@ -287,11 +300,13 @@ class NotificationService
                 'body' => "{$candidate->first_name} {$candidate->last_name} applied for {$jobTitle}.",
                 'data' => ['candidate_id' => $candidate->id, 'job_id' => $candidate->job_posting_id],
             ]);
-
-            if ($u->email) {
-                Mail::to($u->email)->queue(new JobApplicationMail($candidate));
-            }
         });
+
+        $inbox = config('mail.recruitment_inbox');
+
+        if ($inbox) {
+            Mail::to($inbox)->queue(new JobApplicationMail($candidate));
+        }
     }
 
     // ──────────────────────────────────────────────
