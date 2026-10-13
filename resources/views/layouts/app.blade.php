@@ -153,6 +153,22 @@
            inline pixel width -- overriding that here made the panel as wide
            as the page and flipped it upward. */
         .select2-container { font-family: inherit; }
+
+        /*
+         | A floor, so a collapsed container can never make options
+         | unreadable again. The measurement above is the fix; this is the
+         | guard for any select2 added later in a layout that squeezes it.
+         */
+        .select2-container { min-width: 9rem; }
+        .select2-dropdown { min-width: 11rem; }
+
+        /* Options stay on one line and ellipsis rather than wrapping
+           character by character. */
+        .select2-results__option {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
         .select2-container--open { max-width: 100vw; }
 
         .select2-container--classic .select2-selection--single,
@@ -948,11 +964,29 @@ $(document).ready(function () {
        mid-word. The list then follows the field: long titles wrap over two
        lines rather than widening the panel, which is what dropdownAutoWidth
        did here -- it opened one as wide as the page. */
-    $(".select2").select2({
-        theme: "classic",
-        placeholder: "Select...",
-        allowClear: true,
-        width: "100%",
+    /*
+     | Width is measured from the real <select> before Select2 hides it.
+     |
+     | width: "100%" means 100% of the containing block, and these live in a
+     | flex filter bar where each one sits in a bare div. A flex item with no
+     | width shrinks to its content -- and once Select2 hides the original
+     | select there is no content left to measure, so the box collapsed to
+     | about sixty pixels and the dropdown with it. "Annual Leave" wrapped to
+     | "Annu / al / Leav / e".
+     |
+     | Measuring first keeps whatever Tailwind width the markup asked for
+     | (w-44, w-40 and so on) instead of overriding it here, and falls back to
+     | 100% where the element genuinely has no width of its own.
+     */
+    $(".select2").each(function () {
+        var measured = $(this).outerWidth();
+
+        $(this).select2({
+            theme: "classic",
+            placeholder: "Select...",
+            allowClear: true,
+            width: measured > 40 ? measured + "px" : "100%",
+        });
     });
     $(".select2-ajax-employees").select2({
         theme: "classic", placeholder: "Search employee...", allowClear: true,
