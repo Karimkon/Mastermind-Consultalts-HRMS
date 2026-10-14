@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -9,17 +10,17 @@ class NotificationApiController extends Controller
 {
     public function index(Request $request)
     {
-        $user  = $request->user();
+        $user = $request->user();
         $query = $request->unread_only ? $user->unreadNotifications() : $user->notifications();
 
         $notifications = $query->latest()->paginate(20);
 
         return response()->json([
-            'data'         => $notifications->through(fn($n) => $this->formatNotification($n)),
+            'data' => $notifications->through(fn ($n) => $this->formatNotification($n)),
             'unread_count' => $user->unreadNotifications()->count(),
             // Which menu item each unread notice belongs to, so the app can put
             // the number where the thing is rather than only on a bell.
-            'areas'        => Notification::unreadCountsFor($user),
+            'areas' => Notification::unreadCountsFor($user),
         ]);
     }
 
@@ -43,15 +44,16 @@ class NotificationApiController extends Controller
         }
 
         return response()->json([
-            'message'      => 'Marked as read.',
+            'message' => 'Marked as read.',
             'unread_count' => $user->unreadNotifications()->count(),
-            'areas'        => Notification::unreadCountsFor($user),
+            'areas' => Notification::unreadCountsFor($user),
         ]);
     }
 
     public function destroy(Request $request, string $id)
     {
         $request->user()->notifications()->where('id', $id)->delete();
+
         return response()->json(['message' => 'Deleted.']);
     }
 
@@ -65,15 +67,29 @@ class NotificationApiController extends Controller
     private function formatNotification(Notification $n): array
     {
         return [
-            'id'         => $n->id,
-            'type'       => $n->type,
-            'area'       => Notification::AREAS[$n->type] ?? null,
-            'title'      => $n->title,
-            'body'       => $n->body,
+            'id' => $n->id,
+            'type' => $n->type,
+            'area' => Notification::AREAS[$n->type] ?? null,
+            'title' => $n->title,
+            'body' => $n->body,
             'action_url' => $n->action_url ?: ($n->data['url'] ?? null),
-            'data'       => $n->data,
-            'read_at'    => $n->read_at?->format('Y-m-d H:i:s'),
-            'created_at' => $n->created_at?->format('Y-m-d H:i:s'),
+            'data' => $n->data,
+            /*
+             | ISO 8601 WITH the offset, never 'Y-m-d H:i:s'.
+             |
+             | A bare "2026-10-13 14:26:00" carries no zone, and Dart's
+             | DateTime.parse reads an unmarked string as LOCAL time. The server
+             | stores UTC and the phone is on EAT, so a notice sent one minute
+             | ago was read as 14:26 EAT against a clock saying 17:26 and
+             | displayed as "3h ago". Every timestamp in the app was three hours
+             | stale.
+             |
+             | toIso8601String() emits the offset, so the client knows the
+             | instant rather than guessing. This also fixes phones that already
+             | have the app installed, with no release needed.
+             */
+            'read_at' => $n->read_at?->toIso8601String(),
+            'created_at' => $n->created_at?->toIso8601String(),
         ];
     }
 }

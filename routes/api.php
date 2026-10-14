@@ -230,6 +230,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('account-manager')->group(function () {
         Route::get('clients',                          [AccountManagerApiController::class, 'clients']);
         Route::get('employees',                        [AccountManagerApiController::class, 'employees']);
+        Route::get('expiring-documents',               [AccountManagerApiController::class, 'expiringDocuments']);
         Route::get('leaves',                           [AccountManagerApiController::class, 'leaves']);
         Route::post('leaves/{leave}/approve',          [AccountManagerApiController::class, 'approveLeave']);
         Route::post('leaves/{leave}/reject',           [AccountManagerApiController::class, 'rejectLeave']);

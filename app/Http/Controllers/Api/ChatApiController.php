@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -28,21 +29,21 @@ class ChatApiController extends Controller
         $this->chat->touchDelivery($me);
 
         $conversations = $this->chat->conversationsFor($me)->map(fn (Conversation $c) => [
-            'id'      => $c->id,
-            'type'    => $c->type,
-            'title'   => $c->titleFor($me->id),
-            'avatar'  => $c->type === Conversation::DIRECT
+            'id' => $c->id,
+            'type' => $c->type,
+            'title' => $c->titleFor($me->id),
+            'avatar' => $c->type === Conversation::DIRECT
                             ? $c->otherUsers($me->id)->first()?->avatar_url
                             : null,
             'preview' => $c->last_message_preview,
-            'at'      => $c->last_message_at?->toIso8601String(),
-            'unread'  => $c->unreadFor($me->id),
+            'at' => $c->last_message_at?->toIso8601String(),
+            'unread' => $c->unreadFor($me->id),
             'members' => $c->users->count(),
         ]);
 
         return response()->json([
             'conversations' => $conversations,
-            'unread'        => $this->chat->unreadTotal($me),
+            'unread' => $this->chat->unreadTotal($me),
         ]);
     }
 
@@ -72,8 +73,8 @@ class ChatApiController extends Controller
         }
 
         return response()->json([
-            'title'    => $conversation->titleFor($me->id),
-            'marks'    => $this->chat->receiptMarks($conversation, $me->id),
+            'title' => $conversation->titleFor($me->id),
+            'marks' => $this->chat->receiptMarks($conversation, $me->id),
             'messages' => $messages->map(fn (Message $m) => $this->shape($m, $me->id))->values(),
         ]);
     }
@@ -84,10 +85,10 @@ class ChatApiController extends Controller
         abort_unless($this->chat->isMember($conversation, $me), 403);
 
         $request->validate([
-            'body'       => 'nullable|string|max:5000',
+            'body' => 'nullable|string|max:5000',
             'attachment' => 'nullable|file|max:65536',   // 64MB, the video ceiling
-            'duration'   => 'nullable|integer|min:0|max:86400',
-            'kind'       => 'nullable|in:audio,video,image,file',
+            'duration' => 'nullable|integer|min:0|max:86400',
+            'kind' => 'nullable|in:audio,video,image,file',
         ]);
 
         try {
@@ -110,7 +111,7 @@ class ChatApiController extends Controller
 
         return response()->json([
             'message' => $this->shape($message, $me->id),
-            'marks'   => $this->chat->receiptMarks($conversation, $me->id),
+            'marks' => $this->chat->receiptMarks($conversation, $me->id),
         ], 201);
     }
 
@@ -167,7 +168,7 @@ class ChatApiController extends Controller
         return response()->file(
             Storage::disk('local')->path($message->attachment_path),
             [
-                'Content-Type'        => $message->attachment_mime ?: 'application/octet-stream',
+                'Content-Type' => $message->attachment_mime ?: 'application/octet-stream',
                 'Content-Disposition' => ($inline ? 'inline' : 'attachment')
                     .'; filename="'.addslashes($message->attachment_name ?: 'file').'"',
             ]
@@ -188,26 +189,32 @@ class ChatApiController extends Controller
     private function shape(Message $m, int $meId): array
     {
         return [
-            'id'        => $m->id,
-            'mine'      => $m->user_id === $meId,
+            'id' => $m->id,
+            'mine' => $m->user_id === $meId,
             // Seconds, compared against the delivery and read watermarks to
             // draw the ticks, so a line already on screen can change without
             // being fetched again.
-            'ts'        => $m->created_at?->getTimestamp(),
-            'sender'    => $m->sender?->name,
-            'avatar'    => $m->sender?->avatar_url,
-            'type'      => $m->type,
-            'body'      => $m->body,
+            'ts' => $m->created_at?->getTimestamp(),
+            'sender' => $m->sender?->name,
+            'avatar' => $m->sender?->avatar_url,
+            'type' => $m->type,
+            'body' => $m->body,
             // The app carries a bearer token, so it cannot use the web route.
-            'url'       => $m->hasAttachment()
+            'url' => $m->hasAttachment()
                             ? url('/api/chat/attachments/'.$m->id)
                             : null,
             'file_name' => $m->attachment_name,
             'file_size' => $m->humanSize(),
-            'mime'      => $m->attachment_mime,
-            'duration'  => $m->duration,
-            'at'        => $m->created_at?->format('H:i'),
-            'on'        => $m->created_at?->format('d M Y'),
+            'mime' => $m->attachment_mime,
+            'duration' => $m->duration,
+            /*
+             | These two are rendered here and printed by the app verbatim, so
+             | they have to be in the reader's timezone rather than the
+             | server's. Stored UTC formatted as-is put every chat message
+             | three hours behind the clock on the wall.
+             */
+            'at' => $m->created_at?->copy()->setTimezone(config('app.display_timezone'))->format('H:i'),
+            'on' => $m->created_at?->copy()->setTimezone(config('app.display_timezone'))->format('d M Y'),
         ];
     }
 }

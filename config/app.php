@@ -68,6 +68,16 @@ return [
     'timezone' => 'UTC',
 
     /*
+     | Where the people using this actually are.
+     |
+     | Storage stays UTC -- changing that would reinterpret every datetime
+     | already in the database and shift all of history by three hours. This is
+     | only for turning a stored instant into something a human reads, and for
+     | the API to say which offset it means.
+     */
+    'display_timezone' => env('APP_DISPLAY_TIMEZONE', 'Africa/Kampala'),
+
+    /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
