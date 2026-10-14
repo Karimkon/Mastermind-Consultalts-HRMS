@@ -8,6 +8,7 @@ use App\Models\HolidayWork;
 use App\Models\PublicHoliday;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 /**
  * The public holiday calendar.
@@ -205,9 +206,9 @@ class PublicHolidayApiController extends Controller
     /**
      * The fixed holidays a year does not have yet, as date => name.
      *
-     * @return \Illuminate\Support\Collection<string, string>
+     * @return Collection<string, string>
      */
-    private function missingFixed(int $year): \Illuminate\Support\Collection
+    private function missingFixed(int $year): Collection
     {
         // Normalised to Y-m-d before comparing, for the same reason: what comes
         // back carries a time on SQLite and does not on MySQL.

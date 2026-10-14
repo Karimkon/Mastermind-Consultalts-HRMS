@@ -1,8 +1,12 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\{Employee, Department, Designation};
+use App\Models\Client;
+use App\Models\Department;
+use App\Models\Designation;
+use App\Models\Employee;
 use Illuminate\Http\Request;
 
 class EmployeeApiController extends Controller
@@ -14,34 +18,40 @@ class EmployeeApiController extends Controller
         if ($request->search) {
             $query->searchFor($request->search);
         }
-        if ($request->department_id) $query->where('department_id', $request->department_id);
-        if ($request->status && $request->status !== 'all') $query->where('status', $request->status);
-        if ($request->client_id)  $query->whereHas('clients', fn($q) => $q->where('clients.id', $request->client_id));
+        if ($request->department_id) {
+            $query->where('department_id', $request->department_id);
+        }
+        if ($request->status && $request->status !== 'all') {
+            $query->where('status', $request->status);
+        }
+        if ($request->client_id) {
+            $query->whereHas('clients', fn ($q) => $q->where('clients.id', $request->client_id));
+        }
 
         return response()->json([
-            'data' => $query->orderBy('first_name')->paginate(50)->through(fn($e) => $this->format($e)),
+            'data' => $query->orderBy('first_name')->paginate(50)->through(fn ($e) => $this->format($e)),
         ]);
     }
 
     public function store(Request $request)
     {
         $request->validate([
-            'first_name'   => 'required|string|max:100',
-            'last_name'    => 'required|string|max:100',
-            'emp_number'   => 'required|string|unique:employees',
-            'department_id'=> 'nullable|exists:departments,id',
-            'hire_date'    => 'required|date',
+            'first_name' => 'required|string|max:100',
+            'last_name' => 'required|string|max:100',
+            'emp_number' => 'required|string|unique:employees',
+            'department_id' => 'nullable|exists:departments,id',
+            'hire_date' => 'required|date',
             'employment_type' => 'required|in:full_time,part_time,contract,intern',
         ]);
 
         $employee = Employee::create($request->only([
-            'first_name','last_name','emp_number','department_id','designation_id',
-            'manager_id','phone','personal_email','date_of_birth','gender',
-            'national_id','address','city','country','hire_date','employment_type',
-            'status','bio',
+            'first_name', 'last_name', 'emp_number', 'department_id', 'designation_id',
+            'manager_id', 'phone', 'personal_email', 'date_of_birth', 'gender',
+            'national_id', 'address', 'city', 'country', 'hire_date', 'employment_type',
+            'status', 'bio',
         ]) + ['status' => $request->status ?? 'active']);
 
-        return response()->json(['data' => $this->format($employee->load('user','department','designation'))], 201);
+        return response()->json(['data' => $this->format($employee->load('user', 'department', 'designation'))], 201);
     }
 
     /**
@@ -64,7 +74,7 @@ class EmployeeApiController extends Controller
         }
 
         if ($user->hasRole('account-manager')) {
-            return \App\Models\Client::where('account_manager_id', $user->id)
+            return Client::where('account_manager_id', $user->id)
                 ->whereHas('employees', fn ($q) => $q->where('employees.id', $employee->id))
                 ->exists();
         }
@@ -76,7 +86,7 @@ class EmployeeApiController extends Controller
     {
         abort_unless($this->mayAccess($request, $employee), 403, 'That employee is not yours to view.');
 
-        $employee->load(['user','department','designation','manager.user']);
+        $employee->load(['user', 'department', 'designation', 'manager.user']);
 
         return response()->json(['data' => $this->format($employee, true)]);
     }
@@ -95,19 +105,21 @@ class EmployeeApiController extends Controller
 
         $request->validate([
             'first_name' => 'required|string|max:100',
-            'last_name'  => 'required|string|max:100',
+            'last_name' => 'required|string|max:100',
         ]);
         $employee->update($request->only([
-            'first_name','last_name','department_id','designation_id','manager_id',
-            'phone','personal_email','address','city','country','status','bio',
-            'employment_type','gender',
+            'first_name', 'last_name', 'department_id', 'designation_id', 'manager_id',
+            'phone', 'personal_email', 'address', 'city', 'country', 'status', 'bio',
+            'employment_type', 'gender',
         ]));
-        return response()->json(['data' => $this->format($employee->fresh()->load('user','department','designation'))]);
+
+        return response()->json(['data' => $this->format($employee->fresh()->load('user', 'department', 'designation'))]);
     }
 
     public function destroy(Employee $employee)
     {
         $employee->delete();
+
         return response()->json(['message' => 'Deleted.']);
     }
 
@@ -115,7 +127,7 @@ class EmployeeApiController extends Controller
     {
         return response()->json([
             'data' => Department::where('is_active', true)->orderBy('name')->get()
-                ->map(fn($d) => ['id' => $d->id, 'name' => $d->name, 'code' => $d->code]),
+                ->map(fn ($d) => ['id' => $d->id, 'name' => $d->name, 'code' => $d->code]),
         ]);
     }
 
@@ -123,7 +135,7 @@ class EmployeeApiController extends Controller
     {
         return response()->json([
             'data' => Designation::orderBy('title')->get()
-                ->map(fn($d) => ['id' => $d->id, 'title' => $d->title, 'department_id' => $d->department_id]),
+                ->map(fn ($d) => ['id' => $d->id, 'title' => $d->title, 'department_id' => $d->department_id]),
         ]);
     }
 
@@ -131,35 +143,35 @@ class EmployeeApiController extends Controller
     {
         $primaryClient = $e->relationLoaded('clients') ? $e->clients->first() : null;
         $data = [
-            'id'              => $e->id,
-            'emp_number'      => $e->emp_number,
-            'full_name'       => $e->full_name,
-            'first_name'      => $e->first_name,
-            'last_name'       => $e->last_name,
-            'avatar_url'      => $e->user?->avatar_url,
-            'department'      => $e->department?->name,
-            'department_id'   => $e->department_id,
-            'designation'     => $e->designation?->title ?? null,
-            'designation_id'  => $e->designation_id,
-            'status'          => $e->status,
+            'id' => $e->id,
+            'emp_number' => $e->emp_number,
+            'full_name' => $e->full_name,
+            'first_name' => $e->first_name,
+            'last_name' => $e->last_name,
+            'avatar_url' => $e->user?->avatar_url,
+            'department' => $e->department?->name,
+            'department_id' => $e->department_id,
+            'designation' => $e->designation?->title ?? null,
+            'designation_id' => $e->designation_id,
+            'status' => $e->status,
             'employment_type' => $e->employment_type,
-            'hire_date'       => $e->hire_date?->format('Y-m-d'),
-            'phone'           => $e->phone,
-            'client_name'     => $primaryClient?->company_name,
-            'client_id'       => $primaryClient?->id,
+            'hire_date' => $e->hire_date?->format('Y-m-d'),
+            'phone' => $e->phone,
+            'client_name' => $primaryClient?->company_name,
+            'client_id' => $primaryClient?->id,
         ];
 
         if ($full) {
             $data += [
-                'email'          => $e->user?->email,
+                'email' => $e->user?->email,
                 'personal_email' => $e->personal_email,
-                'gender'         => $e->gender,
-                'date_of_birth'  => $e->date_of_birth?->format('Y-m-d'),
-                'address'        => $e->address,
-                'city'           => $e->city,
-                'country'        => $e->country,
-                'manager'        => $e->manager?->full_name,
-                'bio'            => $e->bio,
+                'gender' => $e->gender,
+                'date_of_birth' => $e->date_of_birth?->format('Y-m-d'),
+                'address' => $e->address,
+                'city' => $e->city,
+                'country' => $e->country,
+                'manager' => $e->manager?->full_name,
+                'bio' => $e->bio,
             ];
         }
 

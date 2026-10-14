@@ -19,9 +19,7 @@ use Illuminate\Http\Request;
  */
 class BlogFeedController extends Controller
 {
-    public function __construct(protected BlogService $blog)
-    {
-    }
+    public function __construct(protected BlogService $blog) {}
 
     public function index(Request $request): JsonResponse
     {

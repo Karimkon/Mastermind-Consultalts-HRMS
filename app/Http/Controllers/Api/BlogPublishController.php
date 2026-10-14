@@ -28,8 +28,7 @@ class BlogPublishController extends Controller
     public function __construct(
         protected BlogService $blog,
         protected IndexNowService $indexNow,
-    ) {
-    }
+    ) {}
 
     /* -----------------------------------------------------------------
      | Endpoints
@@ -188,7 +187,7 @@ class BlogPublishController extends Controller
             $path = $this->blog->storeFromUrl($request->input('url'), null, 'api');
 
             return $path
-                ? response()->json(['success' => true, 'url' => asset('storage/' . $path), 'path' => $path], 201)
+                ? response()->json(['success' => true, 'url' => asset('storage/'.$path), 'path' => $path], 201)
                 : $this->fail('Could not download that image.', 422);
         }
 

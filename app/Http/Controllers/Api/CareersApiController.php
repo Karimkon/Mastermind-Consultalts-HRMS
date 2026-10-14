@@ -1,12 +1,21 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\CareersController;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Recruitment\ShortlistingController;
 use App\Jobs\ResolveApplicantOrigin;
-use App\Models\{Candidate, CandidateDocument, JobCategory, JobPosting, JobSeeker, JobSeekerNotification, ShortlistingCriteria};
-use App\Services\{NotificationService, QueueRunner, RecruitmentPipeline};
+use App\Models\Candidate;
+use App\Models\CandidateDocument;
+use App\Models\JobCategory;
+use App\Models\JobPosting;
+use App\Models\JobSeeker;
+use App\Models\JobSeekerNotification;
+use App\Models\ShortlistingCriteria;
+use App\Services\NotificationService;
+use App\Services\QueueRunner;
+use App\Services\RecruitmentPipeline;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -58,8 +67,8 @@ class CareersApiController extends Controller
                 ->values(),
             'meta' => [
                 'current_page' => $jobs->currentPage(),
-                'last_page'    => $jobs->lastPage(),
-                'total'        => $jobs->total(),
+                'last_page' => $jobs->lastPage(),
+                'total' => $jobs->total(),
             ],
             'top_categories' => app(CareersController::class)->topCategories(),
         ]);
@@ -73,32 +82,32 @@ class CareersApiController extends Controller
         $criteria = ShortlistingCriteria::with('questions')
             ->where('job_posting_id', $job->id)->where('is_active', true)->latest()->first();
 
-        $seeker  = $request->user();
+        $seeker = $request->user();
         $applied = $seeker instanceof JobSeeker && $seeker->hasAppliedTo($job->id);
 
         return response()->json([
             'job' => $this->jobPayload($job, $applied) + [
-                'description'  => $job->description,
+                'description' => $job->description,
                 'requirements' => $job->requirements,
-                'benefits'     => $job->benefits,
+                'benefits' => $job->benefits,
             ],
             'documents' => collect(CandidateDocument::TYPES)->map(fn ($m, $k) => [
                 'type' => $k, 'label' => $m['label'],
                 'required' => $m['required'], 'multiple' => $m['multiple'],
             ])->values(),
             'screening' => $criteria ? [
-                'id'          => $criteria->id,
-                'title'       => $criteria->title,
+                'id' => $criteria->id,
+                'title' => $criteria->title,
                 'total_marks' => $criteria->maxScore(),
-                'questions'   => $criteria->questions->map(fn ($q) => [
-                    'id'       => $q->id,
+                'questions' => $criteria->questions->map(fn ($q) => [
+                    'id' => $q->id,
                     'question' => $q->question,
-                    'type'     => $q->question_type,
-                    'marks'    => $q->isScored() ? (int) $q->weight : 0,
+                    'type' => $q->question_type,
+                    'marks' => $q->isScored() ? (int) $q->weight : 0,
                     // Each answer carries what it is worth, so the app can
                     // show "5+ years - 5 marks" the way the web form does.
-                    'options'  => collect($q->options ?? [])->map(fn ($o) => [
-                        'text'  => $o['text'] ?? '',
+                    'options' => collect($q->options ?? [])->map(fn ($o) => [
+                        'text' => $o['text'] ?? '',
                         'marks' => $o['marks'] ?? (($o['is_correct'] ?? false) ? (int) $q->weight : 0),
                     ])->values(),
                 ])->values(),
@@ -122,28 +131,29 @@ class CareersApiController extends Controller
     public function register(Request $request)
     {
         $data = $request->validate([
-            'name'             => 'required|string|max:120',
-            'email'            => 'required|email|max:255|unique:job_seekers,email',
-            'phone'            => 'nullable|string|max:20',
-            'password'         => ['required', 'confirmed', Password::min(8)],
-            'location'         => 'nullable|string|max:120',
-            'education_level'  => 'nullable|string|max:100',
+            'name' => 'required|string|max:120',
+            'email' => 'required|email|max:255|unique:job_seekers,email',
+            'phone' => 'nullable|string|max:20',
+            'password' => ['required', 'confirmed', Password::min(8)],
+            'location' => 'nullable|string|max:120',
+            'education_level' => 'nullable|string|max:100',
             'experience_years' => 'nullable|integer|min:0|max:60',
 
             // Categories at registration, so the first new vacancy in their
             // line of work reaches them without them doing anything else.
-            'categories'       => 'nullable|array|max:12',
-            'categories.*'     => 'integer|exists:job_categories,id',
+            'categories' => 'nullable|array|max:12',
+            'categories.*' => 'integer|exists:job_categories,id',
         ]);
 
         $seeker = DB::transaction(function () use ($data) {
             $seeker = JobSeeker::create($data);
             $seeker->categories()->sync($data['categories'] ?? []);
+
             return $seeker;
         });
 
         return response()->json([
-            'token'  => $seeker->createToken('careers-app')->plainTextToken,
+            'token' => $seeker->createToken('careers-app')->plainTextToken,
             'seeker' => $this->seekerPayload($seeker),
         ], 201);
     }
@@ -151,7 +161,7 @@ class CareersApiController extends Controller
     public function login(Request $request)
     {
         $data = $request->validate([
-            'email'    => 'required|email',
+            'email' => 'required|email',
             'password' => 'required|string',
         ]);
 
@@ -162,7 +172,7 @@ class CareersApiController extends Controller
         }
 
         return response()->json([
-            'token'  => $seeker->createToken('careers-app')->plainTextToken,
+            'token' => $seeker->createToken('careers-app')->plainTextToken,
             'seeker' => $this->seekerPayload($seeker),
         ]);
     }
@@ -170,6 +180,7 @@ class CareersApiController extends Controller
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()?->delete();
+
         return response()->json(['message' => 'Signed out.']);
     }
 
@@ -183,15 +194,15 @@ class CareersApiController extends Controller
         $seeker = $request->user();
 
         $data = $request->validate([
-            'name'             => 'sometimes|string|max:120',
-            'phone'            => 'nullable|string|max:20',
-            'location'         => 'nullable|string|max:120',
-            'education_level'  => 'nullable|string|max:100',
+            'name' => 'sometimes|string|max:120',
+            'phone' => 'nullable|string|max:20',
+            'location' => 'nullable|string|max:120',
+            'education_level' => 'nullable|string|max:100',
             'experience_years' => 'nullable|integer|min:0|max:60',
-            'notify_email'     => 'sometimes|boolean',
-            'notify_sms'       => 'sometimes|boolean',
-            'categories'       => 'nullable|array|max:12',
-            'categories.*'     => 'integer|exists:job_categories,id',
+            'notify_email' => 'sometimes|boolean',
+            'notify_sms' => 'sometimes|boolean',
+            'categories' => 'nullable|array|max:12',
+            'categories.*' => 'integer|exists:job_categories,id',
         ]);
 
         $seeker->update(collect($data)->except('categories')->all());
@@ -224,18 +235,21 @@ class CareersApiController extends Controller
 
         if ($seeker->hasAppliedTo($job->id)) {
             $existing = $seeker->applications()->where('job_posting_id', $job->id)->first();
+
             return response()->json([
-                'message'     => 'You have already applied for this position.',
+                'message' => 'You have already applied for this position.',
                 'application' => $this->applicationPayload($existing->load(['jobPosting:id,title', 'statusEvents', 'shortlistingResponse'])),
             ], 409);
         }
 
         $rules = ['cv' => 'required|file|max:8192|mimes:pdf,doc,docx'];
         foreach (CandidateDocument::TYPES as $type => $meta) {
-            if ($type === 'cv') continue;
+            if ($type === 'cv') {
+                continue;
+            }
             $allowed = $type === 'passport_photo' ? 'jpg,jpeg,png' : 'pdf,doc,docx,jpg,jpeg,png';
             if ($meta['multiple']) {
-                $rules["documents.{$type}"]   = 'nullable|array|max:6';
+                $rules["documents.{$type}"] = 'nullable|array|max:6';
                 $rules["documents.{$type}.*"] = "file|max:8192|mimes:{$allowed}";
             } else {
                 $rules["documents.{$type}"] = "nullable|file|max:8192|mimes:{$allowed}";
@@ -255,27 +269,31 @@ class CareersApiController extends Controller
             $parts = preg_split('/\s+/', trim($seeker->name), 2);
 
             $candidate = Candidate::create([
-                'job_posting_id'   => $job->id,
-                'job_seeker_id'    => $seeker->id,
-                'first_name'       => $parts[0],
-                'last_name'        => $parts[1] ?? '',
-                'email'            => $seeker->email,
-                'phone'            => $seeker->phone,
-                'cover_letter'     => $request->input('cover_letter'),
-                'status'           => 'new',
-                'source'           => 'careers_app',
-                'education_level'  => $seeker->education_level,
+                'job_posting_id' => $job->id,
+                'job_seeker_id' => $seeker->id,
+                'first_name' => $parts[0],
+                'last_name' => $parts[1] ?? '',
+                'email' => $seeker->email,
+                'phone' => $seeker->phone,
+                'cover_letter' => $request->input('cover_letter'),
+                'status' => 'new',
+                'source' => 'careers_app',
+                'education_level' => $seeker->education_level,
                 'experience_years' => $seeker->experience_years,
-                'ip_address'       => $request->ip(),
+                'ip_address' => $request->ip(),
             ]);
 
             $cv = $careers->storeDocument($candidate, 'cv', $request->file('cv'));
             $candidate->forceFill(['resume_path' => $cv->path])->save();
 
             foreach (CandidateDocument::TYPES as $type => $meta) {
-                if ($type === 'cv') continue;
+                if ($type === 'cv') {
+                    continue;
+                }
                 $input = $request->file("documents.{$type}");
-                if (! $input) continue;
+                if (! $input) {
+                    continue;
+                }
                 foreach (is_array($input) ? $input : [$input] as $file) {
                     $careers->storeDocument($candidate, $type, $file);
                 }
@@ -305,7 +323,7 @@ class CareersApiController extends Controller
         $candidate->load(['jobPosting:id,title', 'statusEvents', 'shortlistingResponse', 'documents']);
 
         return response()->json([
-            'message'     => 'Your application has been submitted.',
+            'message' => 'Your application has been submitted.',
             'application' => $this->applicationPayload($candidate),
         ], 201);
     }
@@ -341,17 +359,17 @@ class CareersApiController extends Controller
         $seeker = $request->user();
 
         return response()->json([
-            'unread'        => JobSeekerNotification::where('job_seeker_id', $seeker->id)->unread()->count(),
+            'unread' => JobSeekerNotification::where('job_seeker_id', $seeker->id)->unread()->count(),
             'notifications' => JobSeekerNotification::where('job_seeker_id', $seeker->id)
                 ->orderByDesc('created_at')->limit(50)->get()
                 ->map(fn ($n) => [
-                    'id'         => $n->id,
-                    'type'       => $n->type,
-                    'title'      => $n->title,
-                    'body'       => $n->body,
-                    'data'       => $n->data,
+                    'id' => $n->id,
+                    'type' => $n->type,
+                    'title' => $n->title,
+                    'body' => $n->body,
+                    'data' => $n->data,
                     'action_url' => $n->action_url,
-                    'read'       => $n->read_at !== null,
+                    'read' => $n->read_at !== null,
                     'created_at' => $n->created_at?->toIso8601String(),
                 ])->values(),
         ]);
@@ -360,9 +378,11 @@ class CareersApiController extends Controller
     public function markRead(Request $request)
     {
         $seeker = $request->user();
-        $query  = JobSeekerNotification::where('job_seeker_id', $seeker->id)->unread();
+        $query = JobSeekerNotification::where('job_seeker_id', $seeker->id)->unread();
 
-        if ($request->filled('id')) $query->where('id', $request->integer('id'));
+        if ($request->filled('id')) {
+            $query->where('id', $request->integer('id'));
+        }
 
         $marked = $query->update(['read_at' => now()]);
 
@@ -376,19 +396,19 @@ class CareersApiController extends Controller
     private function jobPayload(JobPosting $job, bool $applied = false): array
     {
         return [
-            'id'              => $job->id,
-            'title'           => $job->title,
-            'department'      => $job->department?->name,
-            'category'        => $job->category?->name,
-            'category_id'     => $job->job_category_id,
-            'location'        => $job->location,
+            'id' => $job->id,
+            'title' => $job->title,
+            'department' => $job->department?->name,
+            'category' => $job->category?->name,
+            'category_id' => $job->job_category_id,
+            'location' => $job->location,
             'employment_type' => $job->employment_type,
-            'type_label'      => ucwords(str_replace('_', ' ', $job->employment_type)),
-            'vacancies'       => $job->vacancies,
-            'applicants'      => $job->candidates_count ?? 0,
-            'deadline'        => $job->deadline?->toDateString(),
-            'closes_in_days'  => $job->deadline ? now()->startOfDay()->diffInDays($job->deadline, false) : null,
-            'posted_at'       => $job->created_at?->toIso8601String(),
+            'type_label' => ucwords(str_replace('_', ' ', $job->employment_type)),
+            'vacancies' => $job->vacancies,
+            'applicants' => $job->candidates_count ?? 0,
+            'deadline' => $job->deadline?->toDateString(),
+            'closes_in_days' => $job->deadline ? now()->startOfDay()->diffInDays($job->deadline, false) : null,
+            'posted_at' => $job->created_at?->toIso8601String(),
             'already_applied' => $applied,
         ];
     }
@@ -396,18 +416,18 @@ class CareersApiController extends Controller
     private function seekerPayload(JobSeeker $seeker): array
     {
         return [
-            'id'               => $seeker->id,
-            'name'             => $seeker->name,
-            'email'            => $seeker->email,
-            'phone'            => $seeker->phone,
-            'location'         => $seeker->location,
-            'education_level'  => $seeker->education_level,
+            'id' => $seeker->id,
+            'name' => $seeker->name,
+            'email' => $seeker->email,
+            'phone' => $seeker->phone,
+            'location' => $seeker->location,
+            'education_level' => $seeker->education_level,
             'experience_years' => $seeker->experience_years,
-            'notify_email'     => $seeker->notify_email,
-            'notify_sms'       => $seeker->notify_sms,
-            'categories'       => $seeker->categories()->get(['job_categories.id', 'name'])
+            'notify_email' => $seeker->notify_email,
+            'notify_sms' => $seeker->notify_sms,
+            'categories' => $seeker->categories()->get(['job_categories.id', 'name'])
                 ->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])->values(),
-            'applications'     => $seeker->applications()->count(),
+            'applications' => $seeker->applications()->count(),
         ];
     }
 
@@ -423,31 +443,31 @@ class CareersApiController extends Controller
         $response = $candidate->shortlistingResponse;
 
         return [
-            'id'            => $public ? null : $candidate->id,
+            'id' => $public ? null : $candidate->id,
             'tracking_code' => $candidate->tracking_code,
-            'job'           => [
-                'id'       => $candidate->job_posting_id,
-                'title'    => $candidate->jobPosting?->title,
+            'job' => [
+                'id' => $candidate->job_posting_id,
+                'title' => $candidate->jobPosting?->title,
                 'location' => $candidate->jobPosting?->location,
             ],
-            'applied_at'    => $candidate->created_at?->toIso8601String(),
-            'stage'         => $pipeline->stageOf($candidate->status),
-            'stage_label'   => collect($pipeline->progressFor($candidate))
+            'applied_at' => $candidate->created_at?->toIso8601String(),
+            'stage' => $pipeline->stageOf($candidate->status),
+            'stage_label' => collect($pipeline->progressFor($candidate))
                 ->firstWhere('state', 'current')['label'] ?? 'Outcome',
-            'progress'      => $pipeline->progressFor($candidate),
-            'assessment'    => $response && $response->max_score > 0 ? [
+            'progress' => $pipeline->progressFor($candidate),
+            'assessment' => $response && $response->max_score > 0 ? [
                 'percentage' => (float) $response->percentage,
-                'score'      => (float) $response->total_score,
-                'max'        => (float) $response->max_score,
+                'score' => (float) $response->total_score,
+                'max' => (float) $response->max_score,
             ] : null,
-            'documents'     => $candidate->relationLoaded('documents')
+            'documents' => $candidate->relationLoaded('documents')
                 ? $candidate->documents->map(fn ($d) => [
                     'type' => $d->type, 'label' => $d->label, 'size' => $d->size_label,
                 ])->values() : [],
-            'updates'       => $candidate->statusEvents->sortByDesc('created_at')->values()
+            'updates' => $candidate->statusEvents->sortByDesc('created_at')->values()
                 ->map(fn ($e) => [
-                    'at'      => $e->created_at?->toIso8601String(),
-                    'status'  => $e->to_status,
+                    'at' => $e->created_at?->toIso8601String(),
+                    'status' => $e->to_status,
                     'message' => $e->message,
                 ])->values(),
         ];

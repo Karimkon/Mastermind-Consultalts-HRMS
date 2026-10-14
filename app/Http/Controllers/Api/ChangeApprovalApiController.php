@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -38,13 +39,13 @@ class ChangeApprovalApiController extends Controller
 
         $changes = PendingChange::with(['requester', 'reviewer', 'client'])
             ->where('status', $status)
-            ->when($request->query('client_id'), fn($q, $id) => $q->where('client_id', $id))
+            ->when($request->query('client_id'), fn ($q, $id) => $q->where('client_id', $id))
             ->latest()
             ->paginate(20);
 
         return response()->json([
-            'data'          => $changes->through(fn($c) => $this->summary($c)),
-            'status'        => $status,
+            'data' => $changes->through(fn ($c) => $this->summary($c)),
+            'status' => $status,
             'pending_count' => PendingChange::pending()->count(),
         ]);
     }
@@ -59,10 +60,10 @@ class ChangeApprovalApiController extends Controller
         return response()->json([
             'data' => $this->summary($change) + [
                 // The whole point of the screen: what would actually change.
-                'diff'         => $change->diff(),
-                'has_drift'    => $change->hasDrift(),
+                'diff' => $change->diff(),
+                'has_drift' => $change->hasDrift(),
                 'subject_gone' => $subject === null,
-                'review_note'  => $change->review_note,
+                'review_note' => $change->review_note,
             ],
         ]);
     }
@@ -76,8 +77,8 @@ class ChangeApprovalApiController extends Controller
         $applied = app(ChangeRequestService::class)->approve($change, $request->review_note);
 
         return response()->json([
-            'applied'       => $applied,
-            'message'       => $applied
+            'applied' => $applied,
+            'message' => $applied
                 ? 'Change approved and applied.'
                 : 'That change could not be applied — it had already been decided, or the record no longer exists.',
             'pending_count' => PendingChange::pending()->count(),
@@ -97,8 +98,8 @@ class ChangeApprovalApiController extends Controller
         $done = app(ChangeRequestService::class)->reject($change, $request->review_note);
 
         return response()->json([
-            'applied'       => $done,
-            'message'       => $done ? 'Change rejected.' : 'That change had already been decided.',
+            'applied' => $done,
+            'message' => $done ? 'Change rejected.' : 'That change had already been decided.',
             'pending_count' => PendingChange::pending()->count(),
         ], $done ? 200 : 409);
     }
@@ -106,18 +107,18 @@ class ChangeApprovalApiController extends Controller
     private function summary(PendingChange $change): array
     {
         return [
-            'id'           => $change->id,
-            'action'       => $change->action,
-            'label'        => $change->label,
-            'model_type'   => $change->model_type,
-            'model_id'     => $change->model_id,
-            'status'       => $change->status,
+            'id' => $change->id,
+            'action' => $change->action,
+            'label' => $change->label,
+            'model_type' => $change->model_type,
+            'model_id' => $change->model_id,
+            'status' => $change->status,
             'requested_by' => $change->requester?->name,
-            'client'       => $change->client?->company_name,
-            'reviewed_by'  => $change->reviewer?->name,
-            'reviewed_at'  => $change->reviewed_at?->format('Y-m-d H:i'),
-            'field_count'  => is_array($change->payload) ? count($change->payload) : 0,
-            'created_at'   => $change->created_at?->format('Y-m-d H:i'),
+            'client' => $change->client?->company_name,
+            'reviewed_by' => $change->reviewer?->name,
+            'reviewed_at' => $change->reviewed_at?->format('Y-m-d H:i'),
+            'field_count' => is_array($change->payload) ? count($change->payload) : 0,
+            'created_at' => $change->created_at?->format('Y-m-d H:i'),
         ];
     }
 }

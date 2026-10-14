@@ -1,10 +1,24 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\{Employee, AttendanceLog, LeaveRequest, PayrollRun, JobPosting, Candidate, Meeting, TrainingCourse, Client};
-use Illuminate\Http\Request;
+use App\Models\AttendanceLog;
+use App\Models\Candidate;
+use App\Models\Client;
+use App\Models\Employee;
+use App\Models\EmployeeDocument;
+use App\Models\Interview;
+use App\Models\JobPosting;
+use App\Models\LeaveBalance;
+use App\Models\LeaveRequest;
+use App\Models\Meeting;
+use App\Models\PayrollRun;
+use App\Models\Payslip;
+use App\Models\TrainingCourse;
+use App\Models\TrainingEnrollment;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 
 class DashboardApiController extends Controller
 {
@@ -27,6 +41,7 @@ class DashboardApiController extends Controller
         if ($user->hasRole('account-manager')) {
             return response()->json($this->accountManagerDashboard($user));
         }
+
         return response()->json($this->employeeDashboard($user));
     }
 
@@ -40,7 +55,7 @@ class DashboardApiController extends Controller
         for ($i = 6; $i >= 0; $i--) {
             $date = Carbon::today()->subDays($i);
             $attendanceChart[] = [
-                'date'  => $date->format('D'),
+                'date' => $date->format('D'),
                 'count' => AttendanceLog::whereDate('clock_in', $date)->count(),
             ];
         }
@@ -48,46 +63,46 @@ class DashboardApiController extends Controller
         return [
             'role' => 'admin',
             'stats' => [
-                'total_employees'  => Employee::where('status', 'active')->count(),
-                'present_today'    => AttendanceLog::whereDate('clock_in', $today)->whereNull('clock_out')->count()
+                'total_employees' => Employee::where('status', 'active')->count(),
+                'present_today' => AttendanceLog::whereDate('clock_in', $today)->whereNull('clock_out')->count()
                                     + AttendanceLog::whereDate('clock_in', $today)->whereNotNull('clock_out')->count(),
-                'on_leave'         => Employee::where('status', 'on_leave')->count(),
-                'pending_leaves'   => LeaveRequest::where('status', 'pending')->count(),
-                'open_jobs'        => JobPosting::where('status', 'open')->count(),
-                'meetings_today'   => Meeting::whereDate('start_at', $today)->count(),
+                'on_leave' => Employee::where('status', 'on_leave')->count(),
+                'pending_leaves' => LeaveRequest::where('status', 'pending')->count(),
+                'open_jobs' => JobPosting::where('status', 'open')->count(),
+                'meetings_today' => Meeting::whereDate('start_at', $today)->count(),
                 'active_trainings' => TrainingCourse::where('is_active', true)->count(),
-                'payroll_runs'     => PayrollRun::whereMonth('created_at', $month->month)->count(),
+                'payroll_runs' => PayrollRun::whereMonth('created_at', $month->month)->count(),
             ],
             'attendance_chart' => $attendanceChart,
             'recent_employees' => Employee::with('user', 'department')
                 ->latest()->limit(5)
-                ->get()->map(fn($e) => [
-                    'id'         => $e->id,
-                    'name'       => $e->full_name,
+                ->get()->map(fn ($e) => [
+                    'id' => $e->id,
+                    'name' => $e->full_name,
                     'emp_number' => $e->emp_number,
                     'department' => $e->department?->name,
                     'avatar_url' => $e->user?->avatar_url,
-                    'hire_date'  => $e->hire_date?->format('Y-m-d'),
+                    'hire_date' => $e->hire_date?->format('Y-m-d'),
                 ]),
             'pending_leaves' => LeaveRequest::with('employee.user', 'leaveType')
                 ->where('status', 'pending')->limit(5)->latest()
-                ->get()->map(fn($l) => [
-                    'id'          => $l->id,
-                    'employee'    => $l->employee->full_name,
-                    'avatar_url'  => $l->employee->user?->avatar_url,
-                    'leave_type'  => $l->leaveType->name,
-                    'from_date'   => $l->from_date->format('Y-m-d'),
-                    'to_date'     => $l->to_date->format('Y-m-d'),
-                    'days'        => $l->days_count,
+                ->get()->map(fn ($l) => [
+                    'id' => $l->id,
+                    'employee' => $l->employee->full_name,
+                    'avatar_url' => $l->employee->user?->avatar_url,
+                    'leave_type' => $l->leaveType->name,
+                    'from_date' => $l->from_date->format('Y-m-d'),
+                    'to_date' => $l->to_date->format('Y-m-d'),
+                    'days' => $l->days_count,
                 ]),
             'upcoming_meetings' => Meeting::with('participants.employee')
                 ->where('start_at', '>=', now())
                 ->orderBy('start_at')->limit(5)->get()
-                ->map(fn($m) => [
-                    'id'       => $m->id,
-                    'title'    => $m->title,
+                ->map(fn ($m) => [
+                    'id' => $m->id,
+                    'title' => $m->title,
                     'start_at' => $m->start_at,
-                    'type'     => $m->type,
+                    'type' => $m->type,
                 ]),
         ];
     }
@@ -95,25 +110,25 @@ class DashboardApiController extends Controller
     private function employeeDashboard($user): array
     {
         $employee = $user->employee;
-        if (!$employee) {
+        if (! $employee) {
             return ['role' => 'employee', 'stats' => [], 'message' => 'No employee profile found.'];
         }
 
         $today = Carbon::today();
-        $year  = Carbon::now()->year;
+        $year = Carbon::now()->year;
 
         $todayLog = AttendanceLog::where('employee_id', $employee->id)
             ->whereDate('clock_in', $today)->latest()->first();
 
-        $leaveBalances = \App\Models\LeaveBalance::with('leaveType')
+        $leaveBalances = LeaveBalance::with('leaveType')
             ->where('employee_id', $employee->id)->where('year', $year)->get()
-            ->map(fn($b) => [
-                'type'       => $b->leaveType->name,
-                'color'      => $b->leaveType->color,
-                'total'      => $b->total_days,
-                'used'       => $b->used_days,
-                'pending'    => $b->pending_days,
-                'remaining'  => max(0, $b->total_days - $b->used_days - $b->pending_days),
+            ->map(fn ($b) => [
+                'type' => $b->leaveType->name,
+                'color' => $b->leaveType->color,
+                'total' => $b->total_days,
+                'used' => $b->used_days,
+                'pending' => $b->pending_days,
+                'remaining' => max(0, $b->total_days - $b->used_days - $b->pending_days),
             ]);
 
         return [
@@ -121,36 +136,36 @@ class DashboardApiController extends Controller
             'stats' => [
                 'attendance_this_month' => AttendanceLog::where('employee_id', $employee->id)
                     ->whereMonth('clock_in', now()->month)->count(),
-                'leaves_taken'          => LeaveRequest::where('employee_id', $employee->id)
+                'leaves_taken' => LeaveRequest::where('employee_id', $employee->id)
                     ->where('status', 'approved')->whereYear('from_date', $year)->count(),
-                'training_enrolled'     => \App\Models\TrainingEnrollment::where('employee_id', $employee->id)->count(),
-                'meetings_upcoming'     => Meeting::whereHas('participants', fn($q) => $q->where('employee_id', $employee->id))
+                'training_enrolled' => TrainingEnrollment::where('employee_id', $employee->id)->count(),
+                'meetings_upcoming' => Meeting::whereHas('participants', fn ($q) => $q->where('employee_id', $employee->id))
                     ->where('start_at', '>=', now())->count(),
             ],
             'today_attendance' => $todayLog ? [
-                'id'        => $todayLog->id,
-                'clock_in'  => $todayLog->clock_in,
+                'id' => $todayLog->id,
+                'clock_in' => $todayLog->clock_in,
                 'clock_out' => $todayLog->clock_out,
-                'status'    => $todayLog->clock_out ? 'clocked_out' : 'clocked_in',
+                'status' => $todayLog->clock_out ? 'clocked_out' : 'clocked_in',
             ] : null,
             'leave_balances' => $leaveBalances,
-            'recent_leaves'  => LeaveRequest::with('leaveType')
+            'recent_leaves' => LeaveRequest::with('leaveType')
                 ->where('employee_id', $employee->id)->latest()->limit(5)->get()
-                ->map(fn($l) => [
-                    'id'         => $l->id,
+                ->map(fn ($l) => [
+                    'id' => $l->id,
                     'leave_type' => $l->leaveType->name,
-                    'from_date'  => $l->from_date->format('Y-m-d'),
-                    'to_date'    => $l->to_date->format('Y-m-d'),
-                    'days'       => $l->days_count,
-                    'status'     => $l->status,
+                    'from_date' => $l->from_date->format('Y-m-d'),
+                    'to_date' => $l->to_date->format('Y-m-d'),
+                    'days' => $l->days_count,
+                    'status' => $l->status,
                 ]),
-            'recent_payslips' => \App\Models\Payslip::with('payrollRun')
+            'recent_payslips' => Payslip::with('payrollRun')
                 ->where('employee_id', $employee->id)->latest()->limit(3)->get()
-                ->map(fn($p) => [
-                    'id'          => $p->id,
-                    'period'      => $p->payrollRun?->title,
-                    'net_pay'     => $p->net_pay,
-                    'paid_on'     => $p->created_at->format('Y-m-d'),
+                ->map(fn ($p) => [
+                    'id' => $p->id,
+                    'period' => $p->payrollRun?->title,
+                    'net_pay' => $p->net_pay,
+                    'paid_on' => $p->created_at->format('Y-m-d'),
                 ]),
         ];
     }
@@ -161,16 +176,16 @@ class DashboardApiController extends Controller
             'role' => 'payroll-officer',
             'stats' => [
                 'total_employees' => Employee::where('status', 'active')->count(),
-                'pending_runs'    => PayrollRun::where('status', 'draft')->count(),
-                'processed_runs'  => PayrollRun::where('status', 'processed')->count(),
-                'approved_runs'   => PayrollRun::where('status', 'approved')->count(),
+                'pending_runs' => PayrollRun::where('status', 'draft')->count(),
+                'processed_runs' => PayrollRun::where('status', 'processed')->count(),
+                'approved_runs' => PayrollRun::where('status', 'approved')->count(),
             ],
-            'recent_runs' => PayrollRun::latestActivity()->limit(8)->get()->map(fn($r) => [
-                'id'      => $r->id,
-                'title'   => $r->title,
-                'month'   => $r->month,
-                'year'    => $r->year,
-                'status'  => $r->status,
+            'recent_runs' => PayrollRun::latestActivity()->limit(8)->get()->map(fn ($r) => [
+                'id' => $r->id,
+                'title' => $r->title,
+                'month' => $r->month,
+                'year' => $r->year,
+                'status' => $r->status,
             ]),
         ];
     }
@@ -178,20 +193,21 @@ class DashboardApiController extends Controller
     private function recruiterDashboard(): array
     {
         $today = Carbon::today();
+
         return [
             'role' => 'recruiter',
             'stats' => [
-                'open_jobs'        => JobPosting::where('status', 'open')->count(),
+                'open_jobs' => JobPosting::where('status', 'open')->count(),
                 'total_candidates' => Candidate::count(),
-                'interviews_today' => \App\Models\Interview::whereDate('scheduled_at', $today)->count(),
-                'hired_month'      => Candidate::where('status', 'hired')
+                'interviews_today' => Interview::whereDate('scheduled_at', $today)->count(),
+                'hired_month' => Candidate::where('status', 'hired')
                     ->whereMonth('updated_at', now()->month)->count(),
             ],
-            'recent_jobs' => JobPosting::with('department')->latest()->limit(5)->get()->map(fn($j) => [
-                'id'         => $j->id,
-                'title'      => $j->title,
+            'recent_jobs' => JobPosting::with('department')->latest()->limit(5)->get()->map(fn ($j) => [
+                'id' => $j->id,
+                'title' => $j->title,
                 'department' => $j->department?->name,
-                'status'     => $j->status,
+                'status' => $j->status,
                 'candidates' => $j->candidates()->count(),
             ]),
         ];
@@ -200,24 +216,24 @@ class DashboardApiController extends Controller
     private function accountManagerDashboard($user): array
     {
         $clients = Client::where('account_manager_id', $user->id)->with('employees')->get();
-        $empIds  = $clients->flatMap(fn($c) => $c->employees->pluck('id'))->unique()->values();
-        $today   = Carbon::today();
-        $soon    = $today->copy()->addDays(30);
+        $empIds = $clients->flatMap(fn ($c) => $c->employees->pluck('id'))->unique()->values();
+        $today = Carbon::today();
+        $soon = $today->copy()->addDays(30);
 
         $pendingLeaves = LeaveRequest::whereIn('employee_id', $empIds)
             ->where('status', 'pending')->with('employee', 'leaveType')
             ->latest()->limit(5)->get()
-            ->map(fn($l) => [
-                'id'         => $l->id,
-                'employee'   => $l->employee->full_name,
+            ->map(fn ($l) => [
+                'id' => $l->id,
+                'employee' => $l->employee->full_name,
                 'leave_type' => $l->leaveType->name,
-                'from_date'  => $l->from_date->format('Y-m-d'),
-                'to_date'    => $l->to_date->format('Y-m-d'),
-                'days'       => $l->days_count,
-                'status'     => $l->status,
+                'from_date' => $l->from_date->format('Y-m-d'),
+                'to_date' => $l->to_date->format('Y-m-d'),
+                'days' => $l->days_count,
+                'status' => $l->status,
             ]);
 
-        $expiringDocs = \App\Models\EmployeeDocument::whereIn('employee_id', $empIds)
+        $expiringDocs = EmployeeDocument::whereIn('employee_id', $empIds)
             ->whereNotNull('expiry_date')
             ->whereBetween('expiry_date', [$today->toDateString(), $soon->toDateString()])
             ->count();
@@ -225,10 +241,10 @@ class DashboardApiController extends Controller
         return [
             'role' => 'account-manager',
             'stats' => [
-                'total_clients'    => $clients->count(),
-                'total_employees'  => $empIds->count(),
-                'pending_leaves'   => LeaveRequest::whereIn('employee_id', $empIds)->where('status', 'pending')->count(),
-                'expiring_docs'    => $expiringDocs,
+                'total_clients' => $clients->count(),
+                'total_employees' => $empIds->count(),
+                'pending_leaves' => LeaveRequest::whereIn('employee_id', $empIds)->where('status', 'pending')->count(),
+                'expiring_docs' => $expiringDocs,
             ],
             'pending_leaves' => $pendingLeaves,
         ];
@@ -244,13 +260,13 @@ class DashboardApiController extends Controller
             'role' => 'client',
             'client' => ['id' => $client->id, 'company_name' => $client->company_name],
             'stats' => [
-                'pending_leaves'    => LeaveRequest::whereIn('employee_id', $empIds)
+                'pending_leaves' => LeaveRequest::whereIn('employee_id', $empIds)
                     ->where('client_approval_required', true)->where('client_approval_status', 'pending')->count(),
                 'pending_shortlist' => Candidate::whereIn('job_posting_id', $jobIds)
                     ->where('status', 'shortlisted')->whereNull('client_shortlist_status')->count(),
-                'approved_leaves'   => LeaveRequest::whereIn('employee_id', $empIds)
+                'approved_leaves' => LeaveRequest::whereIn('employee_id', $empIds)
                     ->where('client_approval_status', 'approved')->count(),
-                'hired'             => Candidate::whereIn('job_posting_id', $jobIds)->where('status', 'hired')->count(),
+                'hired' => Candidate::whereIn('job_posting_id', $jobIds)->where('status', 'hired')->count(),
             ],
         ];
     }

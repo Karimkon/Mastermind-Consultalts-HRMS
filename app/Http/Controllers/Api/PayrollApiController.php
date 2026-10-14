@@ -1,9 +1,15 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\{PayrollRun, Payslip, Employee, Client};
+use App\Models\Client;
+use App\Models\PayrollRun;
+use App\Models\Payslip;
+use App\Models\Setting;
+use App\Services\NotificationService;
 use App\Services\Payroll\PayrollService;
+use App\Services\QueueRunner;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 
@@ -12,17 +18,18 @@ class PayrollApiController extends Controller
     public function index()
     {
         $runs = PayrollRun::latestActivity()->paginate(20);
+
         return response()->json([
-            'data' => $runs->through(fn($r) => [
-                'id'          => $r->id,
-                'title'       => $r->title,
-                'month'       => $r->month,
-                'year'        => $r->year,
-                'status'      => $r->status,
-                'employee_count'=> $r->payslips()->count(),
+            'data' => $runs->through(fn ($r) => [
+                'id' => $r->id,
+                'title' => $r->title,
+                'month' => $r->month,
+                'year' => $r->year,
+                'status' => $r->status,
+                'employee_count' => $r->payslips()->count(),
                 'total_gross' => $r->payslips()->sum('gross_salary'),
-                'total_net'   => $r->payslips()->sum('net_salary'),
-                'created_at'  => $r->created_at?->format('Y-m-d'),
+                'total_net' => $r->payslips()->sum('net_salary'),
+                'created_at' => $r->created_at?->format('Y-m-d'),
             ]),
         ]);
     }
@@ -30,27 +37,28 @@ class PayrollApiController extends Controller
     public function show(PayrollRun $payroll)
     {
         $payroll->load('payslips.employee.user');
+
         return response()->json([
             'data' => [
-                'id'      => $payroll->id,
-                'title'   => $payroll->title,
-                'month'   => $payroll->month,
-                'year'    => $payroll->year,
-                'status'  => $payroll->status,
-                'totals'  => [
+                'id' => $payroll->id,
+                'title' => $payroll->title,
+                'month' => $payroll->month,
+                'year' => $payroll->year,
+                'status' => $payroll->status,
+                'totals' => [
                     'employees' => $payroll->payslips->count(),
-                    'gross'     => $payroll->payslips->sum('gross_salary'),
-                    'net'       => $payroll->payslips->sum('net_salary'),
-                    'tax'       => $payroll->payslips->sum('tax_amount'),
-                    'deductions'=> $payroll->payslips->sum('total_deductions'),
+                    'gross' => $payroll->payslips->sum('gross_salary'),
+                    'net' => $payroll->payslips->sum('net_salary'),
+                    'tax' => $payroll->payslips->sum('tax_amount'),
+                    'deductions' => $payroll->payslips->sum('total_deductions'),
                 ],
-                'payslips' => $payroll->payslips->map(fn($p) => [
-                    'id'          => $p->id,
+                'payslips' => $payroll->payslips->map(fn ($p) => [
+                    'id' => $p->id,
                     'employee_id' => $p->employee_id,
-                    'employee'    => $p->employee?->full_name,
-                    'gross_pay'   => $p->gross_salary,
-                    'net_pay'     => $p->net_salary,
-                    'tax'         => $p->tax_amount,
+                    'employee' => $p->employee?->full_name,
+                    'gross_pay' => $p->gross_salary,
+                    'net_pay' => $p->net_salary,
+                    'tax' => $p->tax_amount,
                 ]),
             ],
         ]);
@@ -65,8 +73,8 @@ class PayrollApiController extends Controller
     private function handOver(PayrollRun $payroll, string $stage): void
     {
         try {
-            app(\App\Services\NotificationService::class)->payrollAwaitingStage($payroll, $stage);
-            \App\Services\QueueRunner::kick();
+            app(NotificationService::class)->payrollAwaitingStage($payroll, $stage);
+            QueueRunner::kick();
         } catch (\Throwable $e) {
             report($e);
         }
@@ -74,15 +82,18 @@ class PayrollApiController extends Controller
 
     public function process(PayrollRun $payroll)
     {
-        if (!request()->user()->hasRole(['super-admin','hr-admin','payroll-officer'])) abort(403);
+        if (! request()->user()->hasRole(['super-admin', 'hr-admin', 'payroll-officer'])) {
+            abort(403);
+        }
         if ($payroll->isImported()) {
             return response()->json(['message' => 'This run was imported and records what was actually paid. The system cannot reproduce its figures, so it cannot be re-processed — create a new run instead.'], 422);
         }
-        if (!in_array($payroll->status, ['draft','failed'])) {
+        if (! in_array($payroll->status, ['draft', 'failed'])) {
             return response()->json(['message' => 'Already processed.'], 422);
         }
         app(PayrollService::class)->processRun($payroll);
         $this->handOver($payroll, 'hr');
+
         return response()->json(['data' => ['id' => $payroll->id, 'status' => $payroll->fresh()->status]]);
     }
 
@@ -103,7 +114,7 @@ class PayrollApiController extends Controller
      */
     public function hrApprove(PayrollRun $payroll)
     {
-        if (!request()->user()->hasAnyRole(['super-admin', 'hr-admin'])) {
+        if (! request()->user()->hasAnyRole(['super-admin', 'hr-admin'])) {
             abort(403, 'Only HR can give the first approval.');
         }
 
@@ -114,9 +125,9 @@ class PayrollApiController extends Controller
         }
 
         $payroll->update([
-            'status'          => 'hr_approved',
-            'hr_approved_by'  => request()->user()->id,
-            'hr_approved_at'  => now(),
+            'status' => 'hr_approved',
+            'hr_approved_by' => request()->user()->id,
+            'hr_approved_at' => now(),
         ]);
 
         $this->handOver($payroll, 'finance');
@@ -127,7 +138,7 @@ class PayrollApiController extends Controller
     /** Stage 2 of 3 — Finance approval. A different role from HR, deliberately. */
     public function financeApprove(PayrollRun $payroll)
     {
-        if (!request()->user()->hasAnyRole(['super-admin', 'payroll-officer'])) {
+        if (! request()->user()->hasAnyRole(['super-admin', 'payroll-officer'])) {
             abort(403, 'Only Finance can give the second approval.');
         }
 
@@ -138,9 +149,9 @@ class PayrollApiController extends Controller
         }
 
         $payroll->update([
-            'status'               => 'finance_approved',
-            'finance_approved_by'  => request()->user()->id,
-            'finance_approved_at'  => now(),
+            'status' => 'finance_approved',
+            'finance_approved_by' => request()->user()->id,
+            'finance_approved_at' => now(),
         ]);
 
         $this->handOver($payroll, 'md');
@@ -161,7 +172,7 @@ class PayrollApiController extends Controller
      */
     public function approve(PayrollRun $payroll)
     {
-        if (!request()->user()->hasAnyRole(['super-admin', 'md'])) {
+        if (! request()->user()->hasAnyRole(['super-admin', 'md'])) {
             abort(403, 'Only the MD can give final approval.');
         }
 
@@ -172,13 +183,13 @@ class PayrollApiController extends Controller
         }
 
         $payroll->update([
-            'status'         => 'md_approved',
+            'status' => 'md_approved',
             'md_approved_by' => request()->user()->id,
             'md_approved_at' => now(),
-            'approved_by'    => request()->user()->id,
-            'approved_at'    => now(),
-            'locked_at'      => now(),
-            'locked_by'      => request()->user()->id,
+            'approved_by' => request()->user()->id,
+            'approved_at' => now(),
+            'locked_at' => now(),
+            'locked_by' => request()->user()->id,
         ]);
 
         $this->handOver($payroll, 'payment');
@@ -189,18 +200,21 @@ class PayrollApiController extends Controller
     public function payslips(PayrollRun $payroll)
     {
         $payslips = $payroll->payslips()->with('employee.user')->get();
+
         return response()->json([
-            'data' => $payslips->map(fn($p) => $this->formatPayslip($p)),
+            'data' => $payslips->map(fn ($p) => $this->formatPayslip($p)),
         ]);
     }
 
     public function store(Request $request)
     {
-        if (!$request->user()->hasRole(['super-admin','hr-admin','payroll-officer'])) abort(403);
+        if (! $request->user()->hasRole(['super-admin', 'hr-admin', 'payroll-officer'])) {
+            abort(403);
+        }
 
         $request->validate([
-            'month'     => 'required|integer|min:1|max:12',
-            'year'      => 'required|integer|min:2020',
+            'month' => 'required|integer|min:1|max:12',
+            'year' => 'required|integer|min:2020',
             'client_id' => 'nullable|exists:clients,id',
         ]);
 
@@ -214,16 +228,16 @@ class PayrollApiController extends Controller
         }
 
         $clientName = $request->client_id
-            ? Client::find($request->client_id)->company_name . ' — '
+            ? Client::find($request->client_id)->company_name.' — '
             : '';
-        $title = $clientName . date('F', mktime(0, 0, 0, $request->month, 1)) . ' ' . $request->year . ' Payroll';
+        $title = $clientName.date('F', mktime(0, 0, 0, $request->month, 1)).' '.$request->year.' Payroll';
 
         $run = PayrollRun::create([
-            'title'        => $title,
-            'month'        => $request->month,
-            'year'         => $request->year,
-            'client_id'    => $request->client_id ?: null,
-            'status'       => 'draft',
+            'title' => $title,
+            'month' => $request->month,
+            'year' => $request->year,
+            'client_id' => $request->client_id ?: null,
+            'status' => 'draft',
             'processed_by' => $request->user()->id,
         ]);
 
@@ -233,12 +247,14 @@ class PayrollApiController extends Controller
     public function myPayslips(Request $request)
     {
         $employee = $request->user()->employee;
-        if (!$employee) return response()->json(['data' => []]);
+        if (! $employee) {
+            return response()->json(['data' => []]);
+        }
 
         $payslips = Payslip::with('payrollRun')
             ->where('employee_id', $employee->id)
             ->latest()->get()
-            ->map(fn($p) => $this->formatPayslip($p));
+            ->map(fn ($p) => $this->formatPayslip($p));
 
         return response()->json(['data' => $payslips]);
     }
@@ -246,19 +262,19 @@ class PayrollApiController extends Controller
     public function downloadPayslipPdf(Request $request, Payslip $payslip)
     {
         $employee = $request->user()->employee;
-        $isHr = $request->user()->hasRole(['super-admin','hr-admin','payroll-officer']);
+        $isHr = $request->user()->hasRole(['super-admin', 'hr-admin', 'payroll-officer']);
 
-        if (!$isHr && (!$employee || $employee->id !== $payslip->employee_id)) {
+        if (! $isHr && (! $employee || $employee->id !== $payslip->employee_id)) {
             abort(403);
         }
 
         $payslip->load(['payrollRun', 'employee.department', 'employee.designation']);
         $company = [
-            'name'     => \App\Models\Setting::get('company_name', config('app.name')),
-            'address'  => \App\Models\Setting::get('company_address', ''),
-            'email'    => \App\Models\Setting::get('company_email', ''),
-            'phone'    => \App\Models\Setting::get('company_phone', ''),
-            'currency' => \App\Models\Setting::get('currency_symbol', 'UGX'),
+            'name' => Setting::get('company_name', config('app.name')),
+            'address' => Setting::get('company_address', ''),
+            'email' => Setting::get('company_email', ''),
+            'phone' => Setting::get('company_phone', ''),
+            'currency' => Setting::get('currency_symbol', 'UGX'),
         ];
 
         $pdf = Pdf::loadView('payroll.payslip-pdf', compact('payslip', 'company'))
@@ -270,7 +286,7 @@ class PayrollApiController extends Controller
     public function report(Request $request)
     {
         $month = $request->integer('month', now()->month);
-        $year  = $request->integer('year',  now()->year);
+        $year = $request->integer('year', now()->year);
 
         $runs = PayrollRun::with('payslips')
             ->where('month', $month)->where('year', $year)->get();
@@ -279,20 +295,20 @@ class PayrollApiController extends Controller
 
         return response()->json([
             'data' => [
-                'month'      => $month,
-                'year'       => $year,
-                'run_count'  => $runs->count(),
-                'total_gross'=> $payslips->sum('gross_salary'),
-                'total_net'  => $payslips->sum('net_salary'),
-                'total_tax'  => $payslips->sum('tax_amount'),
+                'month' => $month,
+                'year' => $year,
+                'run_count' => $runs->count(),
+                'total_gross' => $payslips->sum('gross_salary'),
+                'total_net' => $payslips->sum('net_salary'),
+                'total_tax' => $payslips->sum('tax_amount'),
                 'employee_count' => $payslips->count(),
-                'runs'       => $runs->map(fn($r) => [
-                    'id'     => $r->id,
-                    'title'  => $r->title,
+                'runs' => $runs->map(fn ($r) => [
+                    'id' => $r->id,
+                    'title' => $r->title,
                     'status' => $r->status,
-                    'count'  => $r->payslips->count(),
-                    'gross'  => $r->payslips->sum('gross_salary'),
-                    'net'    => $r->payslips->sum('net_salary'),
+                    'count' => $r->payslips->count(),
+                    'gross' => $r->payslips->sum('gross_salary'),
+                    'net' => $r->payslips->sum('net_salary'),
                 ]),
             ],
         ]);
@@ -301,18 +317,18 @@ class PayrollApiController extends Controller
     private function formatPayslip(Payslip $p): array
     {
         return [
-            'id'              => $p->id,
-            'employee_id'     => $p->employee_id,
-            'employee'        => $p->employee?->full_name,
-            'period'          => $p->payrollRun?->title,
-            'month'           => $p->payrollRun?->month,
-            'year'            => $p->payrollRun?->year,
-            'gross_pay'       => $p->gross_salary,
-            'net_pay'         => $p->net_salary,
-            'basic_salary'    => $p->basic_salary,
-            'tax'             => $p->tax_amount,
-            'total_deductions'=> $p->total_deductions,
-            'total_allowances'=> $p->total_allowances,
+            'id' => $p->id,
+            'employee_id' => $p->employee_id,
+            'employee' => $p->employee?->full_name,
+            'period' => $p->payrollRun?->title,
+            'month' => $p->payrollRun?->month,
+            'year' => $p->payrollRun?->year,
+            'gross_pay' => $p->gross_salary,
+            'net_pay' => $p->net_salary,
+            'basic_salary' => $p->basic_salary,
+            'tax' => $p->tax_amount,
+            'total_deductions' => $p->total_deductions,
+            'total_allowances' => $p->total_allowances,
         ];
     }
 }

@@ -1,11 +1,11 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\{Candidate, JobPosting};
+use App\Models\Candidate;
+use App\Models\JobPosting;
 use App\Services\AiService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class AiApiController extends Controller
 {
@@ -13,25 +13,25 @@ class AiApiController extends Controller
 
     public function scoreCandidate(Candidate $candidate)
     {
-        if (!$candidate->resume_path) {
+        if (! $candidate->resume_path) {
             return response()->json(['message' => 'No resume uploaded.'], 422);
         }
 
         $job = $candidate->jobPosting;
-        if (!$job) {
+        if (! $job) {
             return response()->json(['message' => 'No job posting linked.'], 422);
         }
 
-        $resumePath = storage_path('app/public/' . $candidate->resume_path);
-        if (!file_exists($resumePath)) {
+        $resumePath = storage_path('app/public/'.$candidate->resume_path);
+        if (! file_exists($resumePath)) {
             return response()->json(['message' => 'Resume file not found.'], 422);
         }
 
         $resumeText = file_get_contents($resumePath);
-        $result     = $this->ai->scoreResume($resumeText, $job->requirements ?? '', $job->title);
+        $result = $this->ai->scoreResume($resumeText, $job->requirements ?? '', $job->title);
 
         $candidate->update([
-            'score'           => $result['score'] ?? $candidate->score,
+            'score' => $result['score'] ?? $candidate->score,
             'score_breakdown' => json_encode($result['breakdown'] ?? []),
         ]);
 
@@ -48,9 +48,9 @@ class AiApiController extends Controller
         $result = $this->ai->shortlistCandidates($job, $candidates);
 
         // Update scores from AI ranking
-        if (!empty($result['ranked'])) {
+        if (! empty($result['ranked'])) {
             foreach ($result['ranked'] as $ranked) {
-                if (!empty($ranked['candidate_id']) && isset($ranked['score'])) {
+                if (! empty($ranked['candidate_id']) && isset($ranked['score'])) {
                     Candidate::where('id', $ranked['candidate_id'])
                         ->update(['score' => $ranked['score']]);
                 }
@@ -63,11 +63,12 @@ class AiApiController extends Controller
     public function interviewQuestions(Candidate $candidate)
     {
         $job = $candidate->jobPosting;
-        if (!$job) {
+        if (! $job) {
             return response()->json(['message' => 'No job posting linked.'], 422);
         }
 
         $result = $this->ai->generateInterviewQuestions($candidate, $job);
+
         return response()->json(['data' => $result]);
     }
 }

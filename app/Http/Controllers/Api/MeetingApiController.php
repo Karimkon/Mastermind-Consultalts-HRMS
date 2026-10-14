@@ -1,11 +1,13 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 
-use Illuminate\Support\Facades\Storage;
-use App\Models\MeetingFile;
 use App\Http\Controllers\Controller;
-use App\Models\{Meeting, MeetingParticipant};
+use App\Models\Meeting;
+use App\Models\MeetingFile;
+use App\Models\MeetingParticipant;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class MeetingApiController extends Controller
 {
@@ -16,33 +18,39 @@ class MeetingApiController extends Controller
         $query = Meeting::with('organizer');
 
         if ($empId) {
-            $query->where(fn($q) => $q
+            $query->where(fn ($q) => $q
                 ->where('organizer_id', $empId)
-                ->orWhereHas('participants', fn($q2) => $q2->where('employee_id', $empId))
+                ->orWhereHas('participants', fn ($q2) => $q2->where('employee_id', $empId))
             );
         }
 
-        if ($request->from) $query->whereDate('start_at', '>=', $request->from);
-        if ($request->to)   $query->whereDate('start_at', '<=', $request->to);
+        if ($request->from) {
+            $query->whereDate('start_at', '>=', $request->from);
+        }
+        if ($request->to) {
+            $query->whereDate('start_at', '<=', $request->to);
+        }
 
         return response()->json([
-            'data' => $query->orderBy('start_at', 'desc')->paginate(20)->through(fn($m) => $this->formatMeeting($m)),
+            'data' => $query->orderBy('start_at', 'desc')->paginate(20)->through(fn ($m) => $this->formatMeeting($m)),
         ]);
     }
 
     public function store(Request $request)
     {
         $request->validate([
-            'title'    => 'required|string|max:255',
+            'title' => 'required|string|max:255',
             'start_at' => 'required|date',
-            'end_at'   => 'required|date|after:start_at',
+            'end_at' => 'required|date|after:start_at',
         ]);
 
         $employee = $request->user()->employee;
-        if (!$employee) return response()->json(['message' => 'No employee profile.'], 422);
+        if (! $employee) {
+            return response()->json(['message' => 'No employee profile.'], 422);
+        }
 
         $meeting = Meeting::create(
-            $request->only(['title','description','location','start_at','end_at','type','meeting_url','agenda']) +
+            $request->only(['title', 'description', 'location', 'start_at', 'end_at', 'type', 'meeting_url', 'agenda']) +
             ['organizer_id' => $employee->id, 'status' => 'scheduled']
         );
 
@@ -59,11 +67,11 @@ class MeetingApiController extends Controller
     {
         $meeting->load(['organizer', 'participants.employee.user', 'files.uploader']);
         $data = $this->formatMeeting($meeting);
-        $data['participants'] = $meeting->participants->map(fn($p) => [
-            'id'     => $p->employee?->id,
-            'name'   => $p->employee?->full_name,
+        $data['participants'] = $meeting->participants->map(fn ($p) => [
+            'id' => $p->employee?->id,
+            'name' => $p->employee?->full_name,
             'avatar' => $p->employee?->user?->avatar_url,
-            'rsvp'   => $p->rsvp,
+            'rsvp' => $p->rsvp,
         ]);
 
         // The papers, but only to the people the meeting is for. The list is
@@ -74,14 +82,14 @@ class MeetingApiController extends Controller
 
         $data['files'] = $entitled
             ? $meeting->files->map(fn ($f) => [
-                'id'            => $f->id,
-                'name'          => $f->original_name,
-                'mime'          => $f->mime,
-                'size'          => $f->size,
+                'id' => $f->id,
+                'name' => $f->original_name,
+                'mime' => $f->mime,
+                'size' => $f->size,
                 'readable_size' => $f->readable_size,
-                'uploaded_by'   => $f->uploader?->name,
-                'uploaded_at'   => $f->created_at,
-                'download_url'  => route('api.meetings.files.download', [$meeting->id, $f->id]),
+                'uploaded_by' => $f->uploader?->name,
+                'uploaded_at' => $f->created_at,
+                'download_url' => route('api.meetings.files.download', [$meeting->id, $f->id]),
             ])->values()
             : [];
 
@@ -90,13 +98,15 @@ class MeetingApiController extends Controller
 
     public function update(Request $request, Meeting $meeting)
     {
-        $meeting->update($request->only(['title','description','location','start_at','end_at','type','meeting_url','agenda','minutes','status']));
+        $meeting->update($request->only(['title', 'description', 'location', 'start_at', 'end_at', 'type', 'meeting_url', 'agenda', 'minutes', 'status']));
+
         return response()->json(['data' => $this->formatMeeting($meeting->fresh()->load('organizer'))]);
     }
 
     public function destroy(Meeting $meeting)
     {
         $meeting->delete();
+
         return response()->json(['message' => 'Deleted.']);
     }
 
@@ -104,40 +114,43 @@ class MeetingApiController extends Controller
     {
         $request->validate(['rsvp' => 'required|in:accepted,declined,tentative']);
         $employee = $request->user()->employee;
-        if (!$employee) return response()->json(['message' => 'No employee profile.'], 422);
+        if (! $employee) {
+            return response()->json(['message' => 'No employee profile.'], 422);
+        }
 
         MeetingParticipant::updateOrCreate(
             ['meeting_id' => $meeting->id, 'employee_id' => $employee->id],
             ['rsvp' => $request->rsvp]
         );
+
         return response()->json(['data' => ['rsvp' => $request->rsvp]]);
     }
 
     public function calendar(Request $request)
     {
         $empId = $request->user()->employee?->id;
-        $from  = $request->from ?? now()->startOfMonth()->toDateString();
-        $to    = $request->to   ?? now()->endOfMonth()->toDateString();
+        $from = $request->from ?? now()->startOfMonth()->toDateString();
+        $to = $request->to ?? now()->endOfMonth()->toDateString();
 
         $query = Meeting::with('organizer')
             ->whereDate('start_at', '>=', $from)
             ->whereDate('start_at', '<=', $to);
 
         if ($empId) {
-            $query->where(fn($q) => $q
+            $query->where(fn ($q) => $q
                 ->where('organizer_id', $empId)
-                ->orWhereHas('participants', fn($q2) => $q2->where('employee_id', $empId))
+                ->orWhereHas('participants', fn ($q2) => $q2->where('employee_id', $empId))
             );
         }
 
         return response()->json([
-            'data' => $query->orderBy('start_at')->get()->map(fn($m) => [
-                'id'       => $m->id,
-                'title'    => $m->title,
+            'data' => $query->orderBy('start_at')->get()->map(fn ($m) => [
+                'id' => $m->id,
+                'title' => $m->title,
                 'start_at' => $m->start_at,
-                'end_at'   => $m->end_at,
-                'type'     => $m->type,
-                'status'   => $m->status,
+                'end_at' => $m->end_at,
+                'type' => $m->type,
+                'status' => $m->status,
             ]),
         ]);
     }
@@ -164,21 +177,22 @@ class MeetingApiController extends Controller
 
         return Storage::disk('local')->download($file->path, $file->original_name);
     }
+
     private function formatMeeting(Meeting $m): array
     {
         return [
-            'id'              => $m->id,
-            'title'           => $m->title,
-            'description'     => $m->description,
-            'location'        => $m->location,
-            'meeting_url'     => $m->meeting_url,
-            'start_at'        => $m->start_at,
-            'end_at'          => $m->end_at,
-            'type'            => $m->type,
-            'status'          => $m->status ?? 'scheduled',
-            'organizer'       => $m->organizer?->full_name,
+            'id' => $m->id,
+            'title' => $m->title,
+            'description' => $m->description,
+            'location' => $m->location,
+            'meeting_url' => $m->meeting_url,
+            'start_at' => $m->start_at,
+            'end_at' => $m->end_at,
+            'type' => $m->type,
+            'status' => $m->status ?? 'scheduled',
+            'organizer' => $m->organizer?->full_name,
             'participant_count' => $m->participants()->count(),
-            'file_count'        => $m->files()->count(),
+            'file_count' => $m->files()->count(),
         ];
     }
 }
