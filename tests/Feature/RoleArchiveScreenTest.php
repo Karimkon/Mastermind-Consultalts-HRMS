@@ -99,6 +99,44 @@ class RoleArchiveScreenTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_a_role_with_hundreds_of_holders_does_not_print_them_all(): void
+    {
+        /*
+         | 1,242 people hold 'employee' on the live database. Rendering every
+         | one of them made this page 545KB of names nobody came here to read.
+         | The cap is on CURRENT holders only -- former holders are the archive
+         | itself and stay complete.
+         */
+        for ($i = 1; $i <= 15; $i++) {
+            $u = $this->person("Holder$i Staff");
+            $this->roles->grant($u, 'employee');
+        }
+
+        $html = $this->get(route('admin.roles.archive'))->assertOk()->getContent();
+
+        // Newest appointment first, so the 12 shown are Holder15 back to
+        // Holder4 and the three oldest are the ones summarised.
+        $this->assertStringContainsString('Holder15 Staff', $html);
+        $this->assertStringContainsString('and 3 more holding it now', $html);
+        $this->assertStringNotContainsString('Holder1 Staff<', $html);
+    }
+
+    public function test_former_holders_are_never_capped(): void
+    {
+        // The whole point of the archive: no "and 20 more" hiding the history.
+        for ($i = 1; $i <= 15; $i++) {
+            $u = $this->person("Past$i Holder");
+            $this->roles->grant($u, 'hr-admin');
+            $this->roles->revoke($u, 'hr-admin', 'Moved on');
+        }
+
+        $html = $this->get(route('admin.roles.archive'))->assertOk()->getContent();
+
+        for ($i = 1; $i <= 15; $i++) {
+            $this->assertStringContainsString("Past$i Holder", $html, "former holder $i is listed");
+        }
+    }
+
     // ───────────────────────────── does it last? ─────────────────────────────
 
     public function test_deleting_the_login_does_not_erase_the_history(): void

@@ -52,13 +52,25 @@
             @if ($spells->isEmpty())
                 <p class="text-sm text-slate-400">Nobody has held this role.</p>
             @else
-                {{-- holding it now --}}
-                @foreach ($current as $a)
+                {{--
+                    Current holders are capped. 1,242 people hold 'employee',
+                    and listing them turned this page into half a megabyte of
+                    names nobody came here to read. Former holders below are
+                    never capped -- those are the archive, and there are a
+                    handful of them.
+                --}}
+                @foreach ($current->take(12) as $a)
                     <div class="flex items-center justify-between gap-3 text-sm border-l-2 border-green-400 pl-3 py-1 mb-1">
                         <span class="font-medium text-slate-800">{{ $a->holderName() }}</span>
                         <span class="text-xs text-slate-500">{{ $a->periodLabel() }}</span>
                     </div>
                 @endforeach
+
+                @if ($current->count() > 12)
+                    <p class="text-xs text-slate-500 pl-3 py-1">
+                        and {{ number_format($current->count() - 12) }} more holding it now
+                    </p>
+                @endif
 
                 {{-- held it before --}}
                 @if ($former->isNotEmpty())
