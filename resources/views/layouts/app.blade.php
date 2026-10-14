@@ -238,11 +238,11 @@
     {{-- Logo --}}
     <div class="flex items-center justify-center h-16 px-3 border-b border-slate-700/50 shrink-0">
         {{-- Collapsed: small square icon --}}
-        <div class="rounded-lg overflow-hidden bg-white shrink-0" x-show="!sidebarOpen" style="width:36px;height:36px;padding:3px;">
+        <div x-cloak class="rounded-lg overflow-hidden bg-white shrink-0" x-show="!sidebarOpen" style="width:36px;height:36px;padding:3px;">
             <img src="/images/logo.png" alt="M" class="w-full h-full object-contain">
         </div>
         {{-- Expanded: full logo on white pill --}}
-        <div x-show="sidebarOpen" class="rounded-xl bg-white px-3 py-2 w-full flex items-center justify-center">
+        <div x-cloak x-show="sidebarOpen" class="rounded-xl bg-white px-3 py-2 w-full flex items-center justify-center">
             <img src="/images/logo.png" alt="Mastermind HRMS" class="h-8 w-auto object-contain">
         </div>
     </div>

@@ -198,8 +198,12 @@ class AdminClientController extends Controller
             ->orderBy('name')
             ->get();
 
-        // All clients for the assignment dropdown
-        $allClients = Client::orderBy('company_name')->get();
+        // All clients for the assignment dropdown, with the headcount that
+        // would move with each one.
+        $allClients = Client::with('accountManager:id,name')
+            ->withCount('employees')
+            ->orderBy('company_name')
+            ->get();
         $allManagers = $managers;
 
         // Unassigned clients (no AM yet)
@@ -417,16 +421,56 @@ class AdminClientController extends Controller
         return back()->with('success', 'Holiday deleted.');
     }
 
+    /**
+     * Move ONE client to another account manager.
+     *
+     * The counterpart to transferClients, which moves somebody's whole book.
+     * Moving one client is the common case -- rebalancing a single account --
+     * and it was only reachable through a panel labelled "Assign Client"
+     * sitting at the bottom of the page.
+     *
+     * The employees come with it. An account manager reaches staff through
+     * their clients, so repointing the client repoints everybody placed there;
+     * there is no second list to keep in step, which is exactly why there is no
+     * separate "and their employees" switch.
+     */
     public function assignAccountManager(Request $request)
     {
-        $request->validate([
+        $data = $request->validate([
             'client_id' => 'required|exists:clients,id',
             'account_manager_id' => 'nullable|exists:users,id',
         ]);
-        Client::findOrFail($request->client_id)->update([
-            'account_manager_id' => $request->account_manager_id ?: null,
-        ]);
 
-        return back()->with('success', 'Account Manager assignment updated.');
+        $client = Client::findOrFail($data['client_id']);
+        $from = $client->accountManager?->name ?? 'nobody';
+
+        // Handing a client to somebody who is not an account manager leaves it
+        // pointing at a login that cannot open it -- the staff then have nobody
+        // to run their payroll or action their leave. The whole-book transfer
+        // has always refused this; this path used to accept any user id at all.
+        $target = null;
+
+        if (! empty($data['account_manager_id'])) {
+            $target = User::findOrFail($data['account_manager_id']);
+
+            if (! $target->hasRole('account-manager')) {
+                return back()->with('error',
+                    $target->name.' is not an account manager, so '.$client->company_name
+                    .' would be left with nobody who can open it. Appoint them first.');
+            }
+        }
+
+        $moved = $client->employees()->count();
+
+        $client->update(['account_manager_id' => $target?->id]);
+
+        return back()->with('success', sprintf(
+            '%s moved from %s to %s. %s %s with it.',
+            $client->company_name,
+            $from,
+            $target?->name ?? 'nobody -- it now has no account manager',
+            number_format($moved),
+            $moved === 1 ? 'employee went' : 'employees went',
+        ));
     }
 }

@@ -81,6 +81,65 @@
     </div>
 </div>
 
+{{--
+    ─────────────────────────── move one client ───────────────────────────
+
+    The common case, and the one that had no proper home: rebalancing a single
+    account rather than somebody's whole book. It was only reachable through a
+    panel called "Assign Client" at the very bottom of the page, whose target
+    list led with "— Unassign —".
+
+    The employees are not named here because they are not a separate decision.
+    An account manager reaches staff through their clients, so repointing the
+    client repoints everybody placed there. A second control for "and their
+    employees" could only ever disagree with the client assignment.
+--}}
+<div class="card p-4 mb-4">
+    <h3 class="font-semibold text-slate-800 mb-1 flex items-center gap-2">
+        <i class="fas fa-arrow-right-arrow-left text-indigo-600"></i> Move one client
+    </h3>
+    <p class="text-xs text-slate-500 mb-3">
+        Hands a single client, and everybody placed there, to a different account
+        manager. Use this rather than the whole-book transfer when only one
+        account is changing hands.
+    </p>
+
+    <form method="POST" action="{{ route('admin.account-managers.assign') }}"
+          class="flex flex-wrap gap-2 items-end"
+          onsubmit="return confirm('Move this client and all of its employees to the selected account manager?')">
+        @csrf @method('PUT')
+
+        <div class="flex-1 min-w-[16rem]">
+            <label class="form-label">Client</label>
+            <select name="client_id" class="form-input w-full" required>
+                <option value="">— Select a client —</option>
+                @foreach ($allClients as $c)
+                    <option value="{{ $c->id }}">
+                        {{ $c->company_name }}
+                        — {{ number_format($c->employees_count) }} staff,
+                        now {{ $c->accountManager?->name ?? 'unassigned' }}
+                    </option>
+                @endforeach
+            </select>
+        </div>
+
+        <div class="flex-1 min-w-[12rem]">
+            <label class="form-label">Hand it to</label>
+            <select name="account_manager_id" class="form-input w-full">
+                <option value="">— Select an account manager —</option>
+                @foreach ($managers as $m)
+                    <option value="{{ $m->id }}">
+                        {{ $m->name }} ({{ $m->managedClients->count() }} clients now)
+                    </option>
+                @endforeach
+                <option value="" class="text-slate-400">— or leave it with nobody —</option>
+            </select>
+        </div>
+
+        <button class="btn-primary">Move client</button>
+    </form>
+</div>
+
 {{-- ────────────────────────────── stand down ────────────────────────────── --}}
 <div class="card p-4 mb-4">
     <h3 class="font-semibold text-slate-800 mb-1 flex items-center gap-2">

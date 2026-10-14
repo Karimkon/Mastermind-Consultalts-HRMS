@@ -8,38 +8,11 @@
     </a>
 </x-page-header>
 
-@include('admin.account-managers._manage', ['managers' => $managers, 'promotable' => $promotable])
-
-{{-- Assign Client to AM --}}
-<div class="card p-5 mb-6">
-    <h3 class="font-semibold text-slate-700 mb-4 flex items-center gap-2">
-        <i class="fas fa-link text-blue-500"></i> Assign Client to Account Manager
-    </h3>
-    <form method="POST" action="{{ route('admin.account-managers.assign') }}" class="flex flex-wrap gap-3 items-end">
-        @csrf @method('PUT')
-        <div>
-            <label class="form-label">Client</label>
-            <select name="client_id" class="form-input w-56" required>
-                <option value="">— Select Client —</option>
-                @foreach(\App\Models\Client::orderBy('company_name')->get() as $c)
-                    <option value="{{ $c->id }}">{{ $c->company_name }}
-                        @if($c->account_manager_id) (currently: {{ $c->accountManager?->name ?? 'Unknown' }}) @endif
-                    </option>
-                @endforeach
-            </select>
-        </div>
-        <div>
-            <label class="form-label">Account Manager</label>
-            <select name="account_manager_id" class="form-input w-56">
-                <option value="">— Unassign —</option>
-                @foreach($managers as $m)
-                    <option value="{{ $m->id }}">{{ $m->name }}</option>
-                @endforeach
-            </select>
-        </div>
-        <button type="submit" class="btn-primary">Save Assignment</button>
-    </form>
-</div>
+@include('admin.account-managers._manage', [
+    'managers' => $managers,
+    'promotable' => $promotable,
+    'allClients' => $allClients,
+])
 
 @if($unassigned->count())
 <div class="card p-4 mb-6 border-l-4 border-yellow-400">
@@ -134,28 +107,53 @@
                     </td>
                 </tr>
 
-                {{-- Employee sub-list --}}
+                {{--
+                    Employee preview.
+
+                    This used to load and render EVERY employee of every client:
+                    1,877 chips on one page, 1.6MB of HTML. Worse, avatar_url
+                    falls back to ui-avatars.com for anybody without a login,
+                    and most placed staff have none -- so the browser fired
+                    close to 1,877 requests at a third party before the page
+                    settled. That is what made this screen crawl.
+
+                    A dozen is a preview; the full list already has its own page
+                    and is linked below.
+                --}}
                 @php
-                    $clientEmployees = \App\Models\Employee::with(['department','user'])
+                    $previewLimit = 12;
+                    $clientEmployees = \App\Models\Employee::with(['department:id,name', 'user:id,profile_photo'])
                         ->whereHas('clients', fn($q) => $q->where('clients.id', $client->id))
-                        ->get();
+                        ->orderBy('first_name')
+                        ->limit($previewLimit)
+                        ->get(['employees.id', 'first_name', 'middle_name', 'last_name', 'department_id', 'user_id']);
+                    $totalEmployees = $client->employees_count ?? $clientEmployees->count();
                 @endphp
                 @if($clientEmployees->count())
                 <tr class="bg-slate-50/50">
                     <td colspan="5" class="px-5 pb-3 pt-0">
                         <div class="mt-2">
                             <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                                <i class="fas fa-users mr-1"></i>{{ $clientEmployees->count() }} Assigned Employees
+                                <i class="fas fa-users mr-1"></i>{{ number_format($totalEmployees) }} Assigned Employees
                             </p>
                             <div class="flex flex-wrap gap-2">
                                 @foreach($clientEmployees as $emp)
                                 <a href="{{ route('account-manager.employees.show', $emp) }}"
                                    class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-xs">
-                                    <img src="{{ $emp->avatar_url }}" class="w-5 h-5 rounded-full">
+                                    <img src="{{ $emp->avatar_url }}" class="w-5 h-5 rounded-full"
+                                         loading="lazy" decoding="async" width="20" height="20" alt="">
                                     <span class="font-medium text-slate-700">{{ $emp->full_name }}</span>
                                     <span class="text-slate-400">{{ $emp->department?->name ?? '—' }}</span>
                                 </a>
                                 @endforeach
+
+                                @if($totalEmployees > $previewLimit)
+                                <a href="{{ route('account-manager.employees') }}?client_id={{ $client->id }}"
+                                   class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition-colors text-xs font-medium">
+                                    and {{ number_format($totalEmployees - $previewLimit) }} more
+                                    <i class="fas fa-arrow-right"></i>
+                                </a>
+                                @endif
                             </div>
                         </div>
                     </td>

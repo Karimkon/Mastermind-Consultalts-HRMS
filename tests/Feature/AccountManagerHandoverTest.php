@@ -107,6 +107,148 @@ class AccountManagerHandoverTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_the_page_does_not_render_every_employee_of_every_client(): void
+    {
+        /*
+         | This page used to print a chip for all 1,877 placed employees --
+         | 1.6MB of HTML. The chips carry an avatar, and avatar_url falls back
+         | to ui-avatars.com for anybody without a login, which most placed
+         | staff are. So the browser also fired ~1,877 requests at a third
+         | party. It is a preview now; the per-client page has the full list.
+         */
+        $am = $this->manager('Violet Namuleme');
+        $this->clientFor($am, 'Roofings Uganda Limited', 20);
+
+        $html = $this->actingAs($this->admin)
+            ->get(route('admin.account-managers.index'))
+            ->assertOk()
+            ->getContent();
+
+        // The real total is still stated, even though only 12 are drawn.
+        $this->assertStringContainsString('20 Assigned Employees', $html);
+        $this->assertStringContainsString('and 8 more', $html);
+
+        $chips = substr_count($html, 'hover:border-blue-300');
+        $this->assertLessThanOrEqual(12, $chips, "drew $chips employee chips, expected at most 12");
+    }
+
+    public function test_a_small_client_shows_everybody_with_no_more_link(): void
+    {
+        $am = $this->manager('Violet Namuleme');
+        $this->clientFor($am, 'Small Client Ltd', 3);
+
+        $html = $this->actingAs($this->admin)
+            ->get(route('admin.account-managers.index'))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('3 Assigned Employees', $html);
+        $this->assertStringNotContainsString('more', substr($html, strpos($html, '3 Assigned Employees'), 400));
+    }
+
+    // ──────────────────────────── moving ONE client ────────────────────────────
+
+    public function test_a_single_client_moves_with_its_employees(): void
+    {
+        // The case the page could not really do: Insignia alone, from Violet to
+        // Brenda, without disturbing the rest of Violet's book.
+        $violet = $this->manager('Violet Namuleme');
+        $brenda = $this->manager('Kansiime Brenda');
+
+        $insignia = $this->clientFor($violet, 'Insignia', 16);
+        $shreeji = $this->clientFor($violet, 'Shreeji Stationers', 4);
+
+        $this->actingAs($this->admin)
+            ->put(route('admin.account-managers.assign'), [
+                'client_id' => $insignia->id,
+                'account_manager_id' => $brenda->id,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame($brenda->id, $insignia->fresh()->account_manager_id);
+        $this->assertSame($violet->id, $shreeji->fresh()->account_manager_id, 'the rest of the book stays put');
+
+        // The staff follow, because they are reached through the client.
+        $this->assertCount(16, $brenda->fresh()->managedClients->first()->employees);
+
+        $this->actingAs($brenda->fresh())
+            ->get(route('account-manager.employees').'?client_id='.$insignia->id)
+            ->assertOk()
+            ->assertSee('Staff0');
+    }
+
+    public function test_the_previous_manager_loses_the_moved_client(): void
+    {
+        $violet = $this->manager('Violet Namuleme');
+        $brenda = $this->manager('Kansiime Brenda');
+        $insignia = $this->clientFor($violet, 'Insignia', 3);
+
+        $this->actingAs($this->admin)->put(route('admin.account-managers.assign'), [
+            'client_id' => $insignia->id,
+            'account_manager_id' => $brenda->id,
+        ]);
+
+        $this->assertCount(0, $violet->fresh()->managedClients);
+    }
+
+    public function test_a_client_cannot_be_handed_to_somebody_who_is_not_an_account_manager(): void
+    {
+        /*
+         | This path accepted any user id at all. A client pointing at a login
+         | that cannot open it leaves its staff with nobody to run their payroll
+         | or action their leave -- the same reason the whole-book transfer has
+         | always refused it.
+         */
+        $violet = $this->manager('Violet Namuleme');
+        $insignia = $this->clientFor($violet, 'Insignia', 3);
+
+        $random = User::factory()->create(['status' => 'active', 'name' => 'Ordinary Staff']);
+        $random->assignRole('employee');
+
+        $this->actingAs($this->admin)
+            ->put(route('admin.account-managers.assign'), [
+                'client_id' => $insignia->id,
+                'account_manager_id' => $random->id,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertSame($violet->id, $insignia->fresh()->account_manager_id, 'it did not move');
+    }
+
+    public function test_a_client_can_deliberately_be_left_with_nobody(): void
+    {
+        // How Mastermind Consult Ltd HQ was taken out of account-manager hands:
+        // it is head office, not a client anybody should be managing.
+        $violet = $this->manager('Violet Namuleme');
+        $hq = $this->clientFor($violet, 'Mastermind Consult Ltd HQ', 5);
+
+        $this->actingAs($this->admin)
+            ->put(route('admin.account-managers.assign'), [
+                'client_id' => $hq->id,
+                'account_manager_id' => null,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertNull($hq->fresh()->account_manager_id);
+        $this->assertCount(5, $hq->fresh()->employees, 'the staff are untouched');
+    }
+
+    public function test_the_move_one_client_control_is_on_the_page(): void
+    {
+        $violet = $this->manager('Violet Namuleme');
+        $this->clientFor($violet, 'Insignia', 2);
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.account-managers.index'))
+            ->assertOk()
+            ->assertSee('Move one client')
+            ->assertSee('Insignia')
+            ->assertSee('Move client');
+    }
+
     // ───────────────────────────── appointing ─────────────────────────────
 
     public function test_an_existing_user_can_be_appointed(): void
