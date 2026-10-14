@@ -146,6 +146,59 @@ class AccountManagerHandoverTest extends TestCase
         $this->assertStringNotContainsString('more', substr($html, strpos($html, '3 Assigned Employees'), 400));
     }
 
+    public function test_the_page_renders_when_the_placed_staff_have_logins(): void
+    {
+        /*
+         | The gap that let a 500 reach production. Every other test here places
+         | employees with no user_id, so the avatar eager-load never ran and an
+         | eager-load naming a column that does not exist -- user:id,profile_photo
+         | when the column is `avatar` -- passed the whole suite and then threw
+         | "Unknown column 'profile_photo'" on the live database.
+         |
+         | Giving at least one placed employee a login makes the relation
+         | actually load.
+         */
+        $am = $this->manager('Violet Namuleme');
+        $client = $this->clientFor($am, 'Insignia', 0);
+
+        foreach (['One', 'Two', 'Three'] as $i => $label) {
+            $user = User::factory()->create(['status' => 'active', 'name' => "Placed $label"]);
+            $employee = Employee::create([
+                'user_id' => $user->id,
+                'emp_number' => 'LOGIN'.$i,
+                'first_name' => 'Placed',
+                'last_name' => $label,
+                'hire_date' => '2024-01-15',
+                'status' => 'active',
+            ]);
+            $client->employees()->attach($employee->id, ['assigned_by' => $am->id]);
+        }
+
+        $html = $this->actingAs($this->admin)
+            ->get(route('admin.account-managers.index'))
+            ->assertOk()
+            ->assertSee('Placed One')
+            ->getContent();
+
+        /*
+         | Assert the avatar RESOLVED, not merely that an <img> exists.
+         |
+         | SQLite tolerates selecting a column that does not exist, where MySQL
+         | throws -- so a constrained eager load naming the wrong column passes
+         | here and 500s on the live database. What SQLite does show is the
+         | damage: the fallback avatar is built from the user's name, so a user
+         | loaded without `name` yields "?name=" with nothing after it.
+         |
+         | Checking for the name inside the avatar URL catches both the wrong
+         | column and the missing one, on SQLite, before it reaches production.
+         */
+        $this->assertStringContainsString('rounded-full', $html);
+        $this->assertStringNotContainsString('ui-avatars.com/api/?name=&', $html,
+            'an avatar resolved with an empty name -- the user relation was loaded without `name`');
+        $this->assertMatchesRegularExpression('/ui-avatars\.com\/api\/\?name=Placed(\+|%20)/', $html,
+            'the avatar should be built from the name of the placed employee');
+    }
+
     // ──────────────────────────── moving ONE client ────────────────────────────
 
     public function test_a_single_client_moves_with_its_employees(): void

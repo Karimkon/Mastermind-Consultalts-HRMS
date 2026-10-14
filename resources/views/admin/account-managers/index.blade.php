@@ -122,7 +122,7 @@
                 --}}
                 @php
                     $previewLimit = 12;
-                    $clientEmployees = \App\Models\Employee::with(['department:id,name', 'user:id,profile_photo'])
+                    $clientEmployees = \App\Models\Employee::with(['department:id,name', 'user:id,name,avatar'])
                         ->whereHas('clients', fn($q) => $q->where('clients.id', $client->id))
                         ->orderBy('first_name')
                         ->limit($previewLimit)
