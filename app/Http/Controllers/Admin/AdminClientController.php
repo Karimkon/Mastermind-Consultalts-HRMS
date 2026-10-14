@@ -422,6 +422,78 @@ class AdminClientController extends Controller
     }
 
     /**
+     * Delete a client, but only one that nothing depends on.
+     *
+     * Seven foreign keys onto `clients` are ON DELETE CASCADE --
+     * client_employee_assignments, am_salary_payments, am_visit_sessions,
+     * client_job_assignments, client_sites, employee_client_transfers and
+     * holiday_pay_approvals. So an unguarded delete of a real client is not a
+     * delete of one row: Roofings Uganda Limited would take 447 rows with it,
+     * including every employee placement and every salary payment recorded
+     * against it, with no warning and no undo.
+     *
+     * payroll_runs is worse in a quieter way. It carries client_id with NO
+     * foreign key, so those rows would not cascade and would not block --
+     * they would simply be left pointing at a client that no longer exists.
+     *
+     * So anything that represents work done, money paid or people placed makes
+     * a client undeletable, and it is offered deactivation instead. What stays
+     * deletable is what the button is actually for: a duplicate or a mistake,
+     * like the merged Roofings Outlets shell that holds nobody.
+     *
+     * The client's portal login is never touched. On at least one client that
+     * column points at user 1, the System Admin account.
+     */
+    public function destroy(Client $client)
+    {
+        // Anything here means the client is part of the record, not a mistake.
+        $blockers = [
+            'employee placement' => DB::table('client_employee_assignments')->where('client_id', $client->id)->count(),
+            'payroll run' => DB::table('payroll_runs')->where('client_id', $client->id)->count(),
+            'attendance record' => DB::table('attendance_logs')->where('client_id', $client->id)->count(),
+            'appraisal' => DB::table('appraisals')->where('client_id', $client->id)->count(),
+            'salary payment' => DB::table('am_salary_payments')->where('client_id', $client->id)->count(),
+            'site visit' => DB::table('am_visit_sessions')->where('client_id', $client->id)->count(),
+            'holiday pay approval' => DB::table('holiday_pay_approvals')->where('client_id', $client->id)->count(),
+            'work site' => DB::table('client_sites')->where('client_id', $client->id)->count(),
+            'job assignment' => DB::table('client_job_assignments')->where('client_id', $client->id)->count(),
+            'pending change' => DB::table('pending_changes')->where('client_id', $client->id)->count(),
+        ];
+
+        $held = array_filter($blockers);
+
+        if ($held) {
+            $parts = [];
+
+            foreach ($held as $what => $n) {
+                $parts[] = $n.' '.$what.($n === 1 ? '' : 's');
+            }
+
+            return back()->with('error', sprintf(
+                '%s cannot be deleted: it still carries %s. Deleting it would erase those records. '
+                .'Mark it inactive instead if it is no longer trading.',
+                $client->company_name, implode(', ', $parts),
+            ));
+        }
+
+        // What is left is incidental and goes quietly, so say so rather than
+        // letting the cascade do it behind the admin's back.
+        $transfers = DB::table('employee_client_transfers')->where('client_id', $client->id)->count();
+        $positions = DB::table('org_positions')->where('client_id', $client->id)->count();
+
+        $name = $client->company_name;
+        $client->delete();
+
+        $note = $transfers || $positions
+            ? sprintf(' %d transfer history row(s) went with it and %d org position(s) were detached.',
+                $transfers, $positions)
+            : '';
+
+        return redirect()->route('admin.clients.index')
+            ->with('success', $name.' deleted.'.$note);
+    }
+
+    /**
      * Move ONE client to another account manager.
      *
      * The counterpart to transferClients, which moves somebody's whole book.

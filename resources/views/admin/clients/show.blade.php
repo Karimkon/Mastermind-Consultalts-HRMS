@@ -19,6 +19,42 @@
     <div class="flex items-center gap-3">
         {!! $client->status_badge !!}
         <a href="{{ route('admin.clients.edit', $client) }}" class="btn-secondary"><i class="fas fa-edit mr-2"></i>Edit</a>
+
+        {{--
+            Only offered for a client nothing depends on.
+
+            Seven foreign keys onto clients cascade on delete, so this button on
+            a trading client would quietly erase every employee placement and
+            salary payment recorded against it. The controller refuses those
+            regardless -- this just does not dangle the option in front of
+            somebody when the answer is always no.
+        --}}
+        @php
+            $attached = $client->employees()->count()
+                + \DB::table('payroll_runs')->where('client_id', $client->id)->count()
+                + \DB::table('attendance_logs')->where('client_id', $client->id)->count()
+                + \DB::table('appraisals')->where('client_id', $client->id)->count()
+                + \DB::table('am_salary_payments')->where('client_id', $client->id)->count()
+                + \DB::table('am_visit_sessions')->where('client_id', $client->id)->count()
+                + \DB::table('holiday_pay_approvals')->where('client_id', $client->id)->count()
+                + \DB::table('client_sites')->where('client_id', $client->id)->count()
+                + \DB::table('client_job_assignments')->where('client_id', $client->id)->count()
+                + \DB::table('pending_changes')->where('client_id', $client->id)->count();
+        @endphp
+
+        @if ($attached === 0)
+            <form method="POST" action="{{ route('admin.clients.destroy', $client) }}"
+                  onsubmit="return confirm('Delete {{ addslashes($client->company_name) }} permanently? Nothing is placed here, but this cannot be undone.')">
+                @csrf @method('DELETE')
+                <button class="btn-secondary text-red-600 border-red-200 hover:bg-red-50">
+                    <i class="fas fa-trash mr-2"></i>Delete
+                </button>
+            </form>
+        @else
+            <span class="text-xs text-slate-400" title="{{ number_format($attached) }} record(s) depend on this client">
+                <i class="fas fa-lock mr-1"></i>{{ number_format($attached) }} records attached
+            </span>
+        @endif
     </div>
 </div>
 
@@ -89,7 +125,11 @@
                         <tr class="table-row">
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
-                                    <img src="{{ $emp->user->avatar_url }}" class="w-8 h-8 rounded-full object-cover">
+                                    {{-- Employee::avatar_url falls back when there is no login. 312 staff
+                                         have none, and reaching through ->user warned on every
+                                         one of them and rendered a broken image. --}}
+                                    <img src="{{ $emp->avatar_url }}" class="w-8 h-8 rounded-full object-cover"
+                                         loading="lazy" decoding="async" width="32" height="32" alt="">
                                     <div>
                                         <p class="text-sm font-medium text-slate-800">{{ $emp->full_name }}</p>
                                         <p class="text-xs text-slate-400">{{ $emp->emp_number }}</p>

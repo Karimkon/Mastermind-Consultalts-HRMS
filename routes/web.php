@@ -667,6 +667,7 @@ Route::middleware(['auth', 'mfa'])->group(function () {
         // Account Manager Management
         Route::get('account-managers', [AdminClientController::class, 'accountManagers'])->name('account-managers.index');
         Route::put('account-managers/assign', [AdminClientController::class, 'assignAccountManager'])->name('account-managers.assign');
+        Route::delete('clients/{client}', [AdminClientController::class, 'destroy'])->name('clients.destroy');
         Route::post('account-managers/promote', [AdminClientController::class, 'promoteAccountManager'])->name('account-managers.promote');
         Route::post('account-managers/transfer', [AdminClientController::class, 'transferClients'])->name('account-managers.transfer');
         Route::post('account-managers/remove', [AdminClientController::class, 'removeAccountManager'])->name('account-managers.remove');
